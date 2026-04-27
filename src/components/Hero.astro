@@ -46,8 +46,8 @@ import shopInterior from '../assets/shop-interior.jpg';
       <Image
         src={logo}
         alt="Modern Classic Barbershop & Shave Parlor emblem"
-        widths={[260, 360, 480, 640]}
-        sizes="(min-width: 720px) 360px, 60vw"
+        widths={[360, 480, 640, 820]}
+        sizes="(min-width: 720px) 480px, 78vw"
         loading="eager"
         class="hero__logo"
       />
@@ -127,19 +127,19 @@ import shopInterior from '../assets/shop-interior.jpg';
     inset: 0;
     z-index: 1;
     background:
-      radial-gradient(28% 22% at 50% 32%,
-        rgba(11, 10, 8, 0.55),
+      radial-gradient(30% 24% at 50% 32%,
+        rgba(11, 10, 8, 0.65),
         transparent 70%),
       radial-gradient(120% 80% at 50% 50%,
-        transparent 30%,
-        rgba(11, 10, 8, 0.55) 75%,
-        rgba(11, 10, 8, 0.85) 100%),
+        transparent 25%,
+        rgba(11, 10, 8, 0.65) 75%,
+        rgba(11, 10, 8, 0.92) 100%),
       linear-gradient(180deg,
-        rgba(11, 10, 8, 0.92) 0%,
-        rgba(11, 10, 8, 0.72) 18%,
-        rgba(11, 10, 8, 0.62) 45%,
-        rgba(11, 10, 8, 0.78) 80%,
-        rgba(11, 10, 8, 0.96) 100%);
+        rgba(11, 10, 8, 0.95) 0%,
+        rgba(11, 10, 8, 0.80) 18%,
+        rgba(11, 10, 8, 0.72) 45%,
+        rgba(11, 10, 8, 0.85) 80%,
+        rgba(11, 10, 8, 0.97) 100%);
   }
 
   /* Ornaments */
@@ -191,11 +191,11 @@ import shopInterior from '../assets/shop-interior.jpg';
     position: relative;
   }
   .hero__logo {
-    width: clamp(220px, 32vw, 360px);
+    width: clamp(280px, 50vw, 480px);
     height: auto;
     filter:
-      drop-shadow(0 0 30px rgba(201, 163, 92, 0.35))
-      drop-shadow(0 8px 24px rgba(0, 0, 0, 0.6));
+      drop-shadow(0 0 36px rgba(201, 163, 92, 0.4))
+      drop-shadow(0 10px 28px rgba(0, 0, 0, 0.65));
     animation: logo-fade 900ms var(--ease) both;
   }
   @keyframes logo-fade {
