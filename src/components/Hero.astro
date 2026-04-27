@@ -59,8 +59,8 @@ import shopInterior from '../assets/shop-interior.jpg';
     </h1>
 
     <p class="hero__lede">
-      Premium haircuts, beard work, and traditional hot-towel shaves —
-      paired with the grooming products our barbers actually use in the chair.
+      A Zanesville barbershop and a grooming line in one.
+      The cut happens here. <span class="hero__lede-accent">The style goes with you.</span>
     </p>
 
     <div class="hero__ctas">
@@ -257,13 +257,23 @@ import shopInterior from '../assets/shop-interior.jpg';
   }
 
   .hero__lede {
-    max-width: 44ch;
+    max-width: 36ch;
     color: var(--color-text);
+    /* Display serif at lede size — mirrors the H1 rhythm. */
+    font-family: var(--font-display);
     font-size: var(--fs-lede);
-    line-height: 1.5;
+    font-weight: 400;
+    line-height: 1.4;
+    letter-spacing: -0.005em;
+    font-variation-settings: 'opsz' 100, 'SOFT' 50;
     margin-top: 0;
-    opacity: 0.88;
+    opacity: 0.92;
     text-shadow: 0 1px 12px rgba(0, 0, 0, 0.5);
+  }
+  .hero__lede-accent {
+    font-style: italic;
+    color: var(--color-gold-light);
+    font-variation-settings: 'opsz' 100, 'SOFT' 80;
   }
 
   .hero__ctas {
