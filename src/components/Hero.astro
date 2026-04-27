@@ -4,7 +4,7 @@ import logo from '../assets/logo-light.png';
 import shopInterior from '../assets/shop-interior.jpg';
 ---
 <section class="hero" aria-labelledby="hero-heading">
-  <div class="hero__bg-fixed" aria-hidden="true">
+  <div class="hero__bg-sticky" aria-hidden="true">
     <Image
       src={shopInterior}
       alt=""
@@ -91,6 +91,7 @@ import shopInterior from '../assets/shop-interior.jpg';
     padding-block: clamp(4.5rem, 8vw, 7rem) clamp(4.5rem, 9vw, 8rem);
     overflow: hidden;
     isolation: isolate;
+    min-height: 100svh;
   }
   .hero__inner {
     position: relative;
@@ -100,19 +101,17 @@ import shopInterior from '../assets/shop-interior.jpg';
     gap: clamp(1.25rem, 2vw, 1.75rem);
   }
 
-  /* Fixed-viewport backdrop (photo + dark overlay).
-     We use position:fixed on a regular <img> rather than CSS
-     background-attachment:fixed, because Safari on iOS renders
-     fixed CSS backgrounds inconsistently (often as a stretched
-     gradient). All sections after the hero have opaque backgrounds,
-     so the fixed backdrop only shows behind the hero — the others
-     cover it as they scroll up over it. */
-  .hero__bg-fixed {
-    position: fixed;
+  /* Sticky backdrop: stays put while the hero is on screen, then
+     scrolls away with the hero when the next section comes up.
+     The negative margin makes the sticky element take up zero
+     vertical layout space, so hero content flows over it naturally. */
+  .hero__bg-sticky {
+    position: sticky;
     top: 0;
     left: 0;
-    width: 100vw;
+    width: 100%;
     height: 100vh;
+    margin-bottom: -100vh;
     z-index: 0;
     pointer-events: none;
     overflow: hidden;
