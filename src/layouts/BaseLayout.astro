@@ -1,0 +1,107 @@
+---
+import '../styles/global.css';
+
+interface Props {
+  title?: string;
+  description?: string;
+  ogImage?: string;
+  canonical?: string;
+}
+
+const {
+  title = 'Modern Classic Barbershop & Shave Parlor — Zanesville, OH',
+  description = 'Modern Classic is a Zanesville barbershop and grooming brand. Premium haircuts, beard work, and straight razor shaves — plus MDRN Classic grooming products built by barbers.',
+  ogImage = '/og-image.png',
+  canonical,
+} = Astro.props;
+
+const siteUrl = 'https://mdrnclassic.com';
+const canonicalUrl = canonical ?? new URL(Astro.url.pathname, siteUrl).toString();
+const ogImageUrl = new URL(ogImage, siteUrl).toString();
+
+const localBusiness = {
+  '@context': 'https://schema.org',
+  '@type': 'HairSalon',
+  '@id': `${siteUrl}/#shop`,
+  name: 'Modern Classic Barbershop & Shave Parlor',
+  legalName: 'MDRN Classic Grooming Essentials LLC',
+  alternateName: 'MDRN Classic',
+  description,
+  url: siteUrl,
+  image: ogImageUrl,
+  priceRange: '$$',
+  address: {
+    '@type': 'PostalAddress',
+    streetAddress: '819 Linden Avenue',
+    addressLocality: 'Zanesville',
+    addressRegion: 'OH',
+    postalCode: '43701',
+    addressCountry: 'US',
+  },
+  email: 'modernclassicbarbershop@protonmail.com',
+  // TODO: replace with real opening hours when owner confirms
+  openingHoursSpecification: [
+    {
+      '@type': 'OpeningHoursSpecification',
+      dayOfWeek: ['Tuesday','Wednesday','Thursday','Friday','Saturday'],
+      opens: '09:00',
+    },
+  ],
+  sameAs: [
+    'https://www.facebook.com/profile.php?id=61558232180660',
+    'https://www.instagram.com/mdrnclassic',
+  ],
+  hasOfferCatalog: {
+    '@type': 'OfferCatalog',
+    name: 'Barbershop services',
+    itemListElement: [
+      { '@type': 'Offer', itemOffered: { '@type': 'Service', name: "Men's Haircut" }, price: '30', priceCurrency: 'USD' },
+      { '@type': 'Offer', itemOffered: { '@type': 'Service', name: 'Haircut & Beard' }, price: '45', priceCurrency: 'USD' },
+      { '@type': 'Offer', itemOffered: { '@type': 'Service', name: 'Straight Razor Shave' }, price: '30', priceCurrency: 'USD' },
+      { '@type': 'Offer', itemOffered: { '@type': 'Service', name: 'Beard Trim & Edge' }, price: '25', priceCurrency: 'USD' },
+      { '@type': 'Offer', itemOffered: { '@type': 'Service', name: 'Kids Haircut' }, price: '25', priceCurrency: 'USD' },
+    ],
+  },
+};
+---
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="generator" content={Astro.generator} />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="canonical" href={canonicalUrl} />
+    <meta name="theme-color" content="#0b0a08" />
+    <meta name="color-scheme" content="dark" />
+
+    <title>{title}</title>
+    <meta name="description" content={description} />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:url" content={canonicalUrl} />
+    <meta property="og:image" content={ogImageUrl} />
+    <meta property="og:site_name" content="Modern Classic" />
+    <meta property="og:locale" content="en_US" />
+
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={title} />
+    <meta name="twitter:description" content={description} />
+    <meta name="twitter:image" content={ogImageUrl} />
+
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght,SOFT@0,9..144,300..700,30..100;1,9..144,300..700,30..100&family=Manrope:wght@400;500;600;700&display=swap"
+    />
+
+    <script type="application/ld+json" set:html={JSON.stringify(localBusiness)} />
+  </head>
+  <body>
+    <a href="#main" class="skip-link">Skip to content</a>
+    <slot />
+  </body>
+</html>

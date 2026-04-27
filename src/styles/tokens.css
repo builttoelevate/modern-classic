@@ -1,0 +1,83 @@
+/* Design tokens — Modern Classic
+   Palette tuned to harmonize with the gold/bronze of the logo emblem.
+   No pure-black: a warm near-black base reads more "leather and brass"
+   than "tech dark mode."
+*/
+:root {
+  /* Surfaces — warm near-black scale */
+  --color-bg:           #0b0a08;
+  --color-bg-soft:      #100e0b;
+  --color-surface:      #161311;
+  --color-surface-2:    #1d1916;
+  --color-surface-3:    #251f1a;
+  --color-border:       #2a2520;
+  --color-border-soft:  #1f1b17;
+
+  /* Gold scale — sampled around the emblem's bronze */
+  --color-gold:         #c9a35c;
+  --color-gold-light:   #e6c785;
+  --color-gold-soft:    #d8b878;
+  --color-gold-dark:    #8a6e35;
+  --color-gold-deep:    #5a4520;
+
+  /* Text */
+  --color-text:         #f3ece0;   /* warm off-white */
+  --color-text-muted:   #b0a695;
+  --color-text-dim:     #80776a;
+  --color-text-on-gold: #161311;
+
+  /* Accents */
+  --color-accent:       var(--color-gold);
+  --color-rule:         rgba(201, 163, 92, 0.22);
+  --color-rule-soft:    rgba(201, 163, 92, 0.12);
+
+  /* Type — Fraunces for display (variable, optical sizing, characterful);
+     Manrope for body (geometric, clean, premium). */
+  --font-display: 'Fraunces', 'Cormorant Garamond', Georgia, 'Times New Roman', serif;
+  --font-body:    'Manrope', 'Helvetica Neue', Arial, sans-serif;
+  --font-mono:    ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+
+  /* Type scale */
+  --fs-eyebrow:  0.78rem;     /* ~12.5px */
+  --fs-body:     1.0625rem;   /* 17px */
+  --fs-lede:     1.25rem;     /* 20px */
+  --fs-h4:       1.375rem;
+  --fs-h3:       1.75rem;
+  --fs-h2:       clamp(2rem, 1.4rem + 2.4vw, 3.25rem);
+  --fs-h1:       clamp(2.75rem, 1.8rem + 5vw, 5.75rem);
+
+  /* Spacing */
+  --space-1:  0.25rem;
+  --space-2:  0.5rem;
+  --space-3:  0.75rem;
+  --space-4:  1rem;
+  --space-5:  1.5rem;
+  --space-6:  2rem;
+  --space-7:  3rem;
+  --space-8:  4rem;
+  --space-9:  6rem;
+  --space-10: 8rem;
+
+  /* Layout */
+  --container:        72rem;     /* 1152px */
+  --container-narrow: 56rem;
+  --radius-sm: 4px;
+  --radius:    8px;
+  --radius-lg: 14px;
+
+  /* Motion */
+  --ease:        cubic-bezier(0.2, 0.7, 0.2, 1);
+  --ease-in-out: cubic-bezier(0.7, 0, 0.3, 1);
+  --dur-fast:    160ms;
+  --dur:         260ms;
+  --dur-slow:    520ms;
+
+  /* Effects */
+  --shadow-sm: 0 1px 2px rgba(0,0,0,0.45);
+  --shadow-md: 0 8px 24px rgba(0,0,0,0.5), 0 2px 6px rgba(0,0,0,0.4);
+  --shadow-gold: 0 0 0 1px rgba(201, 163, 92, 0.2),
+                 0 12px 40px -12px rgba(201, 163, 92, 0.25);
+
+  /* Header height — used for sticky offset */
+  --header-h: 68px;
+}
