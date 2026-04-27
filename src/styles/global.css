@@ -16,10 +16,12 @@ body {
   font-feature-settings: 'ss01', 'cv11';
   text-rendering: optimizeLegibility;
   scroll-behavior: smooth;
-  /* subtle warm vignette */
+  /* Subtle warm vignette. The top focal point is pushed well above
+     the page (-40% Y) and dialled to a low alpha so it can never
+     produce a visible gold stripe at the page's top edge. */
   background-image:
-    radial-gradient(1100px 700px at 50% -10%,
-      rgba(201, 163, 92, 0.08), transparent 60%),
+    radial-gradient(1100px 700px at 50% -40%,
+      rgba(201, 163, 92, 0.05), transparent 60%),
     radial-gradient(800px 500px at 100% 100%,
       rgba(138, 110, 53, 0.06), transparent 70%);
   background-attachment: fixed;
