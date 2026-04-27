@@ -63,13 +63,22 @@ const priceLabel = Number.isInteger(price) ? `$${price}` : `$${price.toFixed(2)}
     filter: drop-shadow(0 14px 28px rgba(0,0,0,0.5));
   }
   /* Shopify ships some product photos as JPGs shot on a white seamless
-     background (Savoir EDP, Savoir Gold, Shaving Cream). Multiply blends
-     the white into the dark card; the bottles stay readable.
+     background (Savoir EDP, Savoir Gold, Shaving Cream). Rather than
+     blending the photo (multiply darkens the bottle past readability),
+     we lay a heavy radial vignette over the JPG: bottle stays at full
+     brightness in the centre, the white edges fade into the card.
      Phase 2 replaces these with locally edited PNGs. */
-  .prod__media img[src*=".jpg"] {
-    mix-blend-mode: multiply;
-    filter: drop-shadow(0 14px 28px rgba(0,0,0,0.7))
-            contrast(1.05) brightness(1.08);
+  .prod__media:has(img[src*=".jpg"])::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background:
+      radial-gradient(circle at 50% 52%,
+        transparent 28%,
+        rgba(11, 10, 8, 0.55) 60%,
+        rgba(11, 10, 8, 0.95) 88%);
+    pointer-events: none;
+    z-index: 1;
   }
   .prod:hover .prod__media img { transform: scale(1.04); }
 
@@ -77,6 +86,7 @@ const priceLabel = Number.isInteger(price) ? `$${price}` : `$${price.toFixed(2)}
     position: absolute;
     top: 0.85rem;
     left: 0.85rem;
+    z-index: 2;
     font-size: 0.65rem;
     letter-spacing: 0.22em;
     text-transform: uppercase;
