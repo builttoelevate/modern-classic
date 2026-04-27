@@ -88,13 +88,16 @@ import shopInterior from '../assets/shop-interior.jpg';
   .hero {
     position: relative;
     text-align: center;
-    /* Override the global `section { padding-block }` rule. That ~80px
-       of padding pushed the sticky child past its threshold (causing
-       initial scroll drift) AND left an empty padding-band at the bottom
-       of the section where the sticky photo bled through. The hero
-       handles its own internal spacing via .hero__inner. */
+    /* Override the global `section { padding-block }` rule. */
     padding-block: 0;
-    /* No overflow:hidden — breaks position:sticky on iOS Safari. */
+    /* Explicit background so any moment where sticky might briefly
+       paint outside its track gets covered by the section itself. */
+    background-color: var(--color-bg);
+    /* overflow: clip is sticky-safe (unlike overflow: hidden which
+       breaks position:sticky on iOS) — clips children to the section
+       bounds without creating a scroll container. Hard guarantee that
+       the sticky photo can't paint past the hero. */
+    overflow: clip;
     isolation: isolate;
   }
   .hero__inner {
