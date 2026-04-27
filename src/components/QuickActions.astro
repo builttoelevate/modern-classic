@@ -4,28 +4,28 @@ const actions = [
     label: 'Book a Haircut',
     sub: 'In-and-out, sharp.',
     href: 'https://modern-classic.square.site',
-    glyph: '✂',
+    icon: 'scissors',
     external: true,
   },
   {
     label: 'Cut + Beard',
     sub: 'The full grooming.',
     href: 'https://modern-classic.square.site',
-    glyph: '◆',
+    icon: 'diamond',
     external: true,
   },
   {
     label: 'Shop Products',
     sub: 'Built by barbers.',
     href: '#products',
-    glyph: '⚜',
+    icon: 'fleur',
     external: false,
   },
   {
-    label: 'New Customer',
-    sub: 'Extra consult time.',
+    label: 'First Visit',
+    sub: 'Start here.',
     href: 'https://modern-classic.square.site',
-    glyph: '★',
+    icon: 'star',
     external: true,
   },
 ];
@@ -38,7 +38,42 @@ const actions = [
          href={a.href}
          target={a.external ? '_blank' : undefined}
          rel={a.external ? 'noopener' : undefined}>
-        <span class="quick__glyph" aria-hidden="true">{a.glyph}</span>
+        <span class="quick__glyph" aria-hidden="true">
+          {a.icon === 'scissors' && (
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                 stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="6.5" cy="7" r="2.4"/>
+              <circle cx="6.5" cy="17" r="2.4"/>
+              <path d="M8.6 8.7 L20 18"/>
+              <path d="M8.6 15.3 L20 6"/>
+              <line x1="11.2" y1="12" x2="13.8" y2="12"/>
+            </svg>
+          )}
+          {a.icon === 'diamond' && (
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                 stroke-width="1.4" stroke-linejoin="round">
+              <path d="M12 3 L21 12 L12 21 L3 12 Z"/>
+              <path d="M7.5 12 L12 7.5 L16.5 12 L12 16.5 Z"/>
+            </svg>
+          )}
+          {a.icon === 'fleur' && (
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                 stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 3 L12 13"/>
+              <path d="M12 6 C 8 8, 7 11, 7.5 13.5 C 7.8 14.6 8.6 15 9.5 15"/>
+              <path d="M12 6 C 16 8, 17 11, 16.5 13.5 C 16.2 14.6 15.4 15 14.5 15"/>
+              <line x1="8" y1="16" x2="16" y2="16"/>
+              <path d="M12 16 L12 21"/>
+              <circle cx="12" cy="6" r="0.7" fill="currentColor"/>
+            </svg>
+          )}
+          {a.icon === 'star' && (
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                 stroke-width="1.3" stroke-linejoin="round">
+              <polygon points="12,3 14.35,8.76 20.56,9.22 15.8,13.24 17.29,19.28 12,16 6.71,19.28 8.2,13.24 3.44,9.22 9.65,8.76"/>
+            </svg>
+          )}
+        </span>
         <span class="quick__body">
           <span class="quick__label">{a.label}</span>
           <span class="quick__sub">{a.sub}</span>
@@ -89,15 +124,22 @@ const actions = [
   .quick__card:hover::before { transform: scaleX(1); }
 
   .quick__glyph {
-    font-size: 1.25rem;
     color: var(--color-gold);
-    width: 2.25rem;
-    height: 2.25rem;
+    width: 2.4rem;
+    height: 2.4rem;
     display: grid;
     place-items: center;
     border: 1px solid var(--color-rule);
     border-radius: 50%;
+    transition: border-color var(--dur) var(--ease);
   }
+  .quick__glyph svg {
+    width: 1.25rem;
+    height: 1.25rem;
+    display: block;
+  }
+  .quick__card:hover .quick__glyph { border-color: var(--color-gold); }
+
   .quick__body { display: grid; gap: 0.15rem; }
   .quick__label {
     font-family: var(--font-display);
