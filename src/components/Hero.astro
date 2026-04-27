@@ -1,20 +1,18 @@
 ---
-import { Image, getImage } from 'astro:assets';
+import { Image } from 'astro:assets';
 import logo from '../assets/logo-light.png';
 import shopInterior from '../assets/shop-interior.jpg';
-
-// Convert the JPEG to an optimized WebP and pass the URL through as a CSS
-// custom property so we can use background-attachment: fixed (which doesn't
-// work on <img> elements).
-const heroBg = await getImage({
-  src: shopInterior,
-  format: 'webp',
-  width: 1600,
-  quality: 78,
-});
 ---
 <section class="hero" aria-labelledby="hero-heading">
-  <div class="hero__bg" aria-hidden="true" style={`--hero-bg-image: url('${heroBg.src}')`}>
+  <div class="hero__bg-fixed" aria-hidden="true">
+    <Image
+      src={shopInterior}
+      alt=""
+      widths={[720, 1080, 1440, 1920]}
+      sizes="100vw"
+      loading="eager"
+      class="hero__bg-img"
+    />
     <div class="hero__bg-overlay"></div>
   </div>
   <div class="hero__ornaments" aria-hidden="true">
@@ -102,27 +100,33 @@ const heroBg = await getImage({
     gap: clamp(1.25rem, 2vw, 1.75rem);
   }
 
-  /* Background photograph + dark overlay.
-     Uses background-attachment: fixed so the photo stays put while
-     the page content scrolls over it. iOS Safari supports fixed
-     backgrounds when sized via cover; we set explicit background
-     dimensions to encourage consistent rendering. */
-  .hero__bg {
-    position: absolute;
-    inset: 0;
+  /* Fixed-viewport backdrop (photo + dark overlay).
+     We use position:fixed on a regular <img> rather than CSS
+     background-attachment:fixed, because Safari on iOS renders
+     fixed CSS backgrounds inconsistently (often as a stretched
+     gradient). All sections after the hero have opaque backgrounds,
+     so the fixed backdrop only shows behind the hero — the others
+     cover it as they scroll up over it. */
+  .hero__bg-fixed {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
     z-index: 0;
+    pointer-events: none;
     overflow: hidden;
     background-color: var(--color-bg);
-    background-image: var(--hero-bg-image);
-    background-size: cover;
-    background-position: center 55%;
-    background-attachment: fixed;
-    background-repeat: no-repeat;
-    /* Slight in-CSS treatment to mimic the previous filter on the <img>. */
   }
-  /* iOS Safari falls back to background-attachment: scroll for fixed
-     backgrounds in some viewport configurations. The visual still works
-     (photo behind dark overlay), it just scrolls with the section. */
+  .hero__bg-img {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    object-position: center 55%;
+    filter: saturate(0.85) contrast(1.08) brightness(0.78);
+  }
   /* Three-layer overlay:
      1. Soft warm spotlight behind the emblem so the gold rings pop
      2. Vignette darker at edges than at center
