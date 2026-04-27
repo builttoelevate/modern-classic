@@ -93,7 +93,11 @@ import shopInterior from '../assets/shop-interior.jpg';
        leaves a padding-sized gap above the photo on initial load). */
     /* No overflow:hidden — breaks position:sticky on iOS Safari. */
     isolation: isolate;
-    min-height: 100svh;
+    /* Section sizes to its natural content height. Earlier we used
+       min-height: 100svh to guarantee a sticky track, but that left a
+       photo-only strip at the section bottom on viewports where svh
+       exceeds the content height. Content is naturally taller than the
+       sticky child (100svh - header), so the track exists on its own. */
   }
   .hero__inner {
     position: relative;
