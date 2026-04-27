@@ -64,11 +64,11 @@ import shopInterior from '../assets/shop-interior.jpg';
     </p>
 
     <div class="hero__ctas">
-      <a class="btn" href="https://modern-classic.square.site" target="_blank" rel="noopener">
-        Book a Visit <span class="arrow" aria-hidden="true">→</span>
+      <a class="btn hero__cta-primary" href="https://modern-classic.square.site" target="_blank" rel="noopener">
+        Book an Appointment <span class="arrow" aria-hidden="true">→</span>
       </a>
-      <a class="btn btn--ghost" href="#products">
-        Shop Grooming
+      <a class="btn btn--ghost hero__cta-secondary" href="#products">
+        Shop Grooming Products
       </a>
     </div>
 
@@ -273,6 +273,40 @@ import shopInterior from '../assets/shop-interior.jpg';
     align-items: center;
     gap: var(--space-3);
     margin-top: clamp(0.25rem, 1vw, 0.75rem);
+  }
+  /* Primary keeps the default .btn treatment (gold fill, weight 600) —
+     just guaranteed not to be shrunk by .hero__cta-secondary's overrides. */
+  .hero__cta-primary { font-weight: 600; }
+
+  /* Secondary CTA — ghost, ~75% the visual weight of the primary,
+     darker gold border, lighter font weight. Reads clearly as
+     'optional alternate path' next to the primary. */
+  .hero__cta-secondary {
+    padding: 0.72em 1.2em;
+    font-size: 0.82rem;
+    font-weight: 500;
+    letter-spacing: 0.10em;
+    border-color: var(--color-gold-deep);
+    color: var(--color-gold-soft);
+  }
+  .hero__cta-secondary:hover {
+    border-color: var(--color-gold);
+    color: var(--color-gold-light);
+    background: rgba(201, 163, 92, 0.06);
+  }
+
+  /* On the narrowest viewports, stack the CTAs so the primary stands
+     alone first and the secondary sits underneath it. */
+  @media (max-width: 480px) {
+    .hero__ctas {
+      flex-direction: column;
+      gap: 0.6rem;
+      width: 100%;
+      max-width: 20rem;
+      margin-inline: auto;
+    }
+    .hero__cta-primary,
+    .hero__cta-secondary { width: 100%; }
   }
 
   .hero__meta {
