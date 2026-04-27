@@ -88,16 +88,14 @@ import shopInterior from '../assets/shop-interior.jpg';
   .hero {
     position: relative;
     text-align: center;
-    /* Padding lives on .hero__inner so .hero__bg-sticky can start at
-       section top (otherwise sticky's natural top is offset and pinning
-       leaves a padding-sized gap above the photo on initial load). */
+    /* Override the global `section { padding-block }` rule. That ~80px
+       of padding pushed the sticky child past its threshold (causing
+       initial scroll drift) AND left an empty padding-band at the bottom
+       of the section where the sticky photo bled through. The hero
+       handles its own internal spacing via .hero__inner. */
+    padding-block: 0;
     /* No overflow:hidden — breaks position:sticky on iOS Safari. */
     isolation: isolate;
-    /* Section sizes to its natural content height. Earlier we used
-       min-height: 100svh to guarantee a sticky track, but that left a
-       photo-only strip at the section bottom on viewports where svh
-       exceeds the content height. Content is naturally taller than the
-       sticky child (100svh - header), so the track exists on its own. */
   }
   .hero__inner {
     position: relative;
