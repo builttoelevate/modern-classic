@@ -1,0 +1,11 @@
+{
+  "name": "Shampoo + Style",
+  "slug": "shampoo-style",
+  "price": "$15",
+  "duration": "15 min",
+  "audience": null,
+  "description": "For those who love to walk out of the shop feeling fresh and clean.",
+  "bookingUrl": "https://modern-classic.square.site",
+  "featured": false,
+  "order": 8
+}

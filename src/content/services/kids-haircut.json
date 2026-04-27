@@ -1,0 +1,11 @@
+{
+  "name": "Kids Haircut",
+  "slug": "kids-haircut",
+  "price": "$25",
+  "duration": "30 min",
+  "audience": "10 & under",
+  "description": "Cuts for kids 10 and under. Patient, friendly, and finished with the same attention to detail.",
+  "bookingUrl": "https://modern-classic.square.site",
+  "featured": true,
+  "order": 6
+}

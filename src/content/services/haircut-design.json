@@ -1,0 +1,11 @@
+{
+  "name": "Haircut + Design",
+  "slug": "haircut-design",
+  "price": "$30–45",
+  "duration": "1 hr",
+  "audience": "Freestyle hair art",
+  "description": "More time, more detail. Includes special haircut add-ons like freestyle designs and hair art.",
+  "bookingUrl": "https://modern-classic.square.site",
+  "featured": true,
+  "order": 5
+}
