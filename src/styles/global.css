@@ -235,7 +235,13 @@ section { padding-block: clamp(4rem, 8vw, 7rem); }
 /* ---------- Anchor offset for sticky header ---------- */
 section[id] { scroll-margin-top: calc(var(--header-h) + 1rem); }
 
-/* ---------- Mobile sticky CTA breathing room at bottom ---------- */
+/* ---------- Mobile sticky CTA breathing room at bottom ----------
+   The sticky 'Book Now' bar sits at bottom: 10px with ~38px height (≈48px
+   total inset from the viewport bottom). Add 16px of breathing room on
+   top of that, plus env(safe-area-inset-bottom) so notched devices keep
+   the CTA above the home indicator. */
 @media (max-width: 720px) {
-  body { padding-bottom: 60px; }
+  body {
+    padding-bottom: calc(64px + env(safe-area-inset-bottom));
+  }
 }
