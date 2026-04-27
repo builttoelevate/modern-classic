@@ -235,5 +235,5 @@ section[id] { scroll-margin-top: calc(var(--header-h) + 1rem); }
 
 /* ---------- Mobile sticky CTA breathing room at bottom ---------- */
 @media (max-width: 720px) {
-  body { padding-bottom: 76px; }
+  body { padding-bottom: 60px; }
 }
