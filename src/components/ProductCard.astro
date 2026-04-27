@@ -62,6 +62,15 @@ const priceLabel = Number.isInteger(price) ? `$${price}` : `$${price.toFixed(2)}
     transition: transform var(--dur-slow) var(--ease);
     filter: drop-shadow(0 14px 28px rgba(0,0,0,0.5));
   }
+  /* Shopify ships some product photos as JPGs shot on a white seamless
+     background (Savoir EDP, Savoir Gold, Shaving Cream). Multiply blends
+     the white into the dark card; the bottles stay readable.
+     Phase 2 replaces these with locally edited PNGs. */
+  .prod__media img[src*=".jpg"] {
+    mix-blend-mode: multiply;
+    filter: drop-shadow(0 14px 28px rgba(0,0,0,0.7))
+            contrast(1.05) brightness(1.08);
+  }
   .prod:hover .prod__media img { transform: scale(1.04); }
 
   .prod__chip {
