@@ -88,14 +88,17 @@ import shopInterior from '../assets/shop-interior.jpg';
   .hero {
     position: relative;
     text-align: center;
-    padding-block: clamp(4.5rem, 8vw, 7rem) clamp(4.5rem, 9vw, 8rem);
-    overflow: hidden;
+    /* Padding lives on .hero__inner so .hero__bg-sticky can start at
+       section top (otherwise sticky's natural top is offset and pinning
+       leaves a padding-sized gap above the photo on initial load). */
+    /* No overflow:hidden — breaks position:sticky on iOS Safari. */
     isolation: isolate;
     min-height: 100svh;
   }
   .hero__inner {
     position: relative;
     z-index: 2;
+    padding-block: clamp(4.5rem, 8vw, 7rem) clamp(4.5rem, 9vw, 8rem);
     display: grid;
     justify-items: center;
     gap: clamp(1.25rem, 2vw, 1.75rem);
@@ -110,8 +113,12 @@ import shopInterior from '../assets/shop-interior.jpg';
     top: 0;
     left: 0;
     width: 100%;
-    height: 100vh;
-    margin-bottom: -100vh;
+    /* Use small viewport height so the sticky element is never taller
+       than the parent (parent is min-height: 100svh). On iOS, 100vh is
+       the larger viewport and would exceed parent, killing the sticky
+       track. */
+    height: 100svh;
+    margin-bottom: -100svh;
     z-index: 0;
     pointer-events: none;
     overflow: hidden;
