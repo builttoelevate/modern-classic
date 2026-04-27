@@ -147,13 +147,24 @@ const bookUrl = 'https://modern-classic.square.site';
     display: inline-flex;
     align-items: baseline;
     gap: 0.45em;
+    /* Explicit font shorthand so descendants can't fall back to a system
+       serif if a parent rule slips a generic family in. */
     font-family: var(--font-display);
-    font-size: 1.18rem;
+    font-size: 1.22rem;
     font-weight: 500;
-    letter-spacing: 0.01em;
+    letter-spacing: 0.005em;
     color: var(--color-text);
-    font-variation-settings: 'opsz' 60, 'SOFT' 30;
+    /* Match the H1's display rendering (opsz 144, SOFT 50). At opsz 60
+       Fraunces flips into its "text" style — narrower, less character —
+       which read as a generic serif next to the H1. */
+    font-variation-settings: 'opsz' 144, 'SOFT' 50;
     transition: color var(--dur) var(--ease);
+  }
+  /* Inheritance defense: spans inside the wordmark explicitly use the
+     display family so any future global rule can't override them. */
+  .wordmark__primary {
+    font-family: var(--font-display);
+    font-variation-settings: inherit;
   }
   .wordmark__sep {
     color: var(--color-gold);
