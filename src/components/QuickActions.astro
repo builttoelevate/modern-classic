@@ -51,7 +51,12 @@ const actions = [
 </section>
 
 <style>
-  .quick { padding-block: 0; }
+  .quick {
+    padding-block: 0;
+    background: var(--color-bg);
+    position: relative;
+    z-index: 2;
+  }
   .quick__grid {
     display: grid;
     grid-template-columns: repeat(4, 1fr);
