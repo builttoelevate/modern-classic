@@ -1,0 +1,14 @@
+{
+  "name": "Shaving Cream",
+  "slug": "mdrn-classic-125ml-shaving-cream",
+  "collection": "Shaving",
+  "size": "125ml",
+  "price": 19.97,
+  "description": "A traditional, rich, creamy shaving lather. Produces a protective barrier over the skin, preventing razor burn, nicks, and ingrown hairs. Scented with a traditionally masculine fragrance. Ideal for very sensitive skin.",
+  "howToUse": "Lather in palms or use with a brush, then apply directly to face.",
+  "ingredients": "Aqua, Stearic Acid, Myristic Acid, Potassium Hydroxide, Coconut Acid, Glycerin, Triethanolamine, Parfum, Sodium Hydroxide, Methylchloroisothiazolinone, Methylisothiazolinone.",
+  "imageUrl": "https://mdrnclassic.com/cdn/shop/files/125mlshavingcreamartemis.jpg?v=1709607444&width=600",
+  "productUrl": "https://mdrnclassic.com/products/mdrn%E2%84%A2-classic-125ml-shaving-cream",
+  "featured": false,
+  "order": 10
+}

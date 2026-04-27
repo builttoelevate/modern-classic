@@ -1,0 +1,125 @@
+---
+const actions = [
+  {
+    label: 'Book a Haircut',
+    sub: 'In-and-out, sharp.',
+    href: 'https://modern-classic.square.site',
+    glyph: '✂',
+    external: true,
+  },
+  {
+    label: 'Cut + Beard',
+    sub: 'The full grooming.',
+    href: 'https://modern-classic.square.site',
+    glyph: '◆',
+    external: true,
+  },
+  {
+    label: 'Shop Products',
+    sub: 'Built by barbers.',
+    href: '#products',
+    glyph: '⚜',
+    external: false,
+  },
+  {
+    label: 'New Customer',
+    sub: 'Extra consult time.',
+    href: 'https://modern-classic.square.site',
+    glyph: '★',
+    external: true,
+  },
+];
+---
+<section class="quick" aria-label="Quick actions">
+  <hr class="rule" />
+  <div class="container quick__grid">
+    {actions.map((a) => (
+      <a class="quick__card"
+         href={a.href}
+         target={a.external ? '_blank' : undefined}
+         rel={a.external ? 'noopener' : undefined}>
+        <span class="quick__glyph" aria-hidden="true">{a.glyph}</span>
+        <span class="quick__body">
+          <span class="quick__label">{a.label}</span>
+          <span class="quick__sub">{a.sub}</span>
+        </span>
+        <span class="quick__arrow" aria-hidden="true">→</span>
+      </a>
+    ))}
+  </div>
+  <hr class="rule" />
+</section>
+
+<style>
+  .quick { padding-block: 0; }
+  .quick__grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 0;
+  }
+  .quick__card {
+    --pad: clamp(1.1rem, 2.4vw, 1.6rem);
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    align-items: center;
+    gap: 0.9rem;
+    padding: var(--pad);
+    border-right: 1px solid var(--color-border-soft);
+    color: var(--color-text);
+    transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
+    position: relative;
+  }
+  .quick__card:last-child { border-right: 0; }
+  .quick__card::before {
+    content: '';
+    position: absolute;
+    inset: auto 0 0 0;
+    height: 2px;
+    background: var(--color-gold);
+    transform: scaleX(0);
+    transform-origin: left center;
+    transition: transform var(--dur) var(--ease);
+  }
+  .quick__card:hover { background: rgba(201, 163, 92, 0.04); }
+  .quick__card:hover::before { transform: scaleX(1); }
+
+  .quick__glyph {
+    font-size: 1.25rem;
+    color: var(--color-gold);
+    width: 2.25rem;
+    height: 2.25rem;
+    display: grid;
+    place-items: center;
+    border: 1px solid var(--color-rule);
+    border-radius: 50%;
+  }
+  .quick__body { display: grid; gap: 0.15rem; }
+  .quick__label {
+    font-family: var(--font-display);
+    font-size: 1.15rem;
+    font-weight: 500;
+    letter-spacing: -0.005em;
+    color: var(--color-text);
+    font-variation-settings: 'opsz' 100;
+  }
+  .quick__sub {
+    font-size: 0.82rem;
+    color: var(--color-text-muted);
+    letter-spacing: 0.04em;
+  }
+  .quick__arrow {
+    color: var(--color-gold);
+    transition: transform var(--dur) var(--ease);
+  }
+  .quick__card:hover .quick__arrow { transform: translateX(4px); }
+
+  @media (max-width: 880px) {
+    .quick__grid { grid-template-columns: repeat(2, 1fr); }
+    .quick__card:nth-child(2) { border-right: 0; }
+    .quick__card:nth-child(1),
+    .quick__card:nth-child(2) { border-bottom: 1px solid var(--color-border-soft); }
+  }
+  @media (max-width: 460px) {
+    .quick__sub { display: none; }
+  }
+</style>

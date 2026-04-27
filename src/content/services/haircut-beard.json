@@ -1,0 +1,11 @@
+{
+  "name": "Haircut & Beard",
+  "slug": "haircut-beard",
+  "price": "$45",
+  "duration": "45 min",
+  "audience": "Modern or Classic",
+  "description": "A complete grooming service. You walk out with your beard tame, your edges crisp, and your style on point.",
+  "bookingUrl": "https://modern-classic.square.site",
+  "featured": true,
+  "order": 2
+}

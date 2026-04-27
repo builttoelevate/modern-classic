@@ -1,0 +1,47 @@
+---
+import ReviewCard from './ReviewCard.astro';
+
+const reviews = [
+  {
+    product: 'Salt Spray',
+    body: 'Is the only thing I put in my hair other than the powder, and my wife loves it too. The best smelling hair product on the market for sure.',
+    attribution: 'S.V.',
+  },
+  {
+    product: 'Soft Clay',
+    body: 'A staple in my routine for months. Strong hold from morning to night, easy to work with, finishes natural. Highly recommend.',
+    attribution: 'Andrew H.',
+  },
+  {
+    product: 'Texture Powder & Matte Paste',
+    body: 'Softer and more durable than your normal clay paste. The powder holds your hair all day and the paste is easy to apply. You don’t want to miss out.',
+    attribution: 'Mario V.',
+  },
+];
+---
+<section class="reviews" aria-labelledby="reviews-heading">
+  <div class="container">
+    <header class="section-head section-head--center">
+      <span class="eyebrow">From the Chair</span>
+      <h2 id="reviews-heading">
+        What clients <span class="italic-accent">say.</span>
+      </h2>
+    </header>
+
+    <div class="reviews__grid">
+      {reviews.map((r) => (
+        <ReviewCard product={r.product} body={r.body} attribution={r.attribution} />
+      ))}
+    </div>
+  </div>
+</section>
+
+<style>
+  .reviews { background: var(--color-bg-soft); }
+  .reviews__grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1.25rem;
+  }
+  @media (max-width: 880px) { .reviews__grid { grid-template-columns: 1fr; max-width: 38rem; margin-inline: auto; } }
+</style>

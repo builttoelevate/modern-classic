@@ -1,0 +1,11 @@
+{
+  "name": "Straight Razor Shave",
+  "slug": "straight-razor-shave",
+  "price": "$30",
+  "duration": "30 min",
+  "audience": "Hot towel finish",
+  "description": "A traditional hot towel straight razor shave. Old-school technique, modern care, and a clean, smooth finish.",
+  "bookingUrl": "https://modern-classic.square.site",
+  "featured": true,
+  "order": 3
+}

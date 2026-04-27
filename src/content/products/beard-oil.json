@@ -1,0 +1,14 @@
+{
+  "name": "Beard Oil",
+  "slug": "mdrn-classic-30ml-beard-oil",
+  "collection": "Beard Care",
+  "size": "30ml",
+  "price": 22,
+  "description": "Beard oil leaves the beard clean, soft, nourished, and moisturizes the skin beneath. It promotes a fuller-looking beard while taming longer hair.",
+  "howToUse": "Place a small amount of oil into the palm of your hand, then distribute it over the fingers of both hands. Apply the oil directly onto the skin under your beard to start the hydrating process at the source. Finally, work the remaining oil through the rest of your beard and mustache.",
+  "ingredients": "Vitis Vinifera, Hemp Oil, Castor Oil, Glycerin, Cucumis Sativus, Simmondsia Chinesis, Parfum.",
+  "imageUrl": "https://mdrnclassic.com/cdn/shop/files/3_b3030692-0a65-460d-87db-367bab5ee98b.png?width=600",
+  "productUrl": "https://mdrnclassic.com/products/mdrn%E2%84%A2-classic-30ml-beard-oil",
+  "featured": true,
+  "order": 1
+}

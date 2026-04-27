@@ -1,0 +1,61 @@
+---
+import { getCollection } from 'astro:content';
+import ServiceCard from './ServiceCard.astro';
+
+const services = (await getCollection('services'))
+  .filter((s) => s.data.featured)
+  .sort((a, b) => a.data.order - b.data.order);
+---
+<section id="services" class="services" aria-labelledby="services-heading">
+  <div class="container">
+    <header class="section-head">
+      <span class="eyebrow">In the Chair</span>
+      <h2 id="services-heading">
+        Services, <span class="italic-accent">tailored sharp.</span>
+      </h2>
+      <p class="lede">
+        Every service finishes the same way — clean lines, confident style, and
+        a take-home recommendation if you want to keep it that way at home.
+      </p>
+    </header>
+
+    <div class="services__grid">
+      {services.map((s) => (
+        <ServiceCard
+          name={s.data.name}
+          price={s.data.price}
+          duration={s.data.duration}
+          audience={s.data.audience}
+          description={s.data.description}
+          bookingUrl={s.data.bookingUrl}
+        />
+      ))}
+    </div>
+
+    <div class="services__foot">
+      <a class="link-gold" href="https://modern-classic.square.site"
+         target="_blank" rel="noopener">
+        View all services &amp; book →
+      </a>
+    </div>
+  </div>
+</section>
+
+<style>
+  .services { background: linear-gradient(180deg, var(--color-bg), var(--color-bg-soft)); }
+  .services__grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1.25rem;
+  }
+  .services__foot {
+    margin-top: var(--space-7);
+    text-align: center;
+  }
+  @media (max-width: 880px) {
+    .services__grid { grid-template-columns: repeat(2, 1fr); }
+  }
+  @media (max-width: 560px) {
+    .services__grid { grid-template-columns: 1fr; }
+  }
+</style>

@@ -1,0 +1,61 @@
+---
+import { getCollection } from 'astro:content';
+import ProductCard from './ProductCard.astro';
+
+const products = (await getCollection('products'))
+  .filter((p) => p.data.featured)
+  .sort((a, b) => a.data.order - b.data.order);
+---
+<section id="products" class="products" aria-labelledby="products-heading">
+  <div class="container">
+    <header class="section-head section-head--center">
+      <span class="eyebrow">Built by Barbers</span>
+      <h2 id="products-heading">
+        Take the chair <span class="italic-accent">home with you.</span>
+      </h2>
+      <p class="lede" style="text-align:center; margin-inline:auto;">
+        Every formula is cruelty-free, paraben-free, and tested in our own
+        chairs before it ships. Free shipping on orders over $60.
+      </p>
+    </header>
+
+    <div class="products__grid">
+      {products.map((p) => (
+        <ProductCard
+          name={p.data.name}
+          collection={p.data.collection}
+          size={p.data.size}
+          price={p.data.price}
+          imageUrl={p.data.imageUrl}
+          productUrl={p.data.productUrl}
+        />
+      ))}
+    </div>
+
+    <div class="products__foot">
+      <a class="btn btn--ghost" href="https://mdrnclassic.com/collections/all"
+         target="_blank" rel="noopener">
+        Shop all products <span class="arrow" aria-hidden="true">→</span>
+      </a>
+    </div>
+  </div>
+</section>
+
+<style>
+  .products {
+    background:
+      radial-gradient(800px 400px at 50% 0%, rgba(201,163,92,0.06), transparent 70%),
+      var(--color-bg);
+  }
+  .products__grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 1.25rem;
+  }
+  .products__foot {
+    margin-top: var(--space-7);
+    text-align: center;
+  }
+  @media (max-width: 980px) { .products__grid { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 480px) { .products__grid { grid-template-columns: 1fr; } }
+</style>

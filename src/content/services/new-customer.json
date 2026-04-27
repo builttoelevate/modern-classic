@@ -1,0 +1,11 @@
+{
+  "name": "New Customer",
+  "slug": "new-customer",
+  "price": "$30–45",
+  "duration": "1 hr",
+  "audience": null,
+  "description": "Recommended for new clients or anyone unsure what style they want. Includes extra consultation time.",
+  "bookingUrl": "https://modern-classic.square.site",
+  "featured": false,
+  "order": 7
+}
