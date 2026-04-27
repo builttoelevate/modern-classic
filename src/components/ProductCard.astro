@@ -72,11 +72,13 @@ const priceLabel = Number.isInteger(price) ? `$${price}` : `$${price.toFixed(2)}
     content: '';
     position: absolute;
     inset: 0;
+    /* Tight ellipse — only the bottle area gets the transparent
+       window; the rest of the photo (white plate) gets covered. */
     background:
-      radial-gradient(circle at 50% 52%,
-        transparent 28%,
-        rgba(11, 10, 8, 0.55) 60%,
-        rgba(11, 10, 8, 0.95) 88%);
+      radial-gradient(ellipse 16% 30% at 50% 52%,
+        transparent 0%,
+        rgba(11, 10, 8, 0.85) 75%,
+        rgba(11, 10, 8, 0.98) 100%);
     pointer-events: none;
     z-index: 1;
   }
