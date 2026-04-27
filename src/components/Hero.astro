@@ -114,23 +114,32 @@ import shopInterior from '../assets/shop-interior.jpg';
     width: 100%;
     height: 100%;
     object-fit: cover;
-    object-position: center 35%;
-    filter: saturate(0.9) contrast(1.05) brightness(0.95);
+    object-position: center 55%;
+    filter: saturate(0.85) contrast(1.08) brightness(0.78);
     z-index: 0;
   }
+  /* Three-layer overlay:
+     1. Soft warm spotlight behind the emblem so the gold rings pop
+     2. Vignette darker at edges than at center
+     3. Top-and-bottom heavier gradient for header / CTA legibility */
   .hero__bg-overlay {
     position: absolute;
     inset: 0;
     z-index: 1;
     background:
-      radial-gradient(60% 50% at 50% 38%,
-        rgba(201, 163, 92, 0.12),
+      radial-gradient(28% 22% at 50% 32%,
+        rgba(11, 10, 8, 0.55),
         transparent 70%),
+      radial-gradient(120% 80% at 50% 50%,
+        transparent 30%,
+        rgba(11, 10, 8, 0.55) 75%,
+        rgba(11, 10, 8, 0.85) 100%),
       linear-gradient(180deg,
-        rgba(11, 10, 8, 0.78) 0%,
-        rgba(11, 10, 8, 0.45) 30%,
-        rgba(11, 10, 8, 0.45) 65%,
-        rgba(11, 10, 8, 0.92) 100%);
+        rgba(11, 10, 8, 0.92) 0%,
+        rgba(11, 10, 8, 0.72) 18%,
+        rgba(11, 10, 8, 0.62) 45%,
+        rgba(11, 10, 8, 0.78) 80%,
+        rgba(11, 10, 8, 0.96) 100%);
   }
 
   /* Ornaments */
@@ -146,6 +155,7 @@ import shopInterior from '../assets/shop-interior.jpg';
     position: absolute;
     width: clamp(36px, 5vw, 60px);
     height: clamp(36px, 5vw, 60px);
+    filter: drop-shadow(0 0 8px rgba(0, 0, 0, 0.85));
   }
   .hero__corner--tl { top: 0; left: 0; }
   .hero__corner--tr { top: 0; right: 0; }
@@ -183,7 +193,9 @@ import shopInterior from '../assets/shop-interior.jpg';
   .hero__logo {
     width: clamp(220px, 32vw, 360px);
     height: auto;
-    filter: drop-shadow(0 12px 40px rgba(201, 163, 92, 0.18));
+    filter:
+      drop-shadow(0 0 30px rgba(201, 163, 92, 0.35))
+      drop-shadow(0 8px 24px rgba(0, 0, 0, 0.6));
     animation: logo-fade 900ms var(--ease) both;
   }
   @keyframes logo-fade {
@@ -204,6 +216,7 @@ import shopInterior from '../assets/shop-interior.jpg';
     line-height: 1.02;
     letter-spacing: -0.025em;
     font-variation-settings: 'opsz' 144, 'SOFT' 50;
+    text-shadow: 0 2px 30px rgba(0, 0, 0, 0.55);
   }
   .hero__h1 .italic-accent {
     font-style: italic;
@@ -214,10 +227,12 @@ import shopInterior from '../assets/shop-interior.jpg';
 
   .hero__lede {
     max-width: 44ch;
-    color: var(--color-text-muted);
+    color: var(--color-text);
     font-size: var(--fs-lede);
     line-height: 1.55;
     margin-top: 0.25rem;
+    opacity: 0.88;
+    text-shadow: 0 1px 12px rgba(0, 0, 0, 0.5);
   }
 
   .hero__ctas {
