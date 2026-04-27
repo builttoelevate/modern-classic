@@ -1,0 +1,154 @@
+---
+// Barber roster sourced from the Square booking flow.
+// TODO: phase 2 — add headshots, individual bios, and per-barber Square deep links.
+const barbers = [
+  { name: 'Michael', initial: 'M', from: '$30' },
+  { name: 'Rick', initial: 'R', from: '$30' },
+  { name: 'Clayton', initial: 'C', from: '$30' },
+];
+const bookUrl = 'https://modern-classic.square.site';
+---
+<section id="barbers" class="barbers" aria-labelledby="barbers-heading">
+  <div class="container">
+    <header class="section-head section-head--center">
+      <span class="eyebrow">The Chairs</span>
+      <h2 id="barbers-heading">
+        Meet the <span class="italic-accent">barbers.</span>
+      </h2>
+      <p class="lede" style="text-align:center; margin-inline:auto;">
+        Three chairs, three styles, one standard. Pick your barber when you book.
+      </p>
+    </header>
+
+    <div class="barbers__grid">
+      {barbers.map((b) => (
+        <article class="barber">
+          <div class="barber__crest" aria-hidden="true">
+            <svg viewBox="0 0 120 120" class="barber__svg">
+              <defs>
+                <linearGradient id={`grad-${b.initial}`} x1="0" y1="0" x2="1" y2="1">
+                  <stop offset="0%"  stop-color="#e6c785"/>
+                  <stop offset="55%" stop-color="#c9a35c"/>
+                  <stop offset="100%" stop-color="#8a6e35"/>
+                </linearGradient>
+              </defs>
+              <circle cx="60" cy="60" r="56" stroke={`url(#grad-${b.initial})`} stroke-width="0.8" fill="none"/>
+              <circle cx="60" cy="60" r="50" stroke={`url(#grad-${b.initial})`} stroke-width="0.4" opacity="0.45" fill="none"/>
+              <text x="60" y="78" text-anchor="middle"
+                    font-family="Fraunces, Georgia, serif"
+                    font-size="68" font-weight="500"
+                    fill={`url(#grad-${b.initial})`}>{b.initial}</text>
+              <line x1="60" y1="6" x2="60" y2="14" stroke={`url(#grad-${b.initial})`} stroke-width="0.6"/>
+              <line x1="60" y1="106" x2="60" y2="114" stroke={`url(#grad-${b.initial})`} stroke-width="0.6"/>
+            </svg>
+          </div>
+          <h3 class="barber__name">{b.name}</h3>
+          <p class="barber__role">Barber</p>
+          <p class="barber__rate">Cuts from <span>{b.from}</span></p>
+          <a class="barber__cta" href={bookUrl} target="_blank" rel="noopener">
+            Book with {b.name} <span class="arrow" aria-hidden="true">→</span>
+          </a>
+        </article>
+      ))}
+    </div>
+  </div>
+</section>
+
+<style>
+  .barbers {
+    background:
+      linear-gradient(180deg, var(--color-bg-soft), var(--color-bg));
+  }
+  .barbers__grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1.25rem;
+  }
+  .barber {
+    position: relative;
+    display: grid;
+    justify-items: center;
+    text-align: center;
+    gap: 0.55rem;
+    padding: 2.25rem 1.5rem 1.75rem;
+    background: linear-gradient(180deg, var(--color-surface), var(--color-bg-soft));
+    border: 1px solid var(--color-border);
+    border-radius: 2px;
+    transition: border-color var(--dur) var(--ease),
+                transform var(--dur) var(--ease),
+                box-shadow var(--dur) var(--ease);
+  }
+  .barber::after {
+    /* hairline frame */
+    content: '';
+    position: absolute;
+    inset: 8px;
+    border: 1px solid var(--color-rule-soft);
+    pointer-events: none;
+  }
+  .barber:hover {
+    border-color: rgba(201,163,92,0.4);
+    transform: translateY(-2px);
+    box-shadow: 0 14px 40px -22px rgba(0,0,0,0.7);
+  }
+
+  .barber__crest {
+    width: clamp(110px, 14vw, 150px);
+    aspect-ratio: 1 / 1;
+    display: grid;
+    place-items: center;
+    margin-bottom: 0.5rem;
+  }
+  .barber__svg { width: 100%; height: 100%; }
+
+  .barber__name {
+    font-family: var(--font-display);
+    font-size: 1.65rem;
+    font-weight: 500;
+    letter-spacing: 0.005em;
+    line-height: 1.1;
+    font-variation-settings: 'opsz' 144;
+  }
+  .barber__role {
+    color: var(--color-gold);
+    font-size: 0.74rem;
+    letter-spacing: 0.32em;
+    text-transform: uppercase;
+  }
+  .barber__rate {
+    color: var(--color-text-muted);
+    font-size: 0.92rem;
+    margin-top: 0.1rem;
+  }
+  .barber__rate span {
+    font-family: var(--font-display);
+    color: var(--color-gold-light);
+    font-size: 1.05rem;
+    font-variation-settings: 'opsz' 100;
+    margin-left: 0.2rem;
+  }
+  .barber__cta {
+    margin-top: 0.6rem;
+    color: var(--color-gold);
+    font-size: 0.78rem;
+    font-weight: 600;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    border-bottom: 1px solid var(--color-rule);
+    padding-bottom: 3px;
+    transition: color var(--dur) var(--ease), border-color var(--dur) var(--ease);
+  }
+  .barber__cta:hover {
+    color: var(--color-gold-light);
+    border-bottom-color: var(--color-gold-light);
+  }
+  .barber__cta .arrow { transition: transform var(--dur) var(--ease); }
+  .barber__cta:hover .arrow { transform: translateX(3px); }
+
+  @media (max-width: 880px) {
+    .barbers__grid { grid-template-columns: 1fr; max-width: 28rem; margin-inline: auto; }
+  }
+</style>

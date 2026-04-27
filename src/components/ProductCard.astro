@@ -1,0 +1,124 @@
+---
+interface Props {
+  name: string;
+  collection: string;
+  size: string;
+  price: number;
+  imageUrl: string;
+  productUrl: string;
+}
+const { name, collection, size, price, imageUrl, productUrl } = Astro.props;
+const priceLabel = Number.isInteger(price) ? `$${price}` : `$${price.toFixed(2)}`;
+---
+<a class="prod" href={productUrl} target="_blank" rel="noopener">
+  <div class="prod__media">
+    <!-- TODO: phase 2 — download Shopify CDN image locally for Astro Image optimization -->
+    <img src={imageUrl} alt={`${name} — MDRN Classic`} loading="lazy" decoding="async" />
+    <span class="prod__chip">{collection}</span>
+  </div>
+  <div class="prod__body">
+    <h3 class="prod__name">{name}</h3>
+    <p class="prod__meta">
+      <span class="prod__size">{size}</span>
+      <span class="prod__price">{priceLabel}</span>
+    </p>
+    <span class="prod__cta">Shop <span class="arrow" aria-hidden="true">→</span></span>
+  </div>
+</a>
+
+<style>
+  .prod {
+    display: grid;
+    grid-template-rows: auto auto;
+    background: linear-gradient(180deg, var(--color-surface), var(--color-bg-soft));
+    border: 1px solid var(--color-border);
+    border-radius: 2px;
+    overflow: hidden;
+    color: var(--color-text);
+    transition: border-color var(--dur) var(--ease),
+                transform var(--dur) var(--ease),
+                box-shadow var(--dur) var(--ease);
+  }
+  .prod:hover {
+    border-color: rgba(201, 163, 92, 0.4);
+    transform: translateY(-3px);
+    box-shadow: 0 18px 50px -25px rgba(0,0,0,0.7);
+  }
+
+  .prod__media {
+    position: relative;
+    aspect-ratio: 1 / 1;
+    background:
+      radial-gradient(circle at 50% 40%, rgba(201,163,92,0.10), transparent 65%),
+      linear-gradient(180deg, #1a1612, #0e0c0a);
+    display: grid;
+    place-items: center;
+    overflow: hidden;
+  }
+  .prod__media img {
+    width: 80%;
+    height: 80%;
+    object-fit: contain;
+    transition: transform var(--dur-slow) var(--ease);
+    filter: drop-shadow(0 14px 28px rgba(0,0,0,0.5));
+  }
+  .prod:hover .prod__media img { transform: scale(1.04); }
+
+  .prod__chip {
+    position: absolute;
+    top: 0.85rem;
+    left: 0.85rem;
+    font-size: 0.65rem;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--color-gold);
+    background: rgba(11, 10, 8, 0.7);
+    border: 1px solid var(--color-rule);
+    padding: 0.3rem 0.55rem;
+    border-radius: 2px;
+    backdrop-filter: blur(4px);
+  }
+
+  .prod__body {
+    padding: 1.1rem 1.25rem 1.25rem;
+    display: grid;
+    gap: 0.45rem;
+  }
+  .prod__name {
+    font-family: var(--font-display);
+    font-size: 1.3rem;
+    font-weight: 500;
+    letter-spacing: -0.005em;
+    line-height: 1.2;
+    font-variation-settings: 'opsz' 100;
+  }
+  .prod__meta {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.5rem;
+  }
+  .prod__size {
+    font-size: 0.78rem;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--color-text-dim);
+  }
+  .prod__price {
+    font-family: var(--font-display);
+    font-size: 1.15rem;
+    color: var(--color-gold);
+  }
+  .prod__cta {
+    margin-top: 0.4rem;
+    font-size: 0.78rem;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--color-gold);
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+  }
+  .prod__cta .arrow { transition: transform var(--dur) var(--ease); }
+  .prod:hover .prod__cta .arrow { transform: translateX(3px); }
+</style>
