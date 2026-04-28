@@ -57,7 +57,7 @@ const bundle = {
 ---
 <section id="products" class="shop-ess" aria-labelledby="shop-ess-heading">
   <div class="container">
-    <header class="section-head section-head--center">
+    <header class="section-head section-head--center" data-reveal>
       <span class="eyebrow">The Take-Home Kit</span>
       <h2 id="shop-ess-heading">
         Shop the <span class="italic-accent">Essentials.</span>
@@ -70,11 +70,14 @@ const bundle = {
     </header>
 
     <div class="shop-ess__grid">
-      <!-- Featured: Savoir EDP -->
+      <!-- Featured: Savoir EDP. data-reveal-stagger* lines stagger the
+           4 product/bundle reveals 80ms apart in source order. -->
       <a class="shop-ess__card shop-ess__card--featured"
          href={featured.productUrl}
          target="_blank"
-         rel="noopener noreferrer">
+         rel="noopener noreferrer"
+         data-reveal
+         style="--reveal-delay: 0ms">
         <div class:list={['shop-ess__media', featured.whiteBg && 'shop-ess__media--white']}>
           <img src={featured.imageUrl} alt={featured.alt} loading="lazy" decoding="async" />
         </div>
@@ -93,11 +96,13 @@ const bundle = {
       </a>
 
       <!-- Two smaller cards stacked in the right column on desktop -->
-      {small.map((p) => (
+      {small.map((p, i) => (
         <a class="shop-ess__card shop-ess__card--small"
            href={p.productUrl}
            target="_blank"
-           rel="noopener noreferrer">
+           rel="noopener noreferrer"
+           data-reveal
+           style={`--reveal-delay: ${(i + 1) * 80}ms`}>
           <div class="shop-ess__media">
             <img src={p.imageUrl} alt={p.alt} loading="lazy" decoding="async" />
           </div>
@@ -120,7 +125,9 @@ const bundle = {
     <a class="shop-ess__bundle"
        href={bundle.productUrl}
        target="_blank"
-       rel="noopener noreferrer">
+       rel="noopener noreferrer"
+       data-reveal
+       style="--reveal-delay: 240ms">
       <div class="shop-ess__bundle-image">
         <img src={bundle.imageUrl} alt={bundle.alt} loading="lazy" decoding="async" />
       </div>

@@ -99,9 +99,50 @@ const localBusiness = {
     />
 
     <script type="application/ld+json" set:html={JSON.stringify(localBusiness)} />
+
+    <!-- Set the reveal-ready flag on <html> before body parses so reveal
+         targets paint at opacity 0 from the very first frame. Without JS,
+         this attribute never lands and content shows normally. -->
+    <script is:inline>
+      document.documentElement.setAttribute('data-reveal-ready', '');
+    </script>
   </head>
   <body>
     <a href="#main" class="skip-link">Skip to content</a>
     <slot />
+
+    <!-- Scroll-reveal observer. Fires once per target. If prefers-reduced-motion
+         is on, every reveal target is marked is-revealed immediately and the
+         observer is never created. -->
+    <script is:inline>
+      (function () {
+        var targets = document.querySelectorAll('[data-reveal]');
+        if (!targets.length) return;
+
+        var reduceMotion = window.matchMedia &&
+          window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+        if (reduceMotion || !('IntersectionObserver' in window)) {
+          targets.forEach(function (el) { el.classList.add('is-revealed'); });
+          return;
+        }
+
+        var io = new IntersectionObserver(function (entries) {
+          entries.forEach(function (entry) {
+            if (entry.isIntersecting) {
+              entry.target.classList.add('is-revealed');
+              io.unobserve(entry.target);
+            }
+          });
+        }, {
+          // Start the reveal a hair before the element fully enters the
+          // viewport — feels more responsive on long scrolls.
+          rootMargin: '0px 0px -8% 0px',
+          threshold: 0.05,
+        });
+
+        targets.forEach(function (el) { io.observe(el); });
+      })();
+    </script>
   </body>
 </html>

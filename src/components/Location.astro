@@ -4,7 +4,7 @@ const bookUrl = 'https://modern-classic.square.site';
 ---
 <section id="location" class="loc" aria-labelledby="loc-heading">
   <div class="container loc__grid">
-    <div class="loc__copy">
+    <div class="loc__copy" data-reveal>
       <span class="eyebrow">Find the Shop</span>
       <h2 id="loc-heading">
         819 Linden Ave, <span class="italic-accent">Zanesville.</span>
@@ -54,7 +54,7 @@ const bookUrl = 'https://modern-classic.square.site';
     </div>
 
     <!-- TODO: phase 2 — replace stylized map placeholder with real Google Maps embed -->
-    <div class="loc__map" aria-hidden="true">
+    <div class="loc__map" aria-hidden="true" data-reveal style="--reveal-delay: 80ms">
       <svg class="loc__map-svg" viewBox="0 0 400 460" xmlns="http://www.w3.org/2000/svg">
         <defs>
           <linearGradient id="map-bg" x1="0" y1="0" x2="0" y2="1">

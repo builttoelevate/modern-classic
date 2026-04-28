@@ -9,7 +9,7 @@ interface Props {
 }
 const { name, price, duration, audience, description, bookingUrl } = Astro.props;
 ---
-<article class="svc">
+<article class="svc" data-reveal>
   <header class="svc__head">
     <h3 class="svc__name">{name}</h3>
     <span class="svc__price" aria-label={`Price ${price}`}>{price}</span>

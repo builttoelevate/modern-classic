@@ -42,7 +42,7 @@ const pad = (n: number) => String(n).padStart(2, '0');
 ---
 <section class="reviews" aria-labelledby="reviews-heading">
   <div class="container">
-    <header class="section-head section-head--center">
+    <header class="section-head section-head--center" data-reveal>
       <span class="eyebrow">Real Reviews</span>
       <h2 id="reviews-heading">
         From the <span class="italic-accent">Chair.</span>
@@ -57,7 +57,9 @@ const pad = (n: number) => String(n).padStart(2, '0');
          role="region"
          aria-roledescription="carousel"
          aria-label="Customer reviews"
-         data-total={total}>
+         data-total={total}
+         data-reveal
+         style="--reveal-delay: 80ms">
 
       <button class="reviews__nav reviews__nav--prev"
               type="button"
