@@ -1,0 +1,91 @@
+---
+// Thin trust strip directly below the header. Wayfinding feel — not a banner.
+const items = [
+  { kind: 'rating', label: 'Google Rating', value: '5.0' },
+  { kind: 'plain',  label: '100+ Reviews' },
+  { kind: 'plain',  label: 'Barber-Owned' },
+  { kind: 'plain',  label: 'Walk-Ins Welcome' },
+];
+---
+<aside class="trust-strip" aria-label="Trust indicators">
+  <div class="container trust-strip__inner">
+    {items.map((item, i) => (
+      <>
+        {i > 0 && <span class="trust-strip__sep" aria-hidden="true">·</span>}
+        <span class="trust-strip__item">
+          {item.kind === 'rating' && (
+            <span class="trust-strip__star" aria-hidden="true">★</span>
+          )}
+          {item.kind === 'rating' && (
+            <strong class="trust-strip__value">{item.value}</strong>
+          )}
+          <span>{item.label}</span>
+        </span>
+      </>
+    ))}
+  </div>
+</aside>
+
+<style>
+  .trust-strip {
+    /* Slightly lighter than the page bg so it reads as its own band, plus
+       hairline gold rules top + bottom for a wayfinding feel. */
+    background: linear-gradient(180deg, var(--color-bg-soft), var(--color-surface));
+    border-top: 1px solid var(--color-rule-soft);
+    border-bottom: 1px solid var(--color-rule-soft);
+    color: var(--color-text-muted);
+  }
+  .trust-strip__inner {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 0.55rem 1rem;
+    padding-block: 0.7rem;
+    /* Eyebrow-style typography to match the rest of the site. */
+    font-family: var(--font-body);
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    line-height: 1;
+  }
+  .trust-strip__item {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4em;
+    color: var(--color-text-muted);
+    white-space: nowrap;
+  }
+  .trust-strip__star {
+    color: var(--color-gold);
+    font-size: 0.95em;
+    line-height: 0;
+    transform: translateY(-0.05em);
+  }
+  .trust-strip__value {
+    font-weight: 700;
+    color: var(--color-gold);
+    letter-spacing: 0.08em;
+  }
+  .trust-strip__sep {
+    color: var(--color-gold);
+    opacity: 0.55;
+    font-size: 1.1em;
+    line-height: 0;
+  }
+
+  /* Mobile: keep on one line if the viewport allows; otherwise the
+     flex-wrap above lets them break naturally into two rows of two. */
+  @media (max-width: 520px) {
+    .trust-strip__inner {
+      gap: 0.5rem 0.85rem;
+      letter-spacing: 0.18em;
+      font-size: 0.68rem;
+      padding-block: 0.6rem;
+    }
+    /* Hide every other separator so when the items wrap into 2x2 the
+       leading separator doesn't sit awkwardly at the start of a row. */
+    .trust-strip__sep:nth-of-type(2n) { display: none; }
+  }
+</style>
