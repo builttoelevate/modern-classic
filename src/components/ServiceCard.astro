@@ -70,10 +70,17 @@ const { name, price, duration, audience, description, bookingUrl } = Astro.props
     font-variation-settings: 'opsz' 144, 'SOFT' 40;
   }
   .svc__price {
-    font-family: var(--font-display);
-    font-size: 1.25rem;
-    color: var(--color-gold);
-    font-variation-settings: 'opsz' 144;
+    /* Cleaner sans rather than the decorative display serif used for
+       the service name — the numerals (and the dollar sign) need to
+       scan instantly at small size. Same family, weight, and colour
+       across the whole price string ($30, $30–45, etc). */
+    font-family: var(--font-body);
+    font-size: 1.05rem;
+    font-weight: 600;
+    letter-spacing: 0.005em;
+    /* One step brighter than --color-gold so the small numerals hold
+       contrast against the dark card. Other gold elements unchanged. */
+    color: var(--color-gold-light);
     white-space: nowrap;
   }
   .svc__meta {

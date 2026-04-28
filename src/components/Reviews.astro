@@ -240,6 +240,10 @@ const pad = (n: number) => String(n).padStart(2, '0');
     display: grid;
     gap: 1.1rem;
     justify-items: center;
+    /* All slides occupy the same grid cell at the height of the tallest
+       slide. Shorter slides get their content centred vertically so
+       they don't sit at the top with empty space below. */
+    align-content: center;
 
     opacity: 0;
     visibility: hidden;

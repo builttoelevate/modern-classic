@@ -89,7 +89,9 @@ const items = [
       display: grid;
       grid-template-columns: 1fr 1fr;
       column-gap: 1rem;
-      row-gap: 0.6rem;
+      /* Tighter than before (0.6rem) — the two rows now sit close enough
+         to read as one unified block rather than two separated bands. */
+      row-gap: 0.35rem;
       padding-block: 0.8rem;
       letter-spacing: 0.18em;
       font-size: 0.7rem;
