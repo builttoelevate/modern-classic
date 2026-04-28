@@ -342,11 +342,17 @@ const bundle = {
     gap: 0.75rem;
     margin-top: 0.5rem;
   }
+  /* Cleaner sans for the price string ($65, $23, $22). The decorative
+     display serif lost contrast at small sizes — the dollar sign in
+     particular almost vanished. Same treatment as the service-card
+     price for cross-section consistency. */
   .shop-ess__price {
-    font-family: var(--font-display);
-    font-size: 1.25rem;
-    color: var(--color-gold);
-    font-variation-settings: 'opsz' 100;
+    font-family: var(--font-body);
+    font-size: 1.1rem;
+    font-weight: 600;
+    letter-spacing: 0.005em;
+    color: var(--color-gold-light);
+    white-space: nowrap;
   }
   .shop-ess__cta {
     font-size: 0.78rem;
@@ -465,16 +471,25 @@ const bundle = {
     margin: 0;
   }
   .shop-ess__bundle-price-now {
-    font-family: var(--font-display);
-    font-size: 1.6rem;
+    /* Same clean sans as the small product prices, just larger and
+       heavier so the bundle's headline number scans as the offer. */
+    font-family: var(--font-body);
+    font-size: 1.55rem;
+    font-weight: 700;
+    letter-spacing: 0.005em;
     color: var(--color-gold-light);
-    font-variation-settings: 'opsz' 144;
     line-height: 1;
   }
   .shop-ess__bundle-price-was {
+    /* Crossed-out original price — same body sans so it reads as a
+       paired number to the now price, not a different language. */
+    font-family: var(--font-body);
+    font-size: 1rem;
+    font-weight: 500;
     color: var(--color-text-dim);
-    font-size: 0.95rem;
     text-decoration: line-through;
+    text-decoration-thickness: 1.5px;
+    text-decoration-color: rgba(176, 166, 149, 0.55);
   }
   .shop-ess__bundle .btn {
     /* Inline anchor inside the bundle anchor — render as a button shape
