@@ -8,8 +8,9 @@ const SHOP_BASE = 'https://mdrnclassic.com';
 
 const featured = {
   name: 'Savoir EDP',
+  category: 'Cologne',
   tagline: 'Inspired by Creed Aventus',
-  description: 'Blackcurrant, bergamot, and birch in a bold, confident scent made to leave a lasting impression.',
+  description: 'An eau de parfum with notes of blackcurrant, bergamot, and birch. Bold, confident, made to leave a lasting impression.',
   price: '$65',
   imageUrl: 'https://mdrnclassic.com/cdn/shop/files/50mlcologneartemis.jpg?v=1764266090&width=1445',
   productUrl: `${SHOP_BASE}/products/savoir-edp-cologne`,
@@ -22,7 +23,8 @@ const featured = {
 const small = [
   {
     name: 'Texture Powder',
-    description: 'Instant volume and touchable texture with a clean matte finish. No grease. No shine.',
+    category: 'Hair Styling',
+    description: 'A dry styling powder for instant volume and touchable texture with a clean matte finish. No grease. No shine.',
     price: '$23',
     imageUrl: 'https://mdrnclassic.com/cdn/shop/files/1_f005e3a1-0fcc-4b12-9891-5910dc26700d.png?v=1707897064&width=1445',
     productUrl: `${SHOP_BASE}/products/mdrn%E2%84%A2-classic-20g-texture-powder`,
@@ -31,6 +33,7 @@ const small = [
   },
   {
     name: 'Beard Oil',
+    category: 'Beard Care',
     description: 'Softens the beard, hydrates the skin underneath, and keeps longer growth looking clean.',
     price: '$22',
     imageUrl: 'https://mdrnclassic.com/cdn/shop/files/3_b3030692-0a65-460d-87db-367bab5ee98b.png?v=1707897049&width=1445',
@@ -76,6 +79,7 @@ const bundle = {
           <img src={featured.imageUrl} alt={featured.alt} loading="lazy" decoding="async" />
         </div>
         <div class="shop-ess__body">
+          <p class="shop-ess__category">{featured.category}</p>
           <p class="shop-ess__tagline">{featured.tagline}</p>
           <h3 class="shop-ess__name shop-ess__name--lg">{featured.name}</h3>
           <p class="shop-ess__desc">{featured.description}</p>
@@ -98,6 +102,7 @@ const bundle = {
             <img src={p.imageUrl} alt={p.alt} loading="lazy" decoding="async" />
           </div>
           <div class="shop-ess__body">
+            <p class="shop-ess__category">{p.category}</p>
             <h3 class="shop-ess__name">{p.name}</h3>
             <p class="shop-ess__desc">{p.description}</p>
             <div class="shop-ess__foot">
@@ -279,12 +284,29 @@ const bundle = {
     align-content: start;
     gap: 0.55rem;
   }
+  /* Category tag — librarian-classification feel.
+     Smaller, more tracked-out, and noticeably more muted than the
+     existing eyebrow (--color-gold-deep at #8a6e35 vs --color-gold
+     at #c9a35c) so it can sit ABOVE the eyebrow on Savoir without
+     competing with it, and stand alone on the small cards. */
+  .shop-ess__category {
+    font-family: var(--font-body);
+    font-size: 0.62rem;
+    font-weight: 600;
+    letter-spacing: 0.3em;
+    text-transform: uppercase;
+    color: var(--color-gold-deep);
+    margin: 0;
+  }
   .shop-ess__tagline {
     font-size: 0.72rem;
     letter-spacing: 0.22em;
     text-transform: uppercase;
     color: var(--color-gold);
     margin: 0;
+    /* When stacked under the category tag, tighten the gap so the two
+       eyebrow-style lines read as a unit rather than two separate stops. */
+    margin-top: -0.25rem;
   }
   .shop-ess__name {
     font-family: var(--font-display);
