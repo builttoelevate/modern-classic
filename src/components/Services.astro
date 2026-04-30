@@ -2,9 +2,12 @@
 import { getCollection } from 'astro:content';
 import ServiceCard from './ServiceCard.astro';
 
+const base = import.meta.env.BASE_URL.replace(/\/$/, '');
+// Home page shows the 3 headline services; the rest live on /services.
 const services = (await getCollection('services'))
   .filter((s) => s.data.featured)
-  .sort((a, b) => a.data.order - b.data.order);
+  .sort((a, b) => a.data.order - b.data.order)
+  .slice(0, 3);
 ---
 <section id="services" class="services" aria-labelledby="services-heading">
   <div class="container">
@@ -33,9 +36,8 @@ const services = (await getCollection('services'))
     </div>
 
     <div class="services__foot">
-      <a class="link-gold" href="https://modern-classic.square.site"
-         target="_blank" rel="noopener">
-        View all services &amp; book →
+      <a class="link-gold" href={`${base}/services`}>
+        See full service menu &amp; pricing →
       </a>
     </div>
   </div>

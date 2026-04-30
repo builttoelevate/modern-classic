@@ -6,13 +6,19 @@ interface Props {
   description?: string;
   ogImage?: string;
   canonical?: string;
+  /** Set true on the home + visit pages to emit the LocalBusiness JSON-LD. */
+  includeBusinessSchema?: boolean;
+  /** Optional extra JSON-LD object (e.g. ItemList for /services, /shop). */
+  extraSchema?: unknown;
 }
 
 const {
   title = 'Modern Classic Barbershop & Shave Parlor — Zanesville, OH',
-  description = 'Modern Classic is a Zanesville barbershop and grooming brand. Premium haircuts, beard work, and straight razor shaves — plus MDRN Classic grooming products built by barbers.',
+  description = "Modern Classic is a Zanesville barbershop and grooming brand. Premium men's haircuts, fades, beard trims, and straight razor shaves — plus MDRN Classic grooming products built by barbers.",
   ogImage = '/og-image.png',
   canonical,
+  includeBusinessSchema = false,
+  extraSchema,
 } = Astro.props;
 
 const siteUrl = 'https://mdrnclassic.com';
@@ -38,18 +44,24 @@ const localBusiness = {
     postalCode: '43701',
     addressCountry: 'US',
   },
+  geo: {
+    '@type': 'GeoCoordinates',
+    latitude: 39.9534,
+    longitude: -82.0177,
+  },
   email: 'modernclassicbarbershop@protonmail.com',
   // TODO: replace with real opening hours when owner confirms
   openingHoursSpecification: [
     {
       '@type': 'OpeningHoursSpecification',
-      dayOfWeek: ['Tuesday','Wednesday','Thursday','Friday','Saturday'],
+      dayOfWeek: ['Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'],
       opens: '09:00',
+      closes: '18:00',
     },
   ],
   sameAs: [
-    'https://www.facebook.com/profile.php?id=61558232180660',
-    'https://www.instagram.com/mdrnclassic',
+    'https://www.facebook.com/profile.php?id=100090856771819',
+    'https://www.instagram.com/modernclassicbarbershop/',
   ],
   hasOfferCatalog: {
     '@type': 'OfferCatalog',
@@ -98,7 +110,12 @@ const localBusiness = {
       href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght,SOFT@0,9..144,300..700,30..100;1,9..144,300..700,30..100&family=Manrope:wght@400;500;600;700&display=swap"
     />
 
-    <script type="application/ld+json" set:html={JSON.stringify(localBusiness)} />
+    {includeBusinessSchema && (
+      <script type="application/ld+json" set:html={JSON.stringify(localBusiness)} />
+    )}
+    {extraSchema && (
+      <script type="application/ld+json" set:html={JSON.stringify(extraSchema)} />
+    )}
 
     <!-- Set the reveal-ready flag on <html> before body parses so reveal
          targets paint at opacity 0 from the very first frame. Without JS,

@@ -1,0 +1,371 @@
+---
+import { getCollection } from 'astro:content';
+import BaseLayout from '../layouts/BaseLayout.astro';
+import Header from '../components/Header.astro';
+import Footer from '../components/Footer.astro';
+import MobileBookCTA from '../components/MobileBookCTA.astro';
+import ServiceCard from '../components/ServiceCard.astro';
+
+const base = import.meta.env.BASE_URL.replace(/\/$/, '');
+const bookUrl = 'https://modern-classic.square.site';
+
+const all = (await getCollection('services'))
+  .sort((a, b) => a.data.order - b.data.order)
+  .map((s) => s.data);
+
+// Group services by category for browseability. The slug list is the source
+// of truth — anything not listed falls into "Style & Detailing" so a future
+// addition won't silently disappear from the page.
+const haircutSlugs = new Set(['mens-haircut', 'kids-haircut', 'haircut-design', 'new-customer']);
+const beardSlugs   = new Set(['haircut-beard', 'beard-trim-edge']);
+const shaveSlugs   = new Set(['straight-razor-shave']);
+
+const haircuts = all.filter((s) => haircutSlugs.has(s.slug));
+const beard    = all.filter((s) => beardSlugs.has(s.slug));
+const shave    = all.filter((s) => shaveSlugs.has(s.slug));
+const style    = all.filter((s) => !haircutSlugs.has(s.slug) && !beardSlugs.has(s.slug) && !shaveSlugs.has(s.slug));
+
+const groups = [
+  {
+    id: 'haircuts',
+    eyebrow: "Men's & Kids' Haircuts",
+    title: 'Haircuts in Zanesville,',
+    accent: 'tailored sharp.',
+    intro: "Skin fades, taper fades, scissor cuts, modern textures, and timeless classics — every men's haircut at Modern Classic is consulted, cut, and finished with detail. We cut for men, young men, and kids ten and under at our shop on Linden Avenue.",
+    items: haircuts,
+  },
+  {
+    id: 'beard',
+    eyebrow: 'Beard Work',
+    title: 'Beard trims &',
+    accent: 'shape-ups.',
+    intro: 'Whether you want a clean weekly edge or a full sculpt for a heavier beard, we shape, line, and detail every beard with the same care we put into a haircut. Pair with a fresh cut to walk out completely fresh.',
+    items: beard,
+  },
+  {
+    id: 'shave',
+    eyebrow: 'Hot Towel Shave',
+    title: 'Traditional straight',
+    accent: 'razor shaves.',
+    intro: 'Hot towels, rich lather, and a single-blade straight razor — a real, old-school barbershop shave. Old-school technique, modern care, finished with a balm to keep the skin calm.',
+    items: shave,
+  },
+  {
+    id: 'style',
+    eyebrow: 'Finishing & Touch-ups',
+    title: 'Style &',
+    accent: 'detailing.',
+    intro: 'Quick services for between-cut maintenance — the in-and-out wash and style, plus consultation appointments for new clients who want a little extra time in the chair.',
+    items: style,
+  },
+];
+
+const itemListSchema = {
+  '@context': 'https://schema.org',
+  '@type': 'ItemList',
+  itemListElement: all.map((s, i) => ({
+    '@type': 'ListItem',
+    position: i + 1,
+    item: {
+      '@type': 'Service',
+      name: s.name,
+      description: s.description,
+      offers: {
+        '@type': 'Offer',
+        price: s.price.replace(/[^0-9.\-]/g, '').split('-')[0] || '0',
+        priceCurrency: 'USD',
+        url: bookUrl,
+      },
+      provider: {
+        '@type': 'HairSalon',
+        name: 'Modern Classic Barbershop & Shave Parlor',
+      },
+    },
+  })),
+};
+---
+<BaseLayout
+  title="Services & Pricing — Modern Classic Barbershop, Zanesville OH"
+  description="Full barbershop service menu and pricing in Zanesville, Ohio. Men's haircuts, fade haircuts, beard trims, kids cuts, and traditional straight razor shaves at Modern Classic on Linden Avenue."
+  extraSchema={itemListSchema}
+>
+  <Header />
+  <main id="main">
+    <section class="svc-hero" aria-labelledby="svc-hero-heading">
+      <div class="svc-hero__ornaments" aria-hidden="true">
+        <div class="svc-hero__glow"></div>
+      </div>
+      <div class="container svc-hero__inner">
+        <p class="eyebrow">Services & Pricing</p>
+        <h1 id="svc-hero-heading" class="svc-hero__h1">
+          <span class="svc-hero__line">A barbershop in Zanesville,</span>
+          <span class="svc-hero__line italic-accent">built around the chair.</span>
+        </h1>
+        <p class="lede">
+          Modern Classic is a full-service barbershop and shave parlor at 819
+          Linden Avenue in Zanesville, Ohio. Below is the full menu — book any
+          service online with the chair you want.
+        </p>
+        <div class="svc-hero__ctas">
+          <a class="btn" href={bookUrl} target="_blank" rel="noopener">
+            Book a Visit <span class="arrow" aria-hidden="true">→</span>
+          </a>
+          <a class="btn btn--ghost" href={`${base}/barbers`}>
+            Meet the Barbers
+          </a>
+        </div>
+        <ul class="svc-hero__jump" aria-label="Jump to a service group">
+          <li><a href="#haircuts">Haircuts</a></li>
+          <li aria-hidden="true">·</li>
+          <li><a href="#beard">Beard</a></li>
+          <li aria-hidden="true">·</li>
+          <li><a href="#shave">Shave</a></li>
+          <li aria-hidden="true">·</li>
+          <li><a href="#style">Style & Detailing</a></li>
+        </ul>
+      </div>
+    </section>
+
+    {groups.map((group, i) => group.items.length > 0 && (
+      <section id={group.id} class="svc-group" aria-labelledby={`svc-group-${group.id}-heading`}>
+        <div class="container">
+          <header class="section-head" data-reveal>
+            <span class="eyebrow">{group.eyebrow}</span>
+            <h2 id={`svc-group-${group.id}-heading`}>
+              {group.title} <span class="italic-accent">{group.accent}</span>
+            </h2>
+            <p class="lede">{group.intro}</p>
+          </header>
+          <div class="svc-group__grid">
+            {group.items.map((s) => (
+              <ServiceCard
+                name={s.name}
+                price={s.price}
+                duration={s.duration}
+                audience={s.audience}
+                description={s.description}
+                bookingUrl={s.bookingUrl}
+              />
+            ))}
+          </div>
+        </div>
+      </section>
+    ))}
+
+    <section class="svc-seo" aria-labelledby="svc-seo-heading">
+      <div class="container svc-seo__grid">
+        <div class="svc-seo__copy" data-reveal>
+          <span class="eyebrow">Why Modern Classic</span>
+          <h2 id="svc-seo-heading">
+            The barbershop Zanesville <span class="italic-accent">comes back to.</span>
+          </h2>
+          <p>
+            Looking for a <strong>barbershop in Zanesville, OH</strong> that can do a
+            real skin fade, a clean line-up, or a traditional hot-towel shave?
+            That's what we do. Our barbers — Michael, Rick, and Clayton — have
+            built a five-star reputation across Muskingum County for cuts that
+            still look right two weeks later.
+          </p>
+          <p>
+            Every appointment starts with a quick consultation. We ask the
+            questions that matter — how you wash, how you style, how much time
+            you want to spend in front of the mirror — and we cut to that. You
+            walk out with a sharp finish and a take-home recommendation, so the
+            <em> style stays with you</em> long after the cut.
+          </p>
+          <ul class="svc-seo__pills" aria-label="What we specialize in">
+            <li>Fade haircuts</li>
+            <li>Skin fades & tapers</li>
+            <li>Scissor cuts</li>
+            <li>Beard trims & line-ups</li>
+            <li>Hot towel shaves</li>
+            <li>Kids' haircuts</li>
+            <li>Hair design & art</li>
+          </ul>
+        </div>
+        <aside class="svc-seo__card" data-reveal style="--reveal-delay: 80ms">
+          <h3 class="svc-seo__card-title">First time in the chair?</h3>
+          <p>
+            New clients book the <strong>New Customer</strong> service — an extra
+            half-hour buys you a longer consult and a calmer first appointment.
+            Bring a reference photo if you have one.
+          </p>
+          <p class="svc-seo__card-meta">
+            <span>From $30</span>
+            <span aria-hidden="true">·</span>
+            <span>1 hour</span>
+          </p>
+          <a class="btn btn--small" href={bookUrl} target="_blank" rel="noopener">
+            Book First Visit <span class="arrow" aria-hidden="true">→</span>
+          </a>
+        </aside>
+      </div>
+    </section>
+  </main>
+  <Footer />
+  <MobileBookCTA />
+</BaseLayout>
+
+<style>
+  /* ---------- Page hero ---------- */
+  .svc-hero {
+    position: relative;
+    padding-block: clamp(3rem, 6vw, 5rem) clamp(2rem, 4vw, 3rem);
+    isolation: isolate;
+    overflow: hidden;
+  }
+  .svc-hero__ornaments {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    z-index: -1;
+  }
+  .svc-hero__glow {
+    position: absolute;
+    top: -10%;
+    left: 50%;
+    transform: translateX(-50%);
+    width: min(880px, 90%);
+    height: 320px;
+    background: radial-gradient(ellipse at center,
+      rgba(201, 163, 92, 0.14), transparent 65%);
+    filter: blur(28px);
+  }
+  .svc-hero__inner {
+    display: grid;
+    gap: 1.1rem;
+    text-align: center;
+    justify-items: center;
+  }
+  .svc-hero__h1 {
+    display: grid;
+    gap: 0.05em;
+    margin-top: 0.25rem;
+  }
+  .svc-hero__line {
+    display: block;
+    font-family: var(--font-display);
+    font-size: var(--fs-h1);
+    font-weight: 400;
+    line-height: 1.02;
+    letter-spacing: -0.025em;
+    font-variation-settings: 'opsz' 144, 'SOFT' 50;
+  }
+  .svc-hero__h1 .italic-accent {
+    font-style: italic;
+    font-weight: 300;
+  }
+  .svc-hero__ctas {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 0.75rem;
+    margin-top: 0.5rem;
+  }
+  .svc-hero__jump {
+    list-style: none;
+    padding: 0;
+    margin-top: 1.25rem;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 0.5rem 0.85rem;
+    color: var(--color-text-dim);
+    font-size: 0.78rem;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+  }
+  .svc-hero__jump a {
+    color: var(--color-gold);
+    border-bottom: 1px solid var(--color-rule);
+    padding-bottom: 2px;
+  }
+  .svc-hero__jump a:hover { color: var(--color-gold-light); border-bottom-color: var(--color-gold-light); }
+  .svc-hero__jump li[aria-hidden] { color: var(--color-gold); opacity: 0.55; }
+
+  /* ---------- Service group sections ---------- */
+  .svc-group {
+    background: var(--color-bg);
+    padding-block: clamp(3rem, 6vw, 5.5rem);
+    border-top: 1px solid var(--color-border-soft);
+  }
+  .svc-group:nth-of-type(odd) {
+    background: linear-gradient(180deg, var(--color-bg), var(--color-bg-soft));
+  }
+  .svc-group__grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 1.25rem;
+  }
+  @media (max-width: 720px) {
+    .svc-group__grid { grid-template-columns: 1fr; }
+  }
+
+  /* ---------- SEO copy block ---------- */
+  .svc-seo {
+    background:
+      radial-gradient(900px 360px at 50% 0%, rgba(201, 163, 92, 0.07), transparent 70%),
+      var(--color-bg);
+    border-top: 1px solid var(--color-border-soft);
+  }
+  .svc-seo__grid {
+    display: grid;
+    grid-template-columns: 1.4fr 1fr;
+    gap: clamp(2rem, 5vw, 4rem);
+    align-items: start;
+  }
+  .svc-seo__copy { display: grid; gap: 1.1rem; max-width: 40rem; }
+  .svc-seo__copy p { color: var(--color-text-muted); font-size: 1.04rem; line-height: 1.7; }
+  .svc-seo__copy strong { color: var(--color-text); font-weight: 600; }
+  .svc-seo__copy em { color: var(--color-gold-light); font-style: italic; }
+  .svc-seo__pills {
+    list-style: none;
+    padding: 0;
+    margin: 0.75rem 0 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+  .svc-seo__pills li {
+    padding: 0.4em 0.85em;
+    border: 1px solid var(--color-rule);
+    border-radius: 999px;
+    color: var(--color-gold);
+    font-size: 0.82rem;
+    letter-spacing: 0.04em;
+  }
+
+  .svc-seo__card {
+    position: sticky;
+    top: calc(var(--header-h) + 1.5rem);
+    display: grid;
+    gap: 0.85rem;
+    padding: clamp(1.5rem, 2.5vw, 2rem);
+    background: linear-gradient(180deg, var(--color-surface-2), var(--color-bg));
+    border: 1px solid var(--color-gold-deep);
+    border-radius: 2px;
+  }
+  .svc-seo__card-title {
+    font-family: var(--font-display);
+    font-size: 1.55rem;
+    line-height: 1.15;
+    margin: 0;
+  }
+  .svc-seo__card p { color: var(--color-text-muted); font-size: 0.98rem; margin: 0; }
+  .svc-seo__card strong { color: var(--color-gold-light); }
+  .svc-seo__card-meta {
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    color: var(--color-gold);
+    font-size: 0.78rem;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+  }
+  .svc-seo__card-meta span[aria-hidden] { opacity: 0.6; }
+
+  @media (max-width: 860px) {
+    .svc-seo__grid { grid-template-columns: 1fr; }
+    .svc-seo__card { position: static; }
+  }
+</style>

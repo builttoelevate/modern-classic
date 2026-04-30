@@ -1,0 +1,190 @@
+---
+const base = import.meta.env.BASE_URL.replace(/\/$/, '');
+const bookUrl = 'https://modern-classic.square.site';
+
+const faqs = [
+  {
+    q: 'Do I need an appointment, or can I walk in?',
+    a: 'We take walk-ins when there is an open chair, but the safest way to lock in a time with the barber you want is to book online. Online bookings always take priority.',
+  },
+  {
+    q: 'How do I book an appointment?',
+    a: 'Book through our Square page in under a minute — pick your service, your barber, and a time. The Book a Visit button at the top of any page takes you straight there.',
+  },
+  {
+    q: 'Where is the shop located?',
+    a: '819 Linden Avenue, Zanesville, Ohio 43701. Easy street parking out front and just off Maple Avenue. See the Visit page for hours and a map.',
+  },
+  {
+    q: 'How much does a haircut cost?',
+    a: "Men's haircuts start at $30, kids' haircuts (10 and under) at $25, beard trims at $25, and a full Haircut & Beard service at $45. The full menu and pricing live on the Services page.",
+  },
+  {
+    q: 'Do you cut kids’ hair?',
+    a: "Yes — we cut kids ten and under in a calm, family-friendly atmosphere. Clayton is a popular pick for kids' chairs.",
+  },
+  {
+    q: 'Do you offer straight razor shaves?',
+    a: 'We do. Our $30 hot-towel straight razor shave is a traditional, single-blade barbershop shave finished with a balm. It’s a 30-minute service and bookable online.',
+  },
+  {
+    q: 'Where can I buy MDRN Classic products?',
+    a: 'Our grooming products are stocked in the shop and on mdrnclassic.com. Free shipping on orders over $60. The Shop page on this site lists every product with details and links.',
+  },
+  {
+    q: 'Are you accepting new clients?',
+    a: 'Always. New clients should book the New Customer service — it includes extra consultation time so we can dial in the right cut on the first visit.',
+  },
+];
+
+const faqSchema = {
+  '@context': 'https://schema.org',
+  '@type': 'FAQPage',
+  mainEntity: faqs.map((f) => ({
+    '@type': 'Question',
+    name: f.q,
+    acceptedAnswer: { '@type': 'Answer', text: f.a },
+  })),
+};
+---
+<section id="faq" class="faq" aria-labelledby="faq-heading">
+  <div class="container faq__inner">
+    <header class="section-head" data-reveal>
+      <span class="eyebrow">Common Questions</span>
+      <h2 id="faq-heading">
+        Things people ask <span class="italic-accent">first.</span>
+      </h2>
+      <p class="lede">
+        New to the chair or just wondering about a service? Quick answers to
+        the questions we get most.
+      </p>
+    </header>
+
+    <div class="faq__list" data-reveal style="--reveal-delay: 80ms">
+      {faqs.map((f, i) => (
+        <details class="faq__item" open={i === 0}>
+          <summary class="faq__summary">
+            <span class="faq__q">{f.q}</span>
+            <span class="faq__icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none"
+                   stroke="currentColor" stroke-width="1.5"
+                   stroke-linecap="round" stroke-linejoin="round">
+                <path d="M6 9 L12 15 L18 9"/>
+              </svg>
+            </span>
+          </summary>
+          <div class="faq__answer">
+            <p>{f.a}</p>
+          </div>
+        </details>
+      ))}
+    </div>
+
+    <div class="faq__foot">
+      <p class="faq__foot-text">Still have a question?</p>
+      <div class="faq__foot-ctas">
+        <a class="btn btn--small" href={bookUrl} target="_blank" rel="noopener">
+          Book a Visit <span class="arrow" aria-hidden="true">→</span>
+        </a>
+        <a class="btn btn--small btn--ghost" href={`${base}/visit#contact`}>
+          Contact the Shop
+        </a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<script type="application/ld+json" set:html={JSON.stringify(faqSchema)} />
+
+<style>
+  .faq {
+    background: linear-gradient(180deg, var(--color-bg-soft), var(--color-bg));
+  }
+  .faq__inner { display: grid; gap: 2rem; }
+  .faq__list {
+    display: grid;
+    gap: 0.5rem;
+    max-width: 56rem;
+    width: 100%;
+    margin-inline: auto;
+  }
+
+  .faq__item {
+    border: 1px solid var(--color-border);
+    border-radius: 2px;
+    background: linear-gradient(180deg, var(--color-surface), var(--color-bg-soft));
+    transition: border-color var(--dur) var(--ease);
+  }
+  .faq__item[open] {
+    border-color: rgba(201, 163, 92, 0.4);
+  }
+  .faq__item:hover { border-color: rgba(201, 163, 92, 0.3); }
+
+  .faq__summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 1.05rem 1.25rem;
+    cursor: pointer;
+    list-style: none;
+    user-select: none;
+  }
+  .faq__summary::-webkit-details-marker { display: none; }
+  .faq__q {
+    font-family: var(--font-display);
+    font-size: 1.1rem;
+    font-weight: 500;
+    line-height: 1.3;
+    color: var(--color-text);
+    letter-spacing: -0.005em;
+    font-variation-settings: 'opsz' 100, 'SOFT' 50;
+  }
+  .faq__icon {
+    display: grid;
+    place-items: center;
+    width: 30px;
+    height: 30px;
+    color: var(--color-gold);
+    border: 1px solid var(--color-rule);
+    border-radius: 50%;
+    flex-shrink: 0;
+    transition: transform var(--dur) var(--ease),
+                border-color var(--dur) var(--ease),
+                color var(--dur) var(--ease);
+  }
+  .faq__item[open] .faq__icon {
+    transform: rotate(180deg);
+    border-color: var(--color-gold);
+    color: var(--color-gold-light);
+  }
+
+  .faq__answer {
+    padding: 0 1.25rem 1.15rem;
+  }
+  .faq__answer p {
+    color: var(--color-text-muted);
+    font-size: 0.98rem;
+    line-height: 1.65;
+    max-width: 60ch;
+    margin: 0;
+  }
+
+  .faq__foot {
+    display: grid;
+    justify-items: center;
+    gap: 0.85rem;
+    margin-top: 1rem;
+  }
+  .faq__foot-text {
+    color: var(--color-text-muted);
+    font-size: 0.95rem;
+    margin: 0;
+  }
+  .faq__foot-ctas {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.6rem;
+    justify-content: center;
+  }
+</style>

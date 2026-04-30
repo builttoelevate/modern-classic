@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://mdrnclassic.com/sitemap-index.xml
+Sitemap: https://mdrnclassic.com/sitemap.xml

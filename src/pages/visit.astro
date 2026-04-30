@@ -1,0 +1,512 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import Header from '../components/Header.astro';
+import Footer from '../components/Footer.astro';
+import MobileBookCTA from '../components/MobileBookCTA.astro';
+
+const bookUrl = 'https://modern-classic.square.site';
+const directionsUrl = 'https://www.google.com/maps/search/?api=1&query=819+Linden+Avenue+Zanesville+OH+43701';
+const mapEmbed = 'https://www.google.com/maps?q=819+Linden+Avenue,+Zanesville,+OH+43701&output=embed';
+const mailto = 'mailto:modernclassicbarbershop@protonmail.com';
+
+// TODO: Replace with the real shop phone number once provided. The "Phone"
+// row falls back to "Coming soon" gracefully when this is null.
+const phone: string | null = null;
+const phoneTel = phone ? `tel:${phone.replace(/[^0-9+]/g, '')}` : null;
+
+// TODO: Confirm full weekly hours with the owner. Below is a reasonable
+// default sourced from the shop's existing booking flow (Tue–Sat, opening
+// 9 AM). Mon + Sun marked closed pending confirmation.
+const hours = [
+  { day: 'Sunday',    open: 'Closed' },
+  { day: 'Monday',    open: 'Closed' },
+  { day: 'Tuesday',   open: '9:00 AM – 6:00 PM' },
+  { day: 'Wednesday', open: '9:00 AM – 6:00 PM' },
+  { day: 'Thursday',  open: '9:00 AM – 6:00 PM' },
+  { day: 'Friday',    open: '9:00 AM – 6:00 PM' },
+  { day: 'Saturday',  open: '9:00 AM – 4:00 PM' },
+];
+const todayIndex = new Date().getDay();
+---
+<BaseLayout
+  title="Visit — Modern Classic Barbershop, 819 Linden Ave, Zanesville OH"
+  description="Visit Modern Classic Barbershop & Shave Parlor at 819 Linden Avenue, Zanesville, Ohio. Hours, map, parking, contact info, and online booking."
+  includeBusinessSchema={true}
+>
+  <Header />
+  <main id="main">
+    <section class="vst-hero" aria-labelledby="vst-hero-heading">
+      <div class="vst-hero__ornaments" aria-hidden="true">
+        <div class="vst-hero__glow"></div>
+      </div>
+      <div class="container vst-hero__inner">
+        <p class="eyebrow">Find the Shop</p>
+        <h1 id="vst-hero-heading" class="vst-hero__h1">
+          <span class="vst-hero__line">819 Linden Avenue,</span>
+          <span class="vst-hero__line italic-accent">Zanesville.</span>
+        </h1>
+        <p class="lede">
+          Tucked into Zanesville's near-east side, just off Maple Avenue. Easy
+          street parking, walk-ins welcome when chairs are open.
+        </p>
+        <div class="vst-hero__ctas">
+          <a class="btn" href={bookUrl} target="_blank" rel="noopener">
+            Book a Visit <span class="arrow" aria-hidden="true">→</span>
+          </a>
+          <a class="btn btn--ghost" href={directionsUrl} target="_blank" rel="noopener">
+            Get Directions
+          </a>
+        </div>
+      </div>
+    </section>
+
+    <section class="vst-info" aria-label="Shop information">
+      <div class="container vst-info__grid">
+        <div class="vst-info__copy" data-reveal>
+          <article class="vst-block" aria-labelledby="vst-address-heading">
+            <h2 id="vst-address-heading" class="vst-block__h">Address</h2>
+            <a class="vst-address" href={directionsUrl} target="_blank" rel="noopener" aria-label="Open address in Google Maps">
+              <span>819 Linden Avenue</span>
+              <span>Zanesville, OH 43701</span>
+              <span class="vst-address__arrow" aria-hidden="true">↗ Open in Maps</span>
+            </a>
+          </article>
+
+          <article class="vst-block" aria-labelledby="vst-hours-heading">
+            <h2 id="vst-hours-heading" class="vst-block__h">Hours</h2>
+            <table class="vst-hours" aria-describedby="vst-hours-heading">
+              <tbody>
+                {hours.map((row, i) => (
+                  <tr data-today={i === todayIndex ? 'true' : 'false'}>
+                    <th scope="row">{row.day}</th>
+                    <td>{row.open}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <p class="vst-hours__note">
+              {/* TODO: confirm full weekly hours with owner */}
+              Hours subject to barber availability — book online for the most
+              accurate openings.
+            </p>
+          </article>
+
+          <article id="contact" class="vst-block" aria-labelledby="vst-contact-heading">
+            <h2 id="vst-contact-heading" class="vst-block__h">Contact</h2>
+            <dl class="vst-contact">
+              <div>
+                <dt>Phone</dt>
+                <dd>
+                  {phone ? (
+                    <a href={phoneTel}>{phone}</a>
+                  ) : (
+                    <span class="vst-contact__todo">Coming soon — book online for now</span>
+                  )}
+                </dd>
+              </div>
+              <div>
+                <dt>Booking</dt>
+                <dd><a href={mailto}>modernclassicbarbershop@protonmail.com</a></dd>
+              </div>
+              <div>
+                <dt>Product Support</dt>
+                <dd><a href="mailto:support@mdrnclassic.com">support@mdrnclassic.com</a></dd>
+              </div>
+              <div>
+                <dt>Online Booking</dt>
+                <dd><a href={bookUrl} target="_blank" rel="noopener">modern-classic.square.site ↗</a></dd>
+              </div>
+            </dl>
+          </article>
+
+          <article class="vst-block" aria-labelledby="vst-parking-heading">
+            <h2 id="vst-parking-heading" class="vst-block__h">Parking & Access</h2>
+            <ul class="vst-list">
+              <li><strong>Free street parking</strong> on Linden Avenue directly in front of the shop.</li>
+              <li>Additional parking on adjacent side streets — typically open during shop hours.</li>
+              <li>Shop entrance is at street level. Reach out before your visit if you have accessibility needs and we'll meet you at the door.</li>
+            </ul>
+          </article>
+
+          <article class="vst-block" aria-labelledby="vst-social-heading">
+            <h2 id="vst-social-heading" class="vst-block__h">Follow the Shop</h2>
+            <p class="vst-social__lede">Latest cuts, new product drops, and shop updates.</p>
+            <ul class="vst-social" aria-label="Social channels">
+              <li>
+                <a href="https://www.instagram.com/modernclassicbarbershop/" target="_blank" rel="noopener">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+                    <rect x="3" y="3" width="18" height="18" rx="4"/>
+                    <circle cx="12" cy="12" r="4"/>
+                    <circle cx="17.5" cy="6.5" r="0.8" fill="currentColor"/>
+                  </svg>
+                  <span>@modernclassicbarbershop</span>
+                </a>
+              </li>
+              <li>
+                <a href="https://www.facebook.com/profile.php?id=100090856771819" target="_blank" rel="noopener">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+                    <path d="M14 8h2.5V5h-2.5C12.6 5 11 6.3 11 8.2V11H8.5v3H11v7h3v-7h2.5l.5-3H14V8.5c0-.3.2-.5.5-.5z" fill="currentColor" stroke="none"/>
+                  </svg>
+                  <span>Modern Classic Barbershop on Facebook</span>
+                </a>
+              </li>
+            </ul>
+          </article>
+        </div>
+
+        <aside class="vst-map" aria-label="Map to the shop" data-reveal style="--reveal-delay: 80ms">
+          <div class="vst-map__frame">
+            <iframe
+              src={mapEmbed}
+              title="Map showing Modern Classic Barbershop at 819 Linden Avenue, Zanesville, Ohio"
+              loading="lazy"
+              referrerpolicy="no-referrer-when-downgrade"
+              allowfullscreen={false}
+            ></iframe>
+          </div>
+          <a class="vst-map__cta" href={directionsUrl} target="_blank" rel="noopener">
+            Open in Google Maps <span class="arrow" aria-hidden="true">→</span>
+          </a>
+        </aside>
+      </div>
+    </section>
+
+    <section class="vst-foot" aria-labelledby="vst-foot-heading">
+      <div class="container vst-foot__inner" data-reveal>
+        <h2 id="vst-foot-heading" class="vst-foot__h">
+          Ready for the <span class="italic-accent">chair?</span>
+        </h2>
+        <p class="lede" style="text-align:center; margin-inline:auto;">
+          Book online in under a minute — pick your barber, your service, and
+          a time that works.
+        </p>
+        <div class="vst-foot__ctas">
+          <a class="btn" href={bookUrl} target="_blank" rel="noopener">
+            Book a Visit <span class="arrow" aria-hidden="true">→</span>
+          </a>
+        </div>
+      </div>
+    </section>
+  </main>
+  <Footer />
+  <MobileBookCTA />
+</BaseLayout>
+
+<style>
+  /* ---------- Hero ---------- */
+  .vst-hero {
+    position: relative;
+    padding-block: clamp(3rem, 6vw, 5rem) clamp(2rem, 4vw, 3rem);
+    isolation: isolate;
+    overflow: hidden;
+  }
+  .vst-hero__ornaments { position: absolute; inset: 0; pointer-events: none; z-index: -1; }
+  .vst-hero__glow {
+    position: absolute;
+    top: -10%;
+    left: 50%;
+    transform: translateX(-50%);
+    width: min(880px, 90%);
+    height: 320px;
+    background: radial-gradient(ellipse at center, rgba(201, 163, 92, 0.14), transparent 65%);
+    filter: blur(28px);
+  }
+  .vst-hero__inner {
+    display: grid;
+    gap: 1rem;
+    text-align: center;
+    justify-items: center;
+    max-width: 56rem;
+    margin-inline: auto;
+  }
+  .vst-hero__h1 { display: grid; gap: 0.05em; }
+  .vst-hero__line {
+    display: block;
+    font-family: var(--font-display);
+    font-size: var(--fs-h1);
+    font-weight: 400;
+    line-height: 1.02;
+    letter-spacing: -0.025em;
+    font-variation-settings: 'opsz' 144, 'SOFT' 50;
+  }
+  .vst-hero__h1 .italic-accent { font-style: italic; font-weight: 300; }
+  .vst-hero__ctas {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 0.75rem;
+    margin-top: 0.5rem;
+  }
+
+  /* ---------- Info grid ---------- */
+  .vst-info {
+    background: var(--color-bg);
+    padding-block: clamp(2.5rem, 5vw, 4.5rem);
+    border-top: 1px solid var(--color-border-soft);
+  }
+  .vst-info__grid {
+    display: grid;
+    grid-template-columns: 1fr 1.1fr;
+    gap: clamp(2rem, 5vw, 4rem);
+    align-items: start;
+  }
+  .vst-info__copy { display: grid; gap: 1.75rem; }
+
+  .vst-block {
+    display: grid;
+    gap: 0.6rem;
+    padding-block: 1.25rem;
+    border-top: 1px solid var(--color-border-soft);
+  }
+  .vst-block:first-child { border-top: 0; padding-top: 0; }
+  .vst-block__h {
+    font-family: var(--font-body);
+    font-size: 0.74rem;
+    font-weight: 600;
+    letter-spacing: 0.28em;
+    text-transform: uppercase;
+    color: var(--color-gold);
+    margin: 0 0 0.4rem;
+  }
+
+  /* Address */
+  .vst-address {
+    display: grid;
+    gap: 0.15rem;
+    color: var(--color-text);
+    font-family: var(--font-display);
+    font-size: clamp(1.55rem, 1.2rem + 1vw, 2rem);
+    line-height: 1.15;
+    letter-spacing: -0.01em;
+    font-variation-settings: 'opsz' 144, 'SOFT' 50;
+  }
+  .vst-address:hover { color: var(--color-gold-light); }
+  .vst-address__arrow {
+    display: inline-block;
+    margin-top: 0.4rem;
+    color: var(--color-gold);
+    font-family: var(--font-body);
+    font-size: 0.78rem;
+    font-weight: 600;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+  }
+
+  /* Hours table */
+  .vst-hours {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 0.25rem;
+  }
+  .vst-hours tr {
+    border-top: 1px solid var(--color-border-soft);
+  }
+  .vst-hours tr:first-child { border-top: 0; }
+  .vst-hours th, .vst-hours td {
+    padding: 0.55rem 0;
+    text-align: left;
+    font-weight: 500;
+    color: var(--color-text);
+  }
+  .vst-hours th {
+    color: var(--color-text-muted);
+    font-family: var(--font-body);
+    font-size: 0.92rem;
+    letter-spacing: 0.04em;
+  }
+  .vst-hours td {
+    text-align: right;
+    font-size: 0.95rem;
+    color: var(--color-text);
+  }
+  .vst-hours tr[data-today='true'] th,
+  .vst-hours tr[data-today='true'] td {
+    color: var(--color-gold-light);
+    font-weight: 600;
+  }
+  .vst-hours tr[data-today='true'] th::before {
+    content: '';
+    display: inline-block;
+    width: 6px;
+    height: 6px;
+    margin-right: 0.55em;
+    background: var(--color-gold);
+    transform: rotate(45deg);
+    vertical-align: middle;
+  }
+  .vst-hours__note {
+    margin-top: 0.5rem;
+    color: var(--color-text-dim);
+    font-size: 0.84rem;
+    line-height: 1.5;
+  }
+
+  /* Contact list */
+  .vst-contact {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 1rem 2rem;
+    margin: 0;
+  }
+  .vst-contact > div { display: grid; gap: 0.2rem; }
+  .vst-contact dt {
+    font-size: 0.7rem;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--color-gold);
+    font-weight: 600;
+  }
+  .vst-contact dd {
+    margin: 0;
+    color: var(--color-text);
+    font-size: 0.95rem;
+    line-height: 1.45;
+    word-break: break-word;
+  }
+  .vst-contact a {
+    color: var(--color-text);
+    border-bottom: 1px solid var(--color-rule);
+    padding-bottom: 1px;
+  }
+  .vst-contact a:hover {
+    color: var(--color-gold-light);
+    border-bottom-color: var(--color-gold-light);
+  }
+  .vst-contact__todo { color: var(--color-text-dim); font-style: italic; }
+
+  /* Lists */
+  .vst-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: grid;
+    gap: 0.55rem;
+    color: var(--color-text-muted);
+    font-size: 0.96rem;
+    line-height: 1.55;
+  }
+  .vst-list li {
+    position: relative;
+    padding-left: 1.1rem;
+  }
+  .vst-list li::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 0.55em;
+    width: 5px;
+    height: 5px;
+    background: var(--color-gold);
+    transform: rotate(45deg);
+  }
+  .vst-list strong { color: var(--color-text); font-weight: 600; }
+
+  /* Social */
+  .vst-social__lede {
+    color: var(--color-text-muted);
+    font-size: 0.95rem;
+    margin: 0 0 0.5rem;
+  }
+  .vst-social {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: grid;
+    gap: 0.5rem;
+  }
+  .vst-social a {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.65rem;
+    color: var(--color-text);
+    border-bottom: 1px solid var(--color-rule);
+    padding: 0.4rem 0;
+    font-size: 0.95rem;
+  }
+  .vst-social a:hover {
+    color: var(--color-gold-light);
+    border-bottom-color: var(--color-gold-light);
+  }
+  .vst-social svg { color: var(--color-gold); }
+
+  /* ---------- Map ---------- */
+  .vst-map {
+    position: sticky;
+    top: calc(var(--header-h) + 1.5rem);
+    display: grid;
+    gap: 0.75rem;
+  }
+  .vst-map__frame {
+    position: relative;
+    aspect-ratio: 4 / 4.6;
+    border: 1px solid var(--color-gold-deep);
+    border-radius: 2px;
+    overflow: hidden;
+    background: var(--color-bg-soft);
+  }
+  .vst-map__frame::before {
+    content: '';
+    position: absolute;
+    inset: 8px;
+    border: 1px solid var(--color-rule-soft);
+    pointer-events: none;
+    z-index: 2;
+  }
+  .vst-map__frame iframe {
+    width: 100%;
+    height: 100%;
+    border: 0;
+    /* Subtle dark filter so the embed sits closer to the brand palette
+       without losing legibility. */
+    filter: saturate(0.85) contrast(1.05) brightness(0.92);
+  }
+  .vst-map__cta {
+    align-self: end;
+    justify-self: start;
+    color: var(--color-gold);
+    font-size: 0.78rem;
+    font-weight: 600;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    border-bottom: 1px solid var(--color-rule);
+    padding-bottom: 2px;
+    transition: color var(--dur) var(--ease), border-color var(--dur) var(--ease);
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+  }
+  .vst-map__cta:hover {
+    color: var(--color-gold-light);
+    border-bottom-color: var(--color-gold-light);
+  }
+  .vst-map__cta .arrow { transition: transform var(--dur) var(--ease); }
+  .vst-map__cta:hover .arrow { transform: translateX(3px); }
+
+  @media (max-width: 880px) {
+    .vst-info__grid { grid-template-columns: 1fr; }
+    .vst-map { position: static; max-width: 32rem; margin-inline: auto; }
+    .vst-contact { grid-template-columns: 1fr; }
+  }
+
+  /* ---------- Foot ---------- */
+  .vst-foot {
+    background:
+      radial-gradient(900px 360px at 50% 0%, rgba(201, 163, 92, 0.10), transparent 70%),
+      linear-gradient(180deg, var(--color-bg-soft), var(--color-bg));
+    border-top: 1px solid var(--color-border-soft);
+  }
+  .vst-foot__inner {
+    display: grid;
+    justify-items: center;
+    text-align: center;
+    gap: 1rem;
+  }
+  .vst-foot__h { font-size: clamp(2rem, 1.5rem + 3vw, 3.25rem); }
+  .vst-foot__ctas {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    justify-content: center;
+    margin-top: 0.75rem;
+  }
+</style>

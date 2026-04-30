@@ -1,0 +1,113 @@
+---
+import { Image } from 'astro:assets';
+
+const base = import.meta.env.BASE_URL.replace(/\/$/, '');
+
+// Pick a curated handful of gallery photos for the home page. Selecting by
+// filename here (vs. random) lets the owner reorder by renaming. The full
+// archive lives at /gallery and is also where the FB Graph API sync will
+// eventually plug in.
+const featuredFilenames = [
+  'mc002', 'mc008', 'mc015', 'mc031', 'mc068', 'mc101', 'mc138', 'mc154',
+];
+const allModules = import.meta.glob<ImageMetadata>(
+  '../assets/gallery/*.jpg',
+  { eager: true, import: 'default' }
+);
+const photos = featuredFilenames
+  .map((name) => {
+    const entry = Object.entries(allModules).find(([path]) => path.endsWith(`/${name}.jpg`));
+    return entry ? { src: entry[1], id: name } : null;
+  })
+  .filter((p): p is { src: ImageMetadata; id: string } => p !== null);
+---
+<section id="gallery" class="gprev" aria-labelledby="gprev-heading">
+  <div class="container">
+    <header class="section-head section-head--center" data-reveal>
+      <span class="eyebrow">Recent Work</span>
+      <h2 id="gprev-heading">
+        Straight from the <span class="italic-accent">chairs.</span>
+      </h2>
+      <p class="lede" style="text-align:center; margin-inline:auto;">
+        Cuts, fades, beard work, and shaves — a glance at recent appointments
+        at the shop on Linden Avenue.
+      </p>
+    </header>
+
+    <div class="gprev__grid">
+      {photos.map((photo, i) => (
+        <a
+          href={`${base}/gallery`}
+          class="gprev__item"
+          aria-label={`View full gallery — recent photo ${i + 1}`}
+          data-reveal
+          style={`--reveal-delay: ${(i % 4) * 60}ms`}
+        >
+          <Image
+            src={photo.src}
+            alt={`Modern Classic barbershop work — preview photo ${i + 1}`}
+            widths={[280, 420, 560]}
+            sizes="(min-width: 880px) 280px, (min-width: 540px) 45vw, 92vw"
+            loading="lazy"
+            class="gprev__img"
+          />
+        </a>
+      ))}
+    </div>
+
+    <div class="gprev__foot">
+      <a class="link-gold" href={`${base}/gallery`}>
+        See the full gallery →
+      </a>
+    </div>
+  </div>
+</section>
+
+<style>
+  .gprev {
+    background: linear-gradient(180deg, var(--color-bg), var(--color-bg-soft));
+  }
+  .gprev__grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 0.85rem;
+  }
+  @media (max-width: 880px) {
+    .gprev__grid { grid-template-columns: repeat(3, 1fr); }
+  }
+  @media (max-width: 540px) {
+    .gprev__grid { grid-template-columns: repeat(2, 1fr); gap: 0.6rem; }
+  }
+  .gprev__item {
+    position: relative;
+    display: block;
+    aspect-ratio: 1 / 1;
+    overflow: hidden;
+    border: 1px solid var(--color-border-soft);
+    border-radius: 2px;
+    background: var(--color-surface);
+    transition: border-color var(--dur) var(--ease),
+                transform var(--dur) var(--ease),
+                box-shadow var(--dur) var(--ease);
+  }
+  .gprev__item:hover {
+    border-color: var(--color-gold);
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-gold);
+  }
+  .gprev__img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transition: transform var(--dur-slow) var(--ease), filter var(--dur) var(--ease);
+    filter: saturate(0.95) contrast(1.02);
+  }
+  .gprev__item:hover .gprev__img {
+    transform: scale(1.06);
+    filter: saturate(1.05) contrast(1.06);
+  }
+  .gprev__foot {
+    margin-top: var(--space-7);
+    text-align: center;
+  }
+</style>

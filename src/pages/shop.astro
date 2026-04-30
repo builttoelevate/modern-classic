@@ -1,0 +1,374 @@
+---
+import { getCollection } from 'astro:content';
+import BaseLayout from '../layouts/BaseLayout.astro';
+import Header from '../components/Header.astro';
+import Footer from '../components/Footer.astro';
+import MobileBookCTA from '../components/MobileBookCTA.astro';
+
+const all = (await getCollection('products'))
+  .sort((a, b) => a.data.order - b.data.order)
+  .map((p) => p.data);
+
+// Group products by collection so the page reads like a curated shop floor
+// instead of a flat list. Order: featured collections first, then bundles last.
+const collectionOrder = [
+  'Styling',
+  'Texture & Finish',
+  'Beard Care',
+  'Shaving / Beard Care',
+  'Shaving',
+  'Fragrance',
+  'Bundles',
+];
+const groupedMap = new Map<string, typeof all>();
+for (const p of all) {
+  const key = p.collection;
+  if (!groupedMap.has(key)) groupedMap.set(key, []);
+  groupedMap.get(key)!.push(p);
+}
+const grouped = collectionOrder
+  .filter((c) => groupedMap.has(c))
+  .map((c) => ({ collection: c, items: groupedMap.get(c)! }));
+
+const fmt = (n: number) =>
+  n % 1 === 0 ? `$${n}` : `$${n.toFixed(2)}`;
+
+const itemListSchema = {
+  '@context': 'https://schema.org',
+  '@type': 'ItemList',
+  itemListElement: all.map((p, i) => ({
+    '@type': 'ListItem',
+    position: i + 1,
+    item: {
+      '@type': 'Product',
+      name: p.name,
+      description: p.description,
+      image: p.imageUrl,
+      url: p.productUrl,
+      brand: { '@type': 'Brand', name: 'MDRN Classic' },
+      offers: {
+        '@type': 'Offer',
+        price: p.price,
+        priceCurrency: 'USD',
+        url: p.productUrl,
+        availability: 'https://schema.org/InStock',
+      },
+    },
+  })),
+};
+---
+<BaseLayout
+  title="Shop — MDRN Classic Grooming Essentials"
+  description="MDRN Classic grooming products built by barbers in Zanesville, Ohio. Pomade, soft clay, salt spray, beard oil, shave balm, and the Savoir EDP fragrance line."
+  extraSchema={itemListSchema}
+>
+  <Header />
+  <main id="main">
+    <section class="shop-hero" aria-labelledby="shop-hero-heading">
+      <div class="shop-hero__ornaments" aria-hidden="true">
+        <div class="shop-hero__glow"></div>
+      </div>
+      <div class="container shop-hero__inner">
+        <p class="eyebrow">The Take-Home Kit</p>
+        <h1 id="shop-hero-heading" class="shop-hero__h1">
+          <span class="shop-hero__line">Grooming essentials,</span>
+          <span class="shop-hero__line italic-accent">built by barbers.</span>
+        </h1>
+        <p class="lede">
+          The same products we use in our chairs, made for the modern man who
+          values both style and substance. Cruelty-free, paraben-free, and
+          tested daily at our shop on Linden Avenue.
+        </p>
+        <p class="shop-hero__note">
+          Checkout on <strong>mdrnclassic.com</strong> — every product card opens the
+          full Shopify product page with sizes, ingredients, and free shipping
+          on orders over $60.
+        </p>
+      </div>
+    </section>
+
+    {grouped.map((group) => (
+      <section class="shop-group" aria-labelledby={`group-${group.collection.replace(/\W+/g, '-')}-heading`}>
+        <div class="container">
+          <header class="shop-group__head" data-reveal>
+            <h2 id={`group-${group.collection.replace(/\W+/g, '-')}-heading`}>
+              {group.collection}
+            </h2>
+            <span class="shop-group__count">{group.items.length} {group.items.length === 1 ? 'product' : 'products'}</span>
+          </header>
+          <div class="shop-group__grid">
+            {group.items.map((p, i) => (
+              <a
+                class="prod-card"
+                href={p.productUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                data-reveal
+                style={`--reveal-delay: ${(i % 4) * 60}ms`}
+              >
+                <div class="prod-card__media">
+                  <img src={p.imageUrl} alt={`${p.name} — ${p.size}`} loading="lazy" decoding="async" />
+                </div>
+                <div class="prod-card__body">
+                  <p class="prod-card__category">{p.collection}</p>
+                  <h3 class="prod-card__name">{p.name}</h3>
+                  <p class="prod-card__size">{p.size}</p>
+                  <p class="prod-card__desc">{p.description}</p>
+                  <div class="prod-card__foot">
+                    <span class="prod-card__price">{fmt(p.price)}</span>
+                    <span class="prod-card__cta">
+                      Shop <span class="arrow" aria-hidden="true">→</span>
+                    </span>
+                  </div>
+                </div>
+              </a>
+            ))}
+          </div>
+        </div>
+      </section>
+    ))}
+
+    <section class="shop-foot" aria-labelledby="shop-foot-heading">
+      <div class="container shop-foot__inner" data-reveal>
+        <h2 id="shop-foot-heading" class="shop-foot__h">
+          Get the cut. <span class="italic-accent">Keep the style.</span>
+        </h2>
+        <p class="lede" style="text-align:center; margin-inline:auto;">
+          Pair the right product with the right cut. Book a chair and we'll
+          recommend the take-home that matches your hair and beard.
+        </p>
+        <div class="shop-foot__ctas">
+          <a class="btn" href="https://modern-classic.square.site" target="_blank" rel="noopener">
+            Book a Visit <span class="arrow" aria-hidden="true">→</span>
+          </a>
+          <a class="btn btn--ghost" href="https://mdrnclassic.com/collections/all" target="_blank" rel="noopener">
+            Browse All on Shopify
+          </a>
+        </div>
+      </div>
+    </section>
+  </main>
+  <Footer />
+  <MobileBookCTA />
+</BaseLayout>
+
+<style>
+  /* ---------- Page hero ---------- */
+  .shop-hero {
+    position: relative;
+    padding-block: clamp(3rem, 6vw, 5rem) clamp(2rem, 4vw, 3rem);
+    isolation: isolate;
+    overflow: hidden;
+  }
+  .shop-hero__ornaments { position: absolute; inset: 0; pointer-events: none; z-index: -1; }
+  .shop-hero__glow {
+    position: absolute;
+    top: -10%;
+    left: 50%;
+    transform: translateX(-50%);
+    width: min(880px, 90%);
+    height: 320px;
+    background: radial-gradient(ellipse at center, rgba(201, 163, 92, 0.14), transparent 65%);
+    filter: blur(28px);
+  }
+  .shop-hero__inner {
+    display: grid;
+    gap: 1.1rem;
+    text-align: center;
+    justify-items: center;
+    max-width: 56rem;
+    margin-inline: auto;
+  }
+  .shop-hero__h1 { display: grid; gap: 0.05em; }
+  .shop-hero__line {
+    display: block;
+    font-family: var(--font-display);
+    font-size: var(--fs-h1);
+    font-weight: 400;
+    line-height: 1.02;
+    letter-spacing: -0.025em;
+    font-variation-settings: 'opsz' 144, 'SOFT' 50;
+  }
+  .shop-hero__h1 .italic-accent { font-style: italic; font-weight: 300; }
+  .shop-hero__note {
+    color: var(--color-text-dim);
+    font-size: 0.9rem;
+    letter-spacing: 0.04em;
+    margin-top: 0.25rem;
+  }
+  .shop-hero__note strong { color: var(--color-gold); font-weight: 600; }
+
+  /* ---------- Group sections ---------- */
+  .shop-group {
+    padding-block: clamp(2.5rem, 5vw, 4.5rem);
+    border-top: 1px solid var(--color-border-soft);
+  }
+  .shop-group:nth-of-type(odd) {
+    background: linear-gradient(180deg, var(--color-bg), var(--color-bg-soft));
+  }
+  .shop-group__head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 1rem;
+    border-bottom: 1px solid var(--color-rule);
+    padding-bottom: 0.85rem;
+    margin-bottom: 2rem;
+  }
+  .shop-group__head h2 {
+    font-size: clamp(1.7rem, 1.2rem + 1.4vw, 2.4rem);
+    margin: 0;
+  }
+  .shop-group__count {
+    font-size: 0.74rem;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--color-gold);
+  }
+
+  .shop-group__grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1.25rem;
+  }
+  @media (max-width: 980px) {
+    .shop-group__grid { grid-template-columns: repeat(2, 1fr); }
+  }
+  @media (max-width: 540px) {
+    .shop-group__grid { grid-template-columns: 1fr; }
+  }
+
+  /* ---------- Product cards ---------- */
+  .prod-card {
+    display: grid;
+    grid-template-rows: auto 1fr;
+    background: linear-gradient(180deg, var(--color-surface), var(--color-bg-soft));
+    border: 1px solid var(--color-border);
+    border-radius: 2px;
+    overflow: hidden;
+    color: var(--color-text);
+    text-decoration: none;
+    transition: border-color var(--dur) var(--ease),
+                transform var(--dur) var(--ease),
+                box-shadow var(--dur) var(--ease);
+  }
+  .prod-card:hover {
+    border-color: rgba(201, 163, 92, 0.45);
+    transform: translateY(-3px);
+    box-shadow: 0 18px 50px -25px rgba(0, 0, 0, 0.7);
+  }
+  .prod-card__media {
+    position: relative;
+    aspect-ratio: 4 / 5;
+    background:
+      radial-gradient(circle at 50% 50%,
+        rgba(201, 163, 92, 0.12) 0%,
+        rgba(201, 163, 92, 0.04) 30%,
+        transparent 60%),
+      linear-gradient(180deg, #1a1612, #0a0807);
+    display: grid;
+    place-items: center;
+    overflow: hidden;
+  }
+  .prod-card__media img {
+    max-width: 70%;
+    max-height: 78%;
+    width: auto;
+    height: auto;
+    object-fit: contain;
+    transition: transform var(--dur-slow) var(--ease);
+    filter: drop-shadow(0 14px 28px rgba(0, 0, 0, 0.5));
+  }
+  .prod-card:hover .prod-card__media img { transform: scale(1.05); }
+
+  .prod-card__body {
+    display: grid;
+    align-content: start;
+    gap: 0.45rem;
+    padding: clamp(1rem, 2vw, 1.4rem);
+  }
+  .prod-card__category {
+    font-size: 0.62rem;
+    font-weight: 600;
+    letter-spacing: 0.3em;
+    text-transform: uppercase;
+    color: var(--color-gold-deep);
+    margin: 0;
+  }
+  .prod-card__name {
+    font-family: var(--font-display);
+    font-weight: 500;
+    letter-spacing: -0.005em;
+    line-height: 1.15;
+    font-size: 1.3rem;
+    font-variation-settings: 'opsz' 100;
+    margin: 0;
+  }
+  .prod-card__size {
+    color: var(--color-gold);
+    font-size: 0.74rem;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    margin: 0;
+  }
+  .prod-card__desc {
+    color: var(--color-text-muted);
+    font-size: 0.92rem;
+    line-height: 1.5;
+    margin: 0;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .prod-card__foot {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.75rem;
+    margin-top: 0.5rem;
+    padding-top: 0.6rem;
+    border-top: 1px solid var(--color-border-soft);
+  }
+  .prod-card__price {
+    font-family: var(--font-body);
+    font-size: 1.05rem;
+    font-weight: 600;
+    color: var(--color-gold-light);
+  }
+  .prod-card__cta {
+    font-size: 0.78rem;
+    font-weight: 600;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--color-gold);
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+  }
+  .prod-card__cta .arrow { transition: transform var(--dur) var(--ease); }
+  .prod-card:hover .prod-card__cta { color: var(--color-gold-light); }
+  .prod-card:hover .prod-card__cta .arrow { transform: translateX(3px); }
+
+  /* ---------- Foot ---------- */
+  .shop-foot {
+    background:
+      radial-gradient(900px 360px at 50% 0%, rgba(201, 163, 92, 0.10), transparent 70%),
+      linear-gradient(180deg, var(--color-bg-soft), var(--color-bg));
+    border-top: 1px solid var(--color-border-soft);
+  }
+  .shop-foot__inner {
+    display: grid;
+    justify-items: center;
+    text-align: center;
+    gap: 1rem;
+  }
+  .shop-foot__h { font-size: clamp(2rem, 1.5rem + 3vw, 3.25rem); }
+  .shop-foot__ctas {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    justify-content: center;
+    margin-top: 0.75rem;
+  }
+</style>
