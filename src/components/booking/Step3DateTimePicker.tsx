@@ -19,19 +19,26 @@ interface Props {
 
 const SHOP_TZ = 'America/New_York';
 const DAY_KEYS: DayOfWeek[] = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
+const WEEKDAY_LABELS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
+const MONTH_LABELS = ['January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December'];
 
-interface CalendarDay {
-  dateKey: string;
-  jsDate: Date;
-  weekday: string;
-  dayNum: string;
-  monthShort: string;
-  isClosed: boolean;
-  closedReason?: 'sunday' | 'business-hours';
+// Don't let the user navigate forward forever — Square stops returning
+// availability beyond Michael's configured booking horizon anyway. Three
+// months of forward navigation is plenty for a barbershop.
+const MAX_MONTHS_FORWARD = 3;
+
+interface YearMonth {
+  year: number;
+  month: number; // 1-indexed
 }
 
 function pad(n: number): string {
   return n < 10 ? `0${n}` : `${n}`;
+}
+
+function todayInShopTz(): { year: number; month: number; day: number; weekday: DayOfWeek } {
+  return getLocalParts(new Date());
 }
 
 function getLocalParts(d: Date): { year: number; month: number; day: number; weekday: DayOfWeek } {
@@ -44,12 +51,11 @@ function getLocalParts(d: Date): { year: number; month: number; day: number; wee
   });
   const parts = dtf.formatToParts(d);
   const get = (type: string): string => parts.find((p) => p.type === type)?.value ?? '';
-  const weekdayLabel = get('weekday').toUpperCase().slice(0, 3) as DayOfWeek;
   return {
     year: Number(get('year')),
     month: Number(get('month')),
     day: Number(get('day')),
-    weekday: weekdayLabel,
+    weekday: get('weekday').toUpperCase().slice(0, 3) as DayOfWeek,
   };
 }
 
@@ -84,46 +90,65 @@ function localDateToUtc(year: number, month: number, day: number, hour: number, 
   return utc;
 }
 
-function buildCalendar(location: Location | null): CalendarDay[] {
+function daysInMonth(year: number, month: number): number {
+  return new Date(year, month, 0).getDate();
+}
+
+// What weekday (0=Sun..6=Sat) the 1st of the given month falls on, in shop tz.
+function firstOfMonthWeekday(year: number, month: number): number {
+  const utc = localDateToUtc(year, month, 1, 12, 0);
+  const w = getLocalParts(utc).weekday;
+  return DAY_KEYS.indexOf(w);
+}
+
+interface CalendarDay {
+  dateKey: string;
+  dayNum: number;
+  weekday: DayOfWeek;
+  isClosed: boolean;
+  isPast: boolean;
+  closedReason?: 'sunday' | 'business-hours';
+}
+
+function buildMonthDays(year: number, month: number, location: Location | null): CalendarDay[] {
   const closedDays = new Set<DayOfWeek>(['SUN']);
-  // If business hours include explicit periods, exclude any DAY not present.
   const periods = location?.business_hours?.periods;
   if (periods && periods.length > 0) {
     const open = new Set<DayOfWeek>(periods.map((p) => p.day_of_week));
-    for (const d of DAY_KEYS) {
-      if (!open.has(d)) closedDays.add(d);
-    }
+    for (const d of DAY_KEYS) if (!open.has(d)) closedDays.add(d);
   }
 
-  const days: CalendarDay[] = [];
-  const today = new Date();
-  const todayParts = getLocalParts(today);
-  const baseUtc = localDateToUtc(todayParts.year, todayParts.month, todayParts.day, 12, 0);
-
-  for (let i = 0; i < 14; i++) {
-    const utc = new Date(baseUtc.getTime() + i * 24 * 60 * 60 * 1000);
+  const today = todayInShopTz();
+  const isCurrentMonth = year === today.year && month === today.month;
+  const total = daysInMonth(year, month);
+  const out: CalendarDay[] = [];
+  for (let day = 1; day <= total; day++) {
+    const utc = localDateToUtc(year, month, day, 12, 0);
     const parts = getLocalParts(utc);
-    const dateKey = `${parts.year}-${pad(parts.month)}-${pad(parts.day)}`;
-    const dtfDay = new Intl.DateTimeFormat('en-US', { timeZone: SHOP_TZ, weekday: 'short' });
-    const dtfMonth = new Intl.DateTimeFormat('en-US', { timeZone: SHOP_TZ, month: 'short' });
     const isClosed = closedDays.has(parts.weekday);
-    days.push({
-      dateKey,
-      jsDate: utc,
-      weekday: dtfDay.format(utc),
-      dayNum: String(parts.day),
-      monthShort: dtfMonth.format(utc),
+    const isPast = isCurrentMonth && day < today.day;
+    out.push({
+      dateKey: `${year}-${pad(month)}-${pad(day)}`,
+      dayNum: day,
+      weekday: parts.weekday,
       isClosed,
+      isPast,
       closedReason: isClosed ? (parts.weekday === 'SUN' ? 'sunday' : 'business-hours') : undefined,
     });
   }
-  return days;
+  return out;
 }
 
-interface SlotsState {
-  status: 'idle' | 'loading' | 'loaded' | 'error';
-  slots: AvailabilitySlot[];
-  error?: string;
+function nextMonth({ year, month }: YearMonth): YearMonth {
+  return month === 12 ? { year: year + 1, month: 1 } : { year, month: month + 1 };
+}
+
+function prevMonth({ year, month }: YearMonth): YearMonth {
+  return month === 1 ? { year: year - 1, month: 12 } : { year, month: month - 1 };
+}
+
+function ymKey(ym: YearMonth): string {
+  return `${ym.year}-${pad(ym.month)}`;
 }
 
 // When "Any barber" is picked on a per-barber service we hit Square once per
@@ -143,6 +168,12 @@ function mergeSlots(slots: AvailabilitySlot[]): AvailabilitySlot[] {
   return out;
 }
 
+interface MonthState {
+  status: 'idle' | 'loading' | 'loaded' | 'error';
+  slots: AvailabilitySlot[];
+  error?: string;
+}
+
 export function Step3DateTimePicker({
   variations,
   teamMemberId,
@@ -152,30 +183,34 @@ export function Step3DateTimePicker({
   onPick,
 }: Props) {
   const variationKey = variations.map((v) => v.id).join(',');
-  const calendar = useMemo(() => buildCalendar(location), [location]);
-  const firstOpenIdx = calendar.findIndex((d) => !d.isClosed);
-  const [activeDateKey, setActiveDateKey] = useState<string | null>(
-    calendar[firstOpenIdx]?.dateKey ?? null,
-  );
-  const [slotsState, setSlotsState] = useState<SlotsState>({ status: 'idle', slots: [] });
-  const [windowState, setWindowState] = useState<{ status: 'idle' | 'checking' | 'empty' | 'has-slots'; firstSlots: AvailabilitySlot[] }>({
-    status: 'idle',
-    firstSlots: [],
-  });
+  const today = useMemo(() => todayInShopTz(), []);
+  const minMonth: YearMonth = { year: today.year, month: today.month };
+  const maxMonth: YearMonth = (() => {
+    let ym: YearMonth = { ...minMonth };
+    for (let i = 0; i < MAX_MONTHS_FORWARD; i++) ym = nextMonth(ym);
+    return ym;
+  })();
+
+  const [view, setView] = useState<YearMonth>(minMonth);
+  const [monthState, setMonthState] = useState<MonthState>({ status: 'idle', slots: [] });
+  const [activeDateKey, setActiveDateKey] = useState<string | null>(null);
   const requestSeq = useRef(0);
 
+  const monthDays = useMemo(() => buildMonthDays(view.year, view.month, location), [view, location]);
+
+  // Fetch availability for the visible month whenever it changes.
   useEffect(() => {
-    if (!activeDateKey || variations.length === 0) return;
+    if (variations.length === 0) return;
     const seq = ++requestSeq.current;
-    setSlotsState({ status: 'loading', slots: [] });
-    const day = calendar.find((d) => d.dateKey === activeDateKey);
-    if (!day) {
-      setSlotsState({ status: 'idle', slots: [] });
-      return;
-    }
-    const [y, m, d] = activeDateKey.split('-').map(Number);
-    const startUtc = localDateToUtc(y, m, d, 0, 0);
-    const endUtc = localDateToUtc(y, m, d + 1, 0, 0);
+    setMonthState({ status: 'loading', slots: [] });
+
+    // Search bounds: from the later of (now, first-of-month) up to the
+    // first of next month. Square caps each call at 31 days; one month
+    // is always under that.
+    const monthFirstUtc = localDateToUtc(view.year, view.month, 1, 0, 0);
+    const startUtc = monthFirstUtc.getTime() < Date.now() ? new Date() : monthFirstUtc;
+    const next = nextMonth(view);
+    const endUtc = localDateToUtc(next.year, next.month, 1, 0, 0);
 
     const requests = variations.map((v) => {
       const params = new URLSearchParams({
@@ -195,7 +230,7 @@ export function Step3DateTimePicker({
         if (seq !== requestSeq.current) return;
         const failed = results.find((r) => !r.ok);
         if (failed) {
-          setSlotsState({
+          setMonthState({
             status: 'error',
             slots: [],
             error: failed.body?.error?.detail ?? 'Could not load availability',
@@ -203,74 +238,51 @@ export function Step3DateTimePicker({
           return;
         }
         const merged = mergeSlots(results.flatMap((r) => r.body.slots ?? []));
-        setSlotsState({ status: 'loaded', slots: merged });
+        setMonthState({ status: 'loaded', slots: merged });
       })
       .catch((err) => {
         if (seq !== requestSeq.current) return;
-        setSlotsState({ status: 'error', slots: [], error: err?.message ?? 'Network error' });
+        setMonthState({ status: 'error', slots: [], error: err?.message ?? 'Network error' });
       });
-  }, [activeDateKey, variationKey, teamMemberId, calendar, variations]);
+  }, [view, variationKey, teamMemberId, variations]);
 
-  // Phase 4 A.1 — when a single date has zero slots, also probe the full
-  // 14-day window so we can either suggest a different date or, if the
-  // entire window is empty, surface a friendly "call us" screen.
+  // Group the month's slots by dateKey so the calendar can show "has slots"
+  // markers in O(1) per cell.
+  const slotsByDate = useMemo(() => {
+    const map = new Map<string, AvailabilitySlot[]>();
+    for (const s of monthState.slots) {
+      const list = map.get(s.dateKey);
+      if (list) list.push(s);
+      else map.set(s.dateKey, [s]);
+    }
+    return map;
+  }, [monthState.slots]);
+
+  // When a fresh month loads, default-pick the first day with slots so the
+  // user lands on something useful instead of an empty pane.
   useEffect(() => {
-    if (slotsState.status !== 'loaded' || slotsState.slots.length > 0 || variations.length === 0) {
-      setWindowState({ status: 'idle', firstSlots: [] });
-      return;
-    }
-    const seq = ++requestSeq.current;
-    setWindowState({ status: 'checking', firstSlots: [] });
-    const today = calendar[0];
-    const last = calendar[calendar.length - 1];
-    if (!today || !last) {
-      setWindowState({ status: 'empty', firstSlots: [] });
-      return;
-    }
-    const [sy, sm, sd] = today.dateKey.split('-').map(Number);
-    const [ey, em, ed] = last.dateKey.split('-').map(Number);
-    const startUtc = localDateToUtc(sy, sm, sd, 0, 0);
-    const endUtc = localDateToUtc(ey, em, ed + 1, 0, 0);
-    const requests = variations.map((v) => {
-      const params = new URLSearchParams({
-        serviceVariationId: v.id,
-        startAt: startUtc.toISOString(),
-        endAt: endUtc.toISOString(),
-      });
-      if (teamMemberId) params.set('teamMemberId', teamMemberId);
-      return fetch(`/api/square/availability?${params.toString()}`).then(async (res) => {
-        const body = await res.json();
-        return { ok: res.ok && body?.ok, body };
-      });
-    });
-    Promise.all(requests)
-      .then((results) => {
-        if (seq !== requestSeq.current) return;
-        const all = mergeSlots(results.flatMap((r) => (r.ok ? r.body.slots ?? [] : [])));
-        if (all.length === 0) setWindowState({ status: 'empty', firstSlots: [] });
-        else setWindowState({ status: 'has-slots', firstSlots: all.slice(0, 4) });
-      })
-      .catch(() => {
-        if (seq !== requestSeq.current) return;
-        setWindowState({ status: 'empty', firstSlots: [] });
-      });
-  }, [slotsState.status, slotsState.slots.length, calendar, variationKey, teamMemberId, variations]);
+    if (monthState.status !== 'loaded') return;
+    if (activeDateKey && slotsByDate.has(activeDateKey)) return;
+    const first = monthDays.find((d) => slotsByDate.has(d.dateKey));
+    setActiveDateKey(first ? first.dateKey : null);
+  }, [monthState.status, slotsByDate, monthDays, activeDateKey]);
 
   const blockedSet = useMemo(() => new Set(blockedSlots), [blockedSlots]);
 
-  const suggestedDates = useMemo(() => {
-    const seenDates = new Set<string>();
-    const out: { dateKey: string; label: string }[] = [];
-    for (const slot of windowState.firstSlots) {
-      if (seenDates.has(slot.dateKey)) continue;
-      seenDates.add(slot.dateKey);
-      const day = calendar.find((d) => d.dateKey === slot.dateKey);
-      if (!day) continue;
-      out.push({ dateKey: slot.dateKey, label: `${day.weekday} ${day.dayNum}` });
-      if (out.length >= 3) break;
-    }
-    return out;
-  }, [windowState.firstSlots, calendar]);
+  const canPrev = !(view.year === minMonth.year && view.month === minMonth.month);
+  const canNext = !(view.year === maxMonth.year && view.month === maxMonth.month);
+
+  const activeSlots = activeDateKey ? slotsByDate.get(activeDateKey) ?? [] : [];
+  const monthHasSlots = monthState.slots.length > 0;
+  const monthIsEmpty = monthState.status === 'loaded' && !monthHasSlots;
+
+  // Build the leading-blank cells for the month grid. If the 1st falls on
+  // Wednesday (weekday=3), we need 3 empty cells before it.
+  const firstWeekday = firstOfMonthWeekday(view.year, view.month);
+  const blankCells = Array.from({ length: firstWeekday }, (_, i) => i);
+
+  const showSuggestNextMonth =
+    monthIsEmpty && view.year !== maxMonth.year || (monthIsEmpty && view.month < maxMonth.month);
 
   return (
     <div className="bw-step">
@@ -279,96 +291,145 @@ export function Step3DateTimePicker({
         <p>All times shown in shop time (Eastern). Closed Sundays.</p>
       </div>
 
-      <div className="bw-dt">
-        <div className="bw-date-list" role="listbox" aria-label="Available dates">
-          {calendar.map((d) => (
-            <button
-              key={d.dateKey}
-              type="button"
-              className="bw-date"
-              data-selected={d.dateKey === activeDateKey}
-              disabled={d.isClosed}
-              aria-disabled={d.isClosed}
-              role="option"
-              aria-selected={d.dateKey === activeDateKey}
-              onClick={() => !d.isClosed && setActiveDateKey(d.dateKey)}
-            >
-              <span className="bw-date-day">{d.weekday}</span>
-              <span className="bw-date-num">{d.dayNum}</span>
-              <span className="bw-date-month">{d.monthShort}{d.isClosed ? ' · closed' : ''}</span>
-            </button>
+      <div className="bw-cal">
+        <div className="bw-cal-head">
+          <button
+            type="button"
+            className="bw-cal-nav"
+            disabled={!canPrev}
+            onClick={() => canPrev && setView((v) => prevMonth(v))}
+            aria-label="Previous month"
+          >
+            ‹
+          </button>
+          <div className="bw-cal-title" aria-live="polite">
+            {MONTH_LABELS[view.month - 1]} {view.year}
+          </div>
+          <button
+            type="button"
+            className="bw-cal-nav"
+            disabled={!canNext}
+            onClick={() => canNext && setView((v) => nextMonth(v))}
+            aria-label="Next month"
+          >
+            ›
+          </button>
+        </div>
+
+        <div className="bw-cal-weekdays" aria-hidden="true">
+          {WEEKDAY_LABELS.map((d, i) => (
+            <span key={i}>{d}</span>
           ))}
         </div>
 
-        <div>
-          {slotsState.status === 'loading' && (
-            <div className="bw-skel-grid" aria-busy="true" aria-label="Loading available times">
-              {Array.from({ length: 8 }).map((_, i) => (
-                <div key={i} className="bw-skel" />
-              ))}
-            </div>
-          )}
-
-          {slotsState.status === 'error' && (
-            <div className="bw-empty">
-              <strong>Couldn't load times</strong>
-              <span>{slotsState.error}</span>
-            </div>
-          )}
-
-          {slotsState.status === 'loaded' && slotsState.slots.length > 0 && (
-            <div className="bw-slots" role="listbox" aria-label="Available times">
-              {slotsState.slots.map((slot) => {
-                const isSelected = selected?.startAtUtc === slot.startAtUtc;
-                const isBlocked = blockedSet.has(slot.startAtUtc);
-                return (
-                  <button
-                    key={slot.startAtUtc}
-                    type="button"
-                    className="bw-slot"
-                    role="option"
-                    aria-selected={isSelected}
-                    data-selected={isSelected}
-                    disabled={isBlocked}
-                    onClick={() => onPick(slot)}
-                  >
-                    {slot.startTimeLabel}
-                  </button>
-                );
-              })}
-            </div>
-          )}
-
-          {slotsState.status === 'loaded' && slotsState.slots.length === 0 && (
-            <div className="bw-empty">
-              <strong>No openings on this day</strong>
-              {windowState.status === 'checking' && <span>Checking other days…</span>}
-              {windowState.status === 'has-slots' && (
-                <>
-                  <span>Try one of these instead:</span>
-                  <div className="bw-empty-suggestions">
-                    {suggestedDates.map((s) => (
-                      <button
-                        key={s.dateKey}
-                        type="button"
-                        onClick={() => setActiveDateKey(s.dateKey)}
-                      >
-                        {s.label}
-                      </button>
-                    ))}
-                  </div>
-                </>
-              )}
-              {windowState.status === 'empty' && (
-                <span>
-                  No openings in the next two weeks. Please call us at{' '}
-                  <a className="link-gold" href="tel:+17402974462">740-297-4462</a>.
-                </span>
-              )}
-            </div>
-          )}
+        <div className="bw-cal-grid" role="grid" aria-label={`${MONTH_LABELS[view.month - 1]} ${view.year}`}>
+          {blankCells.map((i) => (
+            <span key={`blank-${i}`} className="bw-cal-blank" />
+          ))}
+          {monthDays.map((d) => {
+            const hasSlots = slotsByDate.has(d.dateKey);
+            const isLoading = monthState.status === 'loading';
+            const isSelected = activeDateKey === d.dateKey;
+            const disabled = d.isClosed || d.isPast || (!isLoading && !hasSlots);
+            const title = d.isPast
+              ? 'In the past'
+              : d.isClosed
+                ? 'Closed'
+                : !hasSlots && !isLoading
+                  ? 'No openings'
+                  : `${d.dayNum} — available`;
+            return (
+              <button
+                key={d.dateKey}
+                type="button"
+                role="gridcell"
+                className="bw-cal-day"
+                data-selected={isSelected}
+                data-has-slots={hasSlots}
+                data-loading={isLoading}
+                disabled={disabled}
+                aria-disabled={disabled}
+                aria-label={title}
+                onClick={() => !disabled && setActiveDateKey(d.dateKey)}
+              >
+                <span className="bw-cal-day-num">{d.dayNum}</span>
+                {hasSlots && <span className="bw-cal-dot" aria-hidden="true" />}
+              </button>
+            );
+          })}
         </div>
+
+        {monthState.status === 'loading' && (
+          <div className="bw-cal-foot">
+            <span className="bw-spinner" aria-hidden="true" />
+            <span>Loading {MONTH_LABELS[view.month - 1]}'s openings…</span>
+          </div>
+        )}
+
+        {monthState.status === 'error' && (
+          <div className="bw-empty" style={{ marginTop: 'var(--space-4)' }}>
+            <strong>Couldn't load this month</strong>
+            <span>{monthState.error}</span>
+          </div>
+        )}
+
+        {monthIsEmpty && (
+          <div className="bw-empty" style={{ marginTop: 'var(--space-4)' }}>
+            <strong>No openings in {MONTH_LABELS[view.month - 1]}.</strong>
+            {canNext ? (
+              <>
+                <span>Try the next month, or call <a className="link-gold" href="tel:+17402974462">740-297-4462</a>.</span>
+                <div className="bw-empty-suggestions">
+                  <button type="button" onClick={() => setView((v) => nextMonth(v))}>
+                    See {MONTH_LABELS[nextMonth(view).month - 1]} {nextMonth(view).year} →
+                  </button>
+                </div>
+              </>
+            ) : (
+              <span>Please call <a className="link-gold" href="tel:+17402974462">740-297-4462</a> to check further out.</span>
+            )}
+          </div>
+        )}
       </div>
+
+      {activeDateKey && monthState.status === 'loaded' && activeSlots.length > 0 && (
+        <div className="bw-cal-slots">
+          <div className="bw-cal-slots-head">
+            {formatLongDate(activeDateKey)}
+          </div>
+          <div className="bw-slots" role="listbox" aria-label="Available times">
+            {activeSlots.map((slot) => {
+              const isSelected = selected?.startAtUtc === slot.startAtUtc;
+              const isBlocked = blockedSet.has(slot.startAtUtc);
+              return (
+                <button
+                  key={slot.startAtUtc}
+                  type="button"
+                  className="bw-slot"
+                  role="option"
+                  aria-selected={isSelected}
+                  data-selected={isSelected}
+                  disabled={isBlocked}
+                  onClick={() => onPick(slot)}
+                >
+                  {slot.startTimeLabel}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </div>
   );
+}
+
+function formatLongDate(dateKey: string): string {
+  const [y, m, d] = dateKey.split('-').map(Number);
+  const utc = localDateToUtc(y, m, d, 12, 0);
+  return new Intl.DateTimeFormat('en-US', {
+    timeZone: SHOP_TZ,
+    weekday: 'long',
+    month: 'long',
+    day: 'numeric',
+  }).format(utc);
 }

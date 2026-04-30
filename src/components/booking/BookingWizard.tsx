@@ -100,6 +100,28 @@ export default function BookingWizard({ services, barbers, location }: Props) {
     return () => clearTimeout(t);
   }, [toast]);
 
+  // Scroll to the top of the wizard whenever the step changes. The first
+  // render is gated by hydratedRef so a deep-link / sessionStorage restore
+  // doesn't yank a user out of where they were. Honors prefers-reduced-
+  // motion: that subset gets an instant jump instead of a smooth scroll.
+  const wizardRootRef = useRef<HTMLDivElement | null>(null);
+  const lastScrolledStepRef = useRef<number>(initialState.step);
+  useEffect(() => {
+    if (!hydratedRef.current) return;
+    if (lastScrolledStepRef.current === state.step) return;
+    lastScrolledStepRef.current = state.step;
+    const reduceMotion =
+      typeof window !== 'undefined' &&
+      typeof window.matchMedia === 'function' &&
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const behavior: ScrollBehavior = reduceMotion ? 'auto' : 'smooth';
+    if (wizardRootRef.current) {
+      wizardRootRef.current.scrollIntoView({ behavior, block: 'start' });
+    } else if (typeof window !== 'undefined') {
+      window.scrollTo({ top: 0, behavior });
+    }
+  }, [state.step]);
+
   // Keyboard nav: Esc goes back; Enter submits when valid (handled in form).
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -230,7 +252,7 @@ export default function BookingWizard({ services, barbers, location }: Props) {
   const teamMemberId = state.anyBarber ? undefined : state.selectedBarber?.id;
 
   return (
-    <div className="bw">
+    <div className="bw" ref={wizardRootRef}>
       {toast && (
         <div className="bw-toast" role="status">
           {toast}
