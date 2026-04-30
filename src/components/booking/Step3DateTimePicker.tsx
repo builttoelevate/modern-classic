@@ -2,7 +2,14 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { AvailabilitySlot, DayOfWeek, Location, ServiceVariation } from '../../lib/square/types';
 
 interface Props {
-  variation: ServiceVariation;
+  /**
+   * One or more variations to query. Multiple variations are passed when
+   * the user picked "Any barber" on a per-barber service — we then fire
+   * one /api/square/availability call per variation in parallel and
+   * merge the results so the user sees the union of all three barbers'
+   * openings for the day.
+   */
+  variations: ServiceVariation[];
   teamMemberId: string | undefined;
   selected: AvailabilitySlot | null;
   blockedSlots: string[];
@@ -119,14 +126,32 @@ interface SlotsState {
   error?: string;
 }
 
+// When "Any barber" is picked on a per-barber service we hit Square once per
+// variation and concatenate the results. Two barbers can be free at the same
+// startAtUtc — show that bucket once and let Square's randomness pick which
+// one a customer ends up with. (We keep the FIRST entry per timestamp so the
+// stable sort downstream is deterministic.)
+function mergeSlots(slots: AvailabilitySlot[]): AvailabilitySlot[] {
+  const seen = new Set<string>();
+  const out: AvailabilitySlot[] = [];
+  for (const s of slots) {
+    if (seen.has(s.startAtUtc)) continue;
+    seen.add(s.startAtUtc);
+    out.push(s);
+  }
+  out.sort((a, b) => a.startAtUtc.localeCompare(b.startAtUtc));
+  return out;
+}
+
 export function Step3DateTimePicker({
-  variation,
+  variations,
   teamMemberId,
   selected,
   blockedSlots,
   location,
   onPick,
 }: Props) {
+  const variationKey = variations.map((v) => v.id).join(',');
   const calendar = useMemo(() => buildCalendar(location), [location]);
   const firstOpenIdx = calendar.findIndex((d) => !d.isClosed);
   const [activeDateKey, setActiveDateKey] = useState<string | null>(
@@ -140,7 +165,7 @@ export function Step3DateTimePicker({
   const requestSeq = useRef(0);
 
   useEffect(() => {
-    if (!activeDateKey) return;
+    if (!activeDateKey || variations.length === 0) return;
     const seq = ++requestSeq.current;
     setSlotsState({ status: 'loading', slots: [] });
     const day = calendar.find((d) => d.dateKey === activeDateKey);
@@ -151,38 +176,46 @@ export function Step3DateTimePicker({
     const [y, m, d] = activeDateKey.split('-').map(Number);
     const startUtc = localDateToUtc(y, m, d, 0, 0);
     const endUtc = localDateToUtc(y, m, d + 1, 0, 0);
-    const params = new URLSearchParams({
-      serviceVariationId: variation.id,
-      startAt: startUtc.toISOString(),
-      endAt: endUtc.toISOString(),
-    });
-    if (teamMemberId) params.set('teamMemberId', teamMemberId);
 
-    fetch(`/api/square/availability?${params.toString()}`)
-      .then(async (res) => {
+    const requests = variations.map((v) => {
+      const params = new URLSearchParams({
+        serviceVariationId: v.id,
+        startAt: startUtc.toISOString(),
+        endAt: endUtc.toISOString(),
+      });
+      if (teamMemberId) params.set('teamMemberId', teamMemberId);
+      return fetch(`/api/square/availability?${params.toString()}`).then(async (res) => {
         const body = await res.json();
+        return { ok: res.ok && body?.ok, body };
+      });
+    });
+
+    Promise.all(requests)
+      .then((results) => {
         if (seq !== requestSeq.current) return;
-        if (!res.ok || !body.ok) {
+        const failed = results.find((r) => !r.ok);
+        if (failed) {
           setSlotsState({
             status: 'error',
             slots: [],
-            error: body?.error?.detail ?? 'Could not load availability',
+            error: failed.body?.error?.detail ?? 'Could not load availability',
           });
           return;
         }
-        setSlotsState({ status: 'loaded', slots: body.slots ?? [] });
+        const merged = mergeSlots(results.flatMap((r) => r.body.slots ?? []));
+        setSlotsState({ status: 'loaded', slots: merged });
       })
       .catch((err) => {
         if (seq !== requestSeq.current) return;
         setSlotsState({ status: 'error', slots: [], error: err?.message ?? 'Network error' });
       });
-  }, [activeDateKey, variation.id, teamMemberId, calendar]);
+  }, [activeDateKey, variationKey, teamMemberId, calendar, variations]);
 
   // Phase 4 A.1 — when a single date has zero slots, also probe the full
   // 14-day window so we can either suggest a different date or, if the
   // entire window is empty, surface a friendly "call us" screen.
   useEffect(() => {
-    if (slotsState.status !== 'loaded' || slotsState.slots.length > 0) {
+    if (slotsState.status !== 'loaded' || slotsState.slots.length > 0 || variations.length === 0) {
       setWindowState({ status: 'idle', firstSlots: [] });
       return;
     }
@@ -198,21 +231,22 @@ export function Step3DateTimePicker({
     const [ey, em, ed] = last.dateKey.split('-').map(Number);
     const startUtc = localDateToUtc(sy, sm, sd, 0, 0);
     const endUtc = localDateToUtc(ey, em, ed + 1, 0, 0);
-    const params = new URLSearchParams({
-      serviceVariationId: variation.id,
-      startAt: startUtc.toISOString(),
-      endAt: endUtc.toISOString(),
-    });
-    if (teamMemberId) params.set('teamMemberId', teamMemberId);
-    fetch(`/api/square/availability?${params.toString()}`)
-      .then(async (res) => {
+    const requests = variations.map((v) => {
+      const params = new URLSearchParams({
+        serviceVariationId: v.id,
+        startAt: startUtc.toISOString(),
+        endAt: endUtc.toISOString(),
+      });
+      if (teamMemberId) params.set('teamMemberId', teamMemberId);
+      return fetch(`/api/square/availability?${params.toString()}`).then(async (res) => {
         const body = await res.json();
+        return { ok: res.ok && body?.ok, body };
+      });
+    });
+    Promise.all(requests)
+      .then((results) => {
         if (seq !== requestSeq.current) return;
-        if (!res.ok || !body.ok) {
-          setWindowState({ status: 'empty', firstSlots: [] });
-          return;
-        }
-        const all: AvailabilitySlot[] = body.slots ?? [];
+        const all = mergeSlots(results.flatMap((r) => (r.ok ? r.body.slots ?? [] : [])));
         if (all.length === 0) setWindowState({ status: 'empty', firstSlots: [] });
         else setWindowState({ status: 'has-slots', firstSlots: all.slice(0, 4) });
       })
@@ -220,7 +254,7 @@ export function Step3DateTimePicker({
         if (seq !== requestSeq.current) return;
         setWindowState({ status: 'empty', firstSlots: [] });
       });
-  }, [slotsState.status, slotsState.slots.length, calendar, variation.id, teamMemberId]);
+  }, [slotsState.status, slotsState.slots.length, calendar, variationKey, teamMemberId, variations]);
 
   const blockedSet = useMemo(() => new Set(blockedSlots), [blockedSlots]);
 

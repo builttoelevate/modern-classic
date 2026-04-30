@@ -274,12 +274,13 @@ export default function BookingWizard({ services, barbers, location }: Props) {
           anyBarber={state.anyBarber}
           onPickBarber={(barber, variation) => dispatch({ type: 'SET_BARBER', barber, variation })}
           onPickAny={(variation) => dispatch({ type: 'SET_ANY_BARBER', variation })}
+          onPickAnyMulti={(variations) => dispatch({ type: 'SET_ANY_BARBER_MULTI', variations })}
         />
       )}
 
-      {state.step === 3 && state.selectedVariation && (
+      {state.step === 3 && state.candidateVariations.length > 0 && (
         <Step3DateTimePicker
-          variation={state.selectedVariation}
+          variations={state.candidateVariations}
           teamMemberId={teamMemberId}
           selected={state.selectedSlot}
           blockedSlots={state.blockedSlots}

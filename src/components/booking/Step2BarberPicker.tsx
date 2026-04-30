@@ -7,6 +7,8 @@ interface Props {
   anyBarber: boolean;
   onPickBarber: (barber: Barber, variation: ServiceVariation) => void;
   onPickAny: (variation: ServiceVariation) => void;
+  /** Used when picking "Any" on a per-barber service — searches all variations. */
+  onPickAnyMulti: (variations: ServiceVariation[]) => void;
 }
 
 function initials(name: string): string {
@@ -23,6 +25,7 @@ export function Step2BarberPicker({
   anyBarber,
   onPickBarber,
   onPickAny,
+  onPickAnyMulti,
 }: Props) {
   // Per-barber variation services: each variation has exactly one team
   // member id. Picking a barber resolves which variation to use.
@@ -33,12 +36,41 @@ export function Step2BarberPicker({
       const barber = barbers.find((b) => b.id === memberId);
       if (barber) pairs.push({ barber, variation: v });
     }
+    // Price summary for the "Any" tile. All per-barber variations are the
+    // same price for the services we have today ($30 / $45), so show the
+    // shared price; if Square ever publishes per-barber pricing we fall
+    // back to a range.
+    const prices = pairs
+      .map(({ variation }) => variation.priceCents)
+      .filter((p): p is number => typeof p === 'number');
+    const min = prices.length ? Math.min(...prices) : null;
+    const max = prices.length ? Math.max(...prices) : null;
+    const priceNote =
+      min === null || max === null
+        ? 'Variable pricing'
+        : min === max
+          ? `$${(min / 100).toFixed(0)}`
+          : `$${(min / 100).toFixed(0)}–$${(max / 100).toFixed(0)}`;
+
     return (
       <div className="bw-step">
         <Heading service={service} />
         <div className="bw-grid bw-grid--3">
+          <button
+            type="button"
+            className="bw-card bw-barber-card"
+            data-selected={anyBarber}
+            aria-pressed={anyBarber}
+            onClick={() => onPickAnyMulti(pairs.map((p) => p.variation))}
+          >
+            <span className="bw-barber-photo" aria-hidden="true">★</span>
+            <span className="bw-barber-text">
+              <span className="bw-card-name">Any barber</span>
+              <span className="bw-card-meta">First available · {priceNote}</span>
+            </span>
+          </button>
           {pairs.map(({ barber, variation }) => {
-            const active = selected?.id === barber.id;
+            const active = !anyBarber && selected?.id === barber.id;
             return (
               <BarberCard
                 key={barber.id}

@@ -21,8 +21,21 @@ export interface CustomerInfo {
 export interface WizardState {
   step: WizardStep;
   selectedService: Service | null;
-  /** Resolved variation — for per-barber services this is set when a barber is picked. */
+  /**
+   * The variation we'll book under. For shared-variation services this is
+   * set when the user picks any barber (or "Any"). For per-barber services
+   * it's set when the user picks a specific barber. When the user picks
+   * "Any barber" on a per-barber service, this stays null until they pick
+   * a slot — at which point we resolve it from the slot's variation id.
+   */
   selectedVariation: ServiceVariation | null;
+  /**
+   * The variations we'll search availability against. Length 1 in the
+   * normal case. Length > 1 only when the user chose "Any barber" on a
+   * per-barber service — Step 3 fires one availability search per
+   * candidate and merges the slots.
+   */
+  candidateVariations: ServiceVariation[];
   selectedBarber: Barber | null;
   /** True when the user picked "Any available barber" (no team filter on availability). */
   anyBarber: boolean;
@@ -46,6 +59,7 @@ export const initialState: WizardState = {
   step: 1,
   selectedService: null,
   selectedVariation: null,
+  candidateVariations: [],
   selectedBarber: null,
   anyBarber: false,
   selectedSlot: null,
@@ -58,6 +72,7 @@ export type WizardAction =
   | { type: 'SET_SERVICE'; service: Service }
   | { type: 'SET_BARBER'; barber: Barber; variation: ServiceVariation; anyBarber?: boolean }
   | { type: 'SET_ANY_BARBER'; variation: ServiceVariation }
+  | { type: 'SET_ANY_BARBER_MULTI'; variations: ServiceVariation[] }
   | { type: 'SET_SLOT'; slot: AvailabilitySlot }
   | { type: 'BLOCK_SLOT'; startAtUtc: string }
   | { type: 'UPDATE_CUSTOMER'; patch: Partial<CustomerInfo> }
@@ -89,6 +104,7 @@ export function reducer(state: WizardState, action: WizardAction): WizardState {
         ...state,
         selectedBarber: action.barber,
         selectedVariation: action.variation,
+        candidateVariations: [action.variation],
         anyBarber: action.anyBarber ?? false,
         selectedSlot: null,
         blockedSlots: [],
@@ -99,13 +115,41 @@ export function reducer(state: WizardState, action: WizardAction): WizardState {
         ...state,
         selectedBarber: null,
         selectedVariation: action.variation,
+        candidateVariations: [action.variation],
         anyBarber: true,
         selectedSlot: null,
         blockedSlots: [],
         step: 3,
       };
-    case 'SET_SLOT':
-      return { ...state, selectedSlot: action.slot, step: 4 };
+    case 'SET_ANY_BARBER_MULTI':
+      return {
+        ...state,
+        selectedBarber: null,
+        // Defer variation selection until the slot is picked — that's
+        // when we know which barber's calendar the slot came from.
+        selectedVariation: null,
+        candidateVariations: action.variations,
+        anyBarber: true,
+        selectedSlot: null,
+        blockedSlots: [],
+        step: 3,
+      };
+    case 'SET_SLOT': {
+      // When multiple candidates were searched, resolve the variation
+      // from the slot's serviceVariationId.
+      const resolvedVariation =
+        state.candidateVariations.length <= 1
+          ? state.selectedVariation
+          : (state.candidateVariations.find(
+              (v) => v.id === action.slot.serviceVariationId,
+            ) ?? state.selectedVariation);
+      return {
+        ...state,
+        selectedSlot: action.slot,
+        selectedVariation: resolvedVariation,
+        step: 4,
+      };
+    }
     case 'BLOCK_SLOT':
       return {
         ...state,
@@ -135,9 +179,9 @@ export function reducer(state: WizardState, action: WizardAction): WizardState {
 export function isStepReachable(state: WizardState, step: WizardStep): boolean {
   if (step <= 1) return true;
   if (step === 2) return state.selectedService !== null;
-  if (step === 3) return state.selectedService !== null && state.selectedVariation !== null;
-  if (step === 4) return state.selectedSlot !== null;
-  if (step === 5) return state.selectedSlot !== null && customerInfoValid(state.customer);
+  if (step === 3) return state.selectedService !== null && state.candidateVariations.length > 0;
+  if (step === 4) return state.selectedSlot !== null && state.selectedVariation !== null;
+  if (step === 5) return state.selectedSlot !== null && state.selectedVariation !== null && customerInfoValid(state.customer);
   return false;
 }
 
