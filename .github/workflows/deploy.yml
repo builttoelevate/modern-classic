@@ -36,6 +36,16 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Strip Vercel-only routes
+        # The /book wizard, /admin dashboard, and /api/square/* endpoints
+        # require SSR and a Square access token at request time — neither
+        # works on GitHub Pages. The live booking flow is on Vercel; this
+        # preview just shows the marketing pages.
+        run: |
+          rm -rf src/pages/api
+          rm -rf src/pages/admin
+          rm -f  src/pages/book.astro
+
       - name: Build
         run: npm run build
 

@@ -12,7 +12,13 @@ const nav = [
   { href: `${base}/barbers`,  label: 'Barbers' },
   { href: `${base}/visit`,    label: 'Visit' },
 ];
-const bookUrl = 'https://modern-classic.square.site';
+// On gh-pages preview the /book route doesn't exist (no SSR), so fall
+// back to the Square site there. On Vercel/production, /book is the
+// custom wizard.
+const isGhPages = import.meta.env.BASE_URL && import.meta.env.BASE_URL !== '/';
+const bookUrl = isGhPages ? 'https://modern-classic.square.site' : `${base}/book`;
+const bookTarget = isGhPages ? '_blank' : '_self';
+const bookRel = isGhPages ? 'noopener' : '';
 ---
 <header class="site-header" data-elevated="false">
   <div class="container header-inner">
@@ -32,7 +38,7 @@ const bookUrl = 'https://modern-classic.square.site';
 
     <div class="header-actions">
       <a class="btn btn--small book-cta" href={bookUrl}
-         target="_blank" rel="noopener">
+         target={bookTarget} rel={bookRel}>
         Book a Visit <span class="arrow" aria-hidden="true">→</span>
       </a>
       <button class="hamburger" type="button"
@@ -58,7 +64,7 @@ const bookUrl = 'https://modern-classic.square.site';
         ))}
       </ul>
     </nav>
-    <a class="btn drawer__cta" href={bookUrl} target="_blank" rel="noopener" data-drawer-link>
+    <a class="btn drawer__cta" href={bookUrl} target={bookTarget} rel={bookRel} data-drawer-link>
       Book a Visit <span class="arrow" aria-hidden="true">→</span>
     </a>
     <div class="drawer__foot">

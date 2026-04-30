@@ -1,0 +1,45 @@
+import { squareFetch } from './client';
+import type { Barber, SearchTeamMembersResponse, TeamMember } from './types';
+
+// SQUARE_REFERENCE.md §3 — Bill Chicha is the dev account, not displayed.
+const HIDDEN_TEAM_MEMBER_IDS = new Set<string>(['TM3BJwsVNRbNXVZp']);
+
+// Roles aren't stored in the Square API response in a way we can reliably
+// pull, so we map them by ID to match what the shop publishes.
+const ROLE_BY_ID: Record<string, string> = {
+  '523GMGEC1FY0Z': 'Owner',
+  TMZ4GRNFpRhnzLbv: 'Master Barber',
+  TMwUNkXCCC_i3vyZ: 'Master Barber',
+};
+
+function toTitleCase(input: string): string {
+  return input
+    .toLowerCase()
+    .split(/(\s+|-)/)
+    .map((part) => (part.length === 0 ? part : part[0].toUpperCase() + part.slice(1)))
+    .join('');
+}
+
+function toBarber(member: TeamMember): Barber {
+  const given = toTitleCase((member.given_name ?? '').trim());
+  const family = toTitleCase((member.family_name ?? '').trim());
+  const displayName = given || family || 'Barber';
+  return {
+    id: member.id,
+    givenName: given,
+    familyName: family,
+    displayName,
+    role: ROLE_BY_ID[member.id] ?? 'Barber',
+  };
+}
+
+export async function getBarbers(): Promise<Barber[]> {
+  const res = await squareFetch<SearchTeamMembersResponse>(
+    '/v2/team-members/search',
+    { method: 'POST', body: {} },
+  );
+  const members = (res.team_members ?? []).filter(
+    (m) => m.status === 'ACTIVE' && !HIDDEN_TEAM_MEMBER_IDS.has(m.id),
+  );
+  return members.map(toBarber);
+}

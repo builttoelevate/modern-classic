@@ -1,5 +1,7 @@
 import type { APIRoute } from 'astro';
 
+export const prerender = true;
+
 // Static sitemap. Pages added under src/pages/ should be appended here so
 // they get indexed. Lastmod uses the build timestamp — accurate enough for
 // a low-frequency-update marketing site.

@@ -147,3 +147,5 @@ vite.config.ts.timestamp-*
 
 # Local working/source image dump (not for deploy)
 modern-classic-fb/
+
+.vercel/

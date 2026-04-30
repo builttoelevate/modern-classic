@@ -1,0 +1,55 @@
+---
+export const prerender = false;
+
+import BaseLayout from '../layouts/BaseLayout.astro';
+import Header from '../components/Header.astro';
+import Footer from '../components/Footer.astro';
+import BookingWizard from '../components/booking/BookingWizard.tsx';
+import { getServices } from '../lib/square/catalog';
+import { getBarbers } from '../lib/square/team';
+import { getLocation } from '../lib/square/locations';
+import type { Barber, Location, Service } from '../lib/square/types';
+
+import '../styles/booking.css';
+
+let services: Service[] = [];
+let barbers: Barber[] = [];
+let location: Location | null = null;
+let loadError: string | null = null;
+
+try {
+  const [s, b, l] = await Promise.all([getServices(), getBarbers(), getLocation()]);
+  services = s;
+  barbers = b;
+  location = l;
+} catch (err) {
+  loadError = err instanceof Error ? err.message : String(err);
+  // eslint-disable-next-line no-console
+  console.error('[book] failed to load services/barbers/location', err);
+}
+---
+
+<BaseLayout
+  title="Book an Appointment — Modern Classic Barbershop"
+  description="Book online with Modern Classic Barbershop in Zanesville. Pick your service, your barber, and a time that works for you."
+>
+  <Header />
+  <main id="main" class="bw-page">
+    {loadError ? (
+      <div class="bw">
+        <div class="bw-empty">
+          <strong>Booking is temporarily unavailable.</strong>
+          <span>Please try again in a moment, or call us at <a class="link-gold" href="tel:+17402974462">740-297-4462</a>.</span>
+        </div>
+      </div>
+    ) : (
+      <BookingWizard
+        client:load
+        services={services}
+        barbers={barbers}
+        location={location}
+      />
+    )}
+  </main>
+  <Footer />
+</BaseLayout>

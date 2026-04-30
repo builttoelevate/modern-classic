@@ -1,9 +1,20 @@
 import { defineConfig } from 'astro/config';
+import react from '@astrojs/react';
+import vercel from '@astrojs/vercel';
+import node from '@astrojs/node';
 
-// When DEPLOY_TARGET=gh-pages we publish to https://<owner>.github.io/<repo>/
-// (see .github/workflows/deploy.yml). Otherwise this is a production build
-// for mdrnclassic.com (or a Vercel preview) and lives at the domain root.
+// Build target matrix:
+//   default (Vercel)        -> output: 'server', vercel adapter, runs SSR.
+//   DEPLOY_TARGET=gh-pages  -> output: 'static', no adapter, and the
+//                              gh-pages workflow rm's the Vercel-only
+//                              routes (src/pages/api, /admin, /book.astro)
+//                              before invoking `astro build`.
+//   DEPLOY_TARGET=local-preview -> output: 'server', Node adapter, used
+//                              by Lighthouse runs locally (since the
+//                              Vercel adapter doesn't support `astro
+//                              preview`).
 const isGhPages = process.env.DEPLOY_TARGET === 'gh-pages';
+const isLocalPreview = process.env.DEPLOY_TARGET === 'local-preview';
 const SITE = isGhPages
   ? `https://${process.env.GH_OWNER ?? 'builttoelevate'}.github.io`
   : 'https://mdrnclassic.com';
@@ -14,7 +25,12 @@ const BASE = isGhPages
 export default defineConfig({
   site: SITE,
   base: BASE,
-  output: 'static',
+  output: isGhPages ? 'static' : 'server',
+  adapter: isGhPages
+    ? undefined
+    : isLocalPreview
+      ? node({ mode: 'standalone' })
+      : vercel(),
   trailingSlash: 'ignore',
   build: {
     inlineStylesheets: 'auto',
@@ -22,4 +38,5 @@ export default defineConfig({
   image: {
     domains: ['mdrnclassic.com'],
   },
+  integrations: [react()],
 });

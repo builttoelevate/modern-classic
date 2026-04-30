@@ -143,3 +143,62 @@ grep -oE 'https://modern-classic\.square\.site[^"]*' dist/index.html | wc -l   #
 grep -oE 'id="(services|products|story|location|barbers)"' dist/index.html      # all anchors present
 ls dist/_astro/logo-light*.webp                                                  # 5 responsive variants
 ```
+
+---
+
+## Booking system (Square integration)
+
+The custom booking flow lives at `/book` (Vercel only — gh-pages preview
+falls back to the Square-hosted booking site).
+
+### Required env vars
+
+Add to `.env` locally and to the Vercel project's environment variables.
+`.env` is gitignored.
+
+```
+# Square personal access token. Production scope set: APPOINTMENTS_ALL_READ,
+# APPOINTMENTS_WRITE, CUSTOMERS_READ, CUSTOMERS_WRITE, ITEMS_READ,
+# EMPLOYEES_READ, MERCHANT_PROFILE_READ.
+SQUARE_ACCESS_TOKEN=
+
+# Phase 4 admin dashboard. Used as the password for HTTP Basic Auth at
+# /admin/bookings. Username is "admin".
+ADMIN_PASSWORD=
+```
+
+The booking flow uses **Square's built-in confirmation email** — we don't
+send our own. No `RESEND_API_KEY` required.
+
+### Where things live
+
+- `src/lib/square/` — typed wrapper around the Square HTTP API (no SDK).
+  `client.ts`, `types.ts`, `locations.ts`, `team.ts`, `catalog.ts`,
+  `availability.ts`, `customers.ts`, `bookings.ts`.
+- `src/lib/booking/` — wire-format types, idempotency-key derivation,
+  structured logging.
+- `src/pages/api/square/` — server endpoints the wizard talks to:
+  `health.ts`, `availability.ts`, `bookings.ts`, `customer-lookup.ts`.
+- `src/pages/admin/bookings.astro` — password-protected booking activity
+  dashboard.
+- `src/components/booking/` — React wizard (5 steps, useReducer).
+- `src/styles/booking.css` — wizard-only styles, scoped under `.bw`.
+
+### Phase docs (read in order before changes)
+
+1. `SQUARE_REFERENCE.md` — IDs, endpoints, gotchas. Source of truth for
+   any Square-side fact.
+2. `PHASE_1_API_WRAPPER.md` — wrapper layer.
+3. `PHASE_2_BOOKING_WIZARD.md` — wizard UI.
+4. `PHASE_3_BOOKING_WRITES.md` — real customer + booking writes.
+5. `PHASE_4_POLISH.md` — edge cases, observability, admin.
+
+### Quick smoke tests (dev server running)
+
+```bash
+# End-to-end wrapper smoke test
+curl http://localhost:4321/api/square/health
+
+# Live availability (Beard Trim & Edge, next 7 days)
+curl "http://localhost:4321/api/square/availability?serviceVariationId=3QMIIG6HB5G47PHKQALEAJAI&startAt=$(date -u -d '+1 day' +%FT%TZ)&endAt=$(date -u -d '+8 days' +%FT%TZ)"
+```

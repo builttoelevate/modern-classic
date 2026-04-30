@@ -1,0 +1,170 @@
+---
+export const prerender = false;
+
+import { listBookings } from '../../lib/square/bookings';
+import { getBarbers } from '../../lib/square/team';
+import { getServices } from '../../lib/square/catalog';
+import { checkBasicAuth } from '../../lib/admin/auth';
+import { SquareApiError } from '../../lib/square/client';
+import type { Booking } from '../../lib/square/types';
+
+const auth = checkBasicAuth(Astro.request);
+if (!auth.ok) {
+  return auth.challenge;
+}
+
+let bookings: Booking[] = [];
+let loadError: string | null = null;
+const barberNames = new Map<string, string>();
+const serviceNames = new Map<string, string>();
+
+try {
+  const [list, barbers, services] = await Promise.all([
+    listBookings({ limit: 50 }),
+    getBarbers(),
+    getServices(),
+  ]);
+  bookings = list.bookings;
+  for (const b of barbers) barberNames.set(b.id, b.displayName);
+  for (const s of services) {
+    for (const v of s.variations) serviceNames.set(v.id, s.name);
+  }
+} catch (err) {
+  if (err instanceof SquareApiError) {
+    loadError = `${err.code}: ${err.detail}`;
+  } else {
+    loadError = err instanceof Error ? err.message : 'Unknown error';
+  }
+}
+
+function fmt(utc: string | undefined): string {
+  if (!utc) return '—';
+  const d = new Date(utc);
+  if (isNaN(d.getTime())) return utc;
+  return new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York',
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  }).format(d);
+}
+
+function statusClass(status: string): string {
+  if (status === 'ACCEPTED') return 'ok';
+  if (status === 'PENDING') return 'pending';
+  return 'cancelled';
+}
+
+const sortedBookings = [...bookings].sort((a, b) => (b.start_at ?? '').localeCompare(a.start_at ?? ''));
+---
+
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>Bookings — Modern Classic Admin</title>
+    <style>
+      :root {
+        --bg: #0b0a08;
+        --surface: #161311;
+        --surface-2: #1d1916;
+        --border: #2a2520;
+        --text: #f3ece0;
+        --muted: #b0a695;
+        --dim: #80776a;
+        --gold: #c9a35c;
+      }
+      *, *::before, *::after { box-sizing: border-box; }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font: 16px/1.5 ui-sans-serif, system-ui, sans-serif;
+      }
+      .wrap { max-width: 72rem; margin: 0 auto; padding: 32px 24px; }
+      h1 { font-family: Georgia, serif; font-weight: 400; font-size: 1.8rem; margin: 0 0 6px; }
+      .sub { color: var(--muted); font-size: 0.95rem; margin-bottom: 28px; }
+      .err {
+        background: rgba(220, 80, 60, 0.08);
+        border: 1px solid rgba(220, 80, 60, 0.4);
+        color: #f0a37a;
+        padding: 12px 16px;
+        border-radius: 6px;
+      }
+      table { width: 100%; border-collapse: collapse; font-size: 0.92rem; }
+      th, td { padding: 10px 12px; text-align: left; border-bottom: 1px solid var(--border); vertical-align: top; }
+      th {
+        font-size: 0.7rem;
+        font-weight: 700;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: var(--muted);
+        background: var(--surface);
+      }
+      tr:hover td { background: var(--surface-2); }
+      .pill {
+        display: inline-block;
+        padding: 2px 8px;
+        border-radius: 999px;
+        font-size: 0.72rem;
+        font-weight: 600;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+      }
+      .pill.ok       { background: rgba(122, 184, 110, 0.15); color: #a4d091; }
+      .pill.pending  { background: rgba(201, 163, 92, 0.15); color: var(--gold); }
+      .pill.cancelled{ background: rgba(220, 80, 60, 0.15); color: #f0a37a; }
+      .meta { color: var(--dim); font-family: ui-monospace, Menlo, monospace; font-size: 0.8rem; }
+      a { color: var(--gold); text-decoration: none; }
+      a:hover { text-decoration: underline; }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <h1>Recent bookings</h1>
+      <p class="sub">Last 50 bookings via Square API. Times shown in shop time (Eastern).</p>
+
+      {loadError && <p class="err">Failed to load bookings: {loadError}</p>}
+
+      {!loadError && sortedBookings.length === 0 && (
+        <p class="sub">No bookings on file yet.</p>
+      )}
+
+      {!loadError && sortedBookings.length > 0 && (
+        <table>
+          <thead>
+            <tr>
+              <th>When</th>
+              <th>Status</th>
+              <th>Service</th>
+              <th>Barber</th>
+              <th>Customer</th>
+              <th>Booking</th>
+            </tr>
+          </thead>
+          <tbody>
+            {sortedBookings.map((b) => {
+              const seg = b.appointment_segments?.[0];
+              const svc = seg ? (serviceNames.get(seg.service_variation_id) ?? '—') : '—';
+              const barber = seg ? (barberNames.get(seg.team_member_id) ?? '—') : '—';
+              return (
+                <tr>
+                  <td>{fmt(b.start_at)}</td>
+                  <td><span class={`pill ${statusClass(b.status)}`}>{b.status.replace(/_/g, ' ')}</span></td>
+                  <td>{svc}</td>
+                  <td>{barber}</td>
+                  <td class="meta">{b.customer_id ?? '—'}</td>
+                  <td class="meta">{b.id}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      )}
+    </div>
+  </body>
+</html>
