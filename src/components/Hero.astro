@@ -1,8 +1,20 @@
 ---
 import { Image } from 'astro:assets';
 import logo from '../assets/logo-light.png';
+import shopInterior from '../assets/shop-interior.jpg';
 ---
 <section class="hero" aria-labelledby="hero-heading">
+  <div class="hero__bg-sticky" aria-hidden="true">
+    <Image
+      src={shopInterior}
+      alt=""
+      widths={[720, 1080, 1440, 1920]}
+      sizes="100vw"
+      loading="eager"
+      class="hero__bg-img"
+    />
+    <div class="hero__bg-overlay"></div>
+  </div>
   <div class="hero__ornaments" aria-hidden="true">
     <div class="hero__glow"></div>
     <svg class="hero__corner hero__corner--tl" viewBox="0 0 80 80" fill="none">
@@ -24,18 +36,12 @@ import logo from '../assets/logo-light.png';
   </div>
 
   <div class="container hero__inner">
-    <p class="hero__eyebrow">
-      <span class="diamond" aria-hidden="true"></span>
-      Zanesville, Ohio &nbsp;·&nbsp; Est. by Barbers
-      <span class="diamond" aria-hidden="true"></span>
-    </p>
-
     <div class="hero__logo-wrap">
       <Image
         src={logo}
         alt="Modern Classic Barbershop & Shave Parlor emblem"
-        widths={[260, 360, 480, 640]}
-        sizes="(min-width: 720px) 360px, 60vw"
+        widths={[360, 480, 640, 820]}
+        sizes="(min-width: 720px) 480px, 78vw"
         loading="eager"
         class="hero__logo"
       />
@@ -47,16 +53,16 @@ import logo from '../assets/logo-light.png';
     </h1>
 
     <p class="hero__lede">
-      Premium haircuts, beard work, and traditional hot-towel shaves —
-      paired with the grooming products our barbers actually use in the chair.
+      A Zanesville barbershop and a grooming line in one.
+      The cut happens here. <span class="hero__lede-accent">The style goes with you.</span>
     </p>
 
     <div class="hero__ctas">
-      <a class="btn" href="https://modern-classic.square.site" target="_blank" rel="noopener">
-        Book a Visit <span class="arrow" aria-hidden="true">→</span>
+      <a class="btn hero__cta-primary" href="https://modern-classic.square.site" target="_blank" rel="noopener">
+        Book an Appointment <span class="arrow" aria-hidden="true">→</span>
       </a>
-      <a class="btn btn--ghost" href="#products">
-        Shop Grooming
+      <a class="btn btn--ghost hero__cta-secondary" href="#products">
+        Shop Our Products
       </a>
     </div>
 
@@ -76,14 +82,96 @@ import logo from '../assets/logo-light.png';
   .hero {
     position: relative;
     text-align: center;
-    padding-block: clamp(3rem, 6vw, 5rem) clamp(4rem, 8vw, 7rem);
-    overflow: hidden;
+    /* Override the global `section { padding-block }` rule. */
+    padding-block: 0;
+    /* Explicit background so any moment where sticky might briefly
+       paint outside its track gets covered by the section itself. */
+    background-color: var(--color-bg);
+    /* overflow: clip is sticky-safe (unlike overflow: hidden which
+       breaks position:sticky on iOS) — clips children to the section
+       bounds without creating a scroll container. Hard guarantee that
+       the sticky photo can't paint past the hero. */
+    overflow: clip;
     isolation: isolate;
   }
   .hero__inner {
+    position: relative;
+    z-index: 2;
+    /* Tighter vertical rhythm on mobile so eyebrow + logo + headline +
+       paragraph + both CTAs all read above the fold (~110svh). The
+       desktop max stays roomy. */
+    padding-block: clamp(2.25rem, 7vw, 6rem) clamp(2.5rem, 8vw, 7rem);
     display: grid;
     justify-items: center;
-    gap: clamp(1.25rem, 2vw, 1.75rem);
+    gap: clamp(0.6rem, 1.4vw, 1.5rem);
+  }
+
+  /* Sticky backdrop: stays put while the hero is on screen, then
+     scrolls away with the hero when the next section comes up.
+     The negative margin makes the sticky element take up zero
+     vertical layout space, so hero content flows over it naturally. */
+  .hero__bg-sticky {
+    position: sticky;
+    /* Pin at the bottom edge of the sticky header. Without this,
+       sticky's threshold is at viewport top:0, but the photo's
+       natural position in the document is one header-height below
+       viewport top — so for the first ~68px of scroll the photo
+       moves with the content before it reaches the threshold and
+       pins. Using top: var(--header-h) means the threshold matches
+       the photo's natural position, so it pins from scroll 0. */
+    top: var(--header-h);
+    left: 0;
+    width: 100%;
+    /* Use small viewport height so the sticky element is never taller
+       than the parent (min-height: 100svh). On iOS, 100vh > 100svh due
+       to the address bar, which would exceed parent and kill the track. */
+    height: calc(100svh - var(--header-h));
+    margin-bottom: calc((100svh - var(--header-h)) * -1);
+    z-index: 0;
+    pointer-events: none;
+    overflow: hidden;
+    background-color: var(--color-bg);
+  }
+  .hero__bg-img {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    object-position: center 55%;
+    filter: saturate(0.85) contrast(1.08) brightness(0.78);
+  }
+  /* Three-layer overlay:
+     1. A subtle warm gold halo behind the emblem (~32% Y) so the logo
+        sits in a pool of light instead of fighting the photo.
+     2. Edge vignette darker than centre so the chairs/brick at the
+        edges fade and the centre band reads through.
+     3. A vertical gradient that's heaviest at the very top and very
+        bottom (header + CTA legibility) and lightest through the H1
+        + lede band, so the text always has enough contrast.
+     Compared to the previous overlay this is ~17% lighter overall —
+     the photo breathes more, but text contrast stays AA. */
+  .hero__bg-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    background:
+      /* Soft gold halo behind the emblem */
+      radial-gradient(34% 26% at 50% 32%,
+        rgba(201, 163, 92, 0.10),
+        transparent 72%),
+      /* Edge vignette */
+      radial-gradient(125% 85% at 50% 50%,
+        transparent 30%,
+        rgba(11, 10, 8, 0.50) 75%,
+        rgba(11, 10, 8, 0.78) 100%),
+      /* Vertical contrast band */
+      linear-gradient(180deg,
+        rgba(11, 10, 8, 0.80) 0%,
+        rgba(11, 10, 8, 0.65) 18%,
+        rgba(11, 10, 8, 0.55) 45%,
+        rgba(11, 10, 8, 0.70) 80%,
+        rgba(11, 10, 8, 0.85) 100%);
   }
 
   /* Ornaments */
@@ -93,12 +181,13 @@ import logo from '../assets/logo-light.png';
     pointer-events: none;
     color: var(--color-gold);
     opacity: 0.55;
-    z-index: -1;
+    z-index: 1;
   }
   .hero__corner {
     position: absolute;
     width: clamp(36px, 5vw, 60px);
     height: clamp(36px, 5vw, 60px);
+    filter: drop-shadow(0 0 8px rgba(0, 0, 0, 0.85));
   }
   .hero__corner--tl { top: 0; left: 0; }
   .hero__corner--tr { top: 0; right: 0; }
@@ -112,32 +201,24 @@ import logo from '../assets/logo-light.png';
     width: min(640px, 80%);
     height: 280px;
     background: radial-gradient(ellipse at center,
-      rgba(201, 163, 92, 0.18), transparent 65%);
+      rgba(201, 163, 92, 0.22), transparent 65%);
     filter: blur(20px);
-    z-index: -1;
   }
-
-  .hero__eyebrow {
-    font-family: var(--font-body);
-    font-size: var(--fs-eyebrow);
-    font-weight: 600;
-    letter-spacing: 0.32em;
-    text-transform: uppercase;
-    color: var(--color-gold);
-    margin: 0;
-  }
-  .hero__eyebrow .diamond { background: var(--color-gold); opacity: 0.8; }
 
   .hero__logo-wrap {
     display: grid;
     place-items: center;
-    margin-block: clamp(0.75rem, 2vw, 1.5rem) clamp(0.25rem, 1vw, 0.5rem);
+    /* Tightened — was clamp(0.75rem ...) clamp(0.25rem ...). The grid
+       gap on .hero__inner already provides breathing room. */
+    margin-block: clamp(0.25rem, 0.8vw, 0.75rem) 0;
     position: relative;
   }
   .hero__logo {
-    width: clamp(220px, 32vw, 360px);
+    width: clamp(280px, 50vw, 480px);
     height: auto;
-    filter: drop-shadow(0 12px 40px rgba(201, 163, 92, 0.18));
+    filter:
+      drop-shadow(0 0 36px rgba(201, 163, 92, 0.4))
+      drop-shadow(0 10px 28px rgba(0, 0, 0, 0.65));
     animation: logo-fade 900ms var(--ease) both;
   }
   @keyframes logo-fade {
@@ -148,7 +229,7 @@ import logo from '../assets/logo-light.png';
   .hero__h1 {
     display: grid;
     gap: 0.05em;
-    margin-top: 0.25rem;
+    margin-top: 0;
   }
   .hero__h1-line {
     display: block;
@@ -158,6 +239,7 @@ import logo from '../assets/logo-light.png';
     line-height: 1.02;
     letter-spacing: -0.025em;
     font-variation-settings: 'opsz' 144, 'SOFT' 50;
+    text-shadow: 0 2px 30px rgba(0, 0, 0, 0.55);
   }
   .hero__h1 .italic-accent {
     font-style: italic;
@@ -167,25 +249,72 @@ import logo from '../assets/logo-light.png';
   }
 
   .hero__lede {
-    max-width: 44ch;
-    color: var(--color-text-muted);
+    max-width: 36ch;
+    color: var(--color-text);
+    /* Display serif at lede size — mirrors the H1 rhythm. */
+    font-family: var(--font-display);
     font-size: var(--fs-lede);
-    line-height: 1.55;
-    margin-top: 0.25rem;
+    font-weight: 400;
+    line-height: 1.4;
+    letter-spacing: -0.005em;
+    font-variation-settings: 'opsz' 100, 'SOFT' 50;
+    margin-top: 0;
+    opacity: 0.92;
+    text-shadow: 0 1px 12px rgba(0, 0, 0, 0.5);
+  }
+  .hero__lede-accent {
+    font-style: italic;
+    color: var(--color-gold-light);
+    font-variation-settings: 'opsz' 100, 'SOFT' 80;
   }
 
   .hero__ctas {
     display: flex;
     flex-wrap: wrap;
     justify-content: center;
+    align-items: center;
     gap: var(--space-3);
-    margin-top: var(--space-3);
+    margin-top: clamp(0.25rem, 1vw, 0.75rem);
+  }
+  /* Primary keeps the default .btn treatment (gold fill, weight 600) —
+     just guaranteed not to be shrunk by .hero__cta-secondary's overrides. */
+  .hero__cta-primary { font-weight: 600; }
+
+  /* Secondary CTA — ghost, ~75% the visual weight of the primary,
+     darker gold border, lighter font weight. Reads clearly as
+     'optional alternate path' next to the primary. */
+  .hero__cta-secondary {
+    padding: 0.72em 1.2em;
+    font-size: 0.82rem;
+    font-weight: 500;
+    letter-spacing: 0.10em;
+    border-color: var(--color-gold-deep);
+    color: var(--color-gold-soft);
+  }
+  .hero__cta-secondary:hover {
+    border-color: var(--color-gold);
+    color: var(--color-gold-light);
+    background: rgba(201, 163, 92, 0.06);
+  }
+
+  /* On the narrowest viewports, stack the CTAs so the primary stands
+     alone first and the secondary sits underneath it. */
+  @media (max-width: 480px) {
+    .hero__ctas {
+      flex-direction: column;
+      gap: 0.6rem;
+      width: 100%;
+      max-width: 20rem;
+      margin-inline: auto;
+    }
+    .hero__cta-primary,
+    .hero__cta-secondary { width: 100%; }
   }
 
   .hero__meta {
     list-style: none;
     padding: 0;
-    margin-top: clamp(1.5rem, 3vw, 2.25rem);
+    margin-top: clamp(1rem, 2.4vw, 2rem);
     display: flex;
     flex-wrap: wrap;
     justify-content: center;

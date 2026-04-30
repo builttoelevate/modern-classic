@@ -1,0 +1,549 @@
+---
+// "Shop The Essentials" — featured + 2 small product cards in an asymmetric
+// grid, plus a full-width bundle callout strip. Replaces the previous flat
+// 4-up Products section. Anchor id remains `#products` so existing nav and
+// in-hero CTAs continue to scroll here.
+
+const SHOP_BASE = 'https://mdrnclassic.com';
+
+const featured = {
+  name: 'Savoir EDP',
+  category: 'Cologne',
+  tagline: 'Inspired by Creed Aventus',
+  description: 'An eau de parfum with notes of blackcurrant, bergamot, and birch. Bold, confident, made to leave a lasting impression.',
+  price: '$65',
+  imageUrl: 'https://mdrnclassic.com/cdn/shop/files/50mlcologneartemis.jpg?v=1764266090&width=1445',
+  productUrl: `${SHOP_BASE}/products/savoir-edp-cologne`,
+  cta: 'Shop Savoir',
+  alt: 'Savoir Eau de Parfum 1.7oz cologne bottle by MDRN Classic',
+  // White-seamless studio shot — the vignette CSS softens the edges into the card.
+  whiteBg: true,
+};
+
+const small = [
+  {
+    name: 'Texture Powder',
+    category: 'Hair Styling',
+    description: 'A dry styling powder for instant volume and touchable texture with a clean matte finish. No grease. No shine.',
+    price: '$23',
+    imageUrl: 'https://mdrnclassic.com/cdn/shop/files/1_f005e3a1-0fcc-4b12-9891-5910dc26700d.png?v=1707897064&width=1445',
+    productUrl: `${SHOP_BASE}/products/mdrn%E2%84%A2-classic-20g-texture-powder`,
+    cta: 'Shop Now',
+    alt: 'MDRN Classic 20g texture powder jar',
+  },
+  {
+    name: 'Beard Oil',
+    category: 'Beard Care',
+    description: 'Softens the beard, hydrates the skin underneath, and keeps longer growth looking clean.',
+    price: '$22',
+    imageUrl: 'https://mdrnclassic.com/cdn/shop/files/3_b3030692-0a65-460d-87db-367bab5ee98b.png?v=1707897049&width=1445',
+    productUrl: `${SHOP_BASE}/products/mdrn%E2%84%A2-classic-30ml-beard-oil`,
+    cta: 'Shop Now',
+    alt: 'MDRN Classic 30ml beard oil bottle',
+  },
+];
+
+const bundle = {
+  badge: 'Save $52',
+  title: 'Complete Grooming Kit',
+  description: 'Beard Oil, shave balm, and hair & beard nourishment bundled into one complete daily routine.',
+  priceNow: '$67',
+  priceWas: '$119',
+  imageUrl: 'https://mdrnclassic.com/cdn/shop/files/Untitleddesign_21.png?v=1708686296&width=1445',
+  productUrl: `${SHOP_BASE}/products/ultimate-grooming-elegance-trio`,
+  cta: 'Shop the Kit',
+  alt: 'Complete Grooming Kit — Beard Oil, Beard & Shave Balm, Hair & Beard Nourishment',
+};
+---
+<section id="products" class="shop-ess" aria-labelledby="shop-ess-heading">
+  <div class="container">
+    <header class="section-head section-head--center" data-reveal>
+      <span class="eyebrow">The Take-Home Kit</span>
+      <h2 id="shop-ess-heading">
+        Shop the <span class="italic-accent">Essentials.</span>
+      </h2>
+      <p class="lede" style="text-align:center; margin-inline:auto;">
+        The same products we use in the chair. Take the fresh-cut feeling home with
+        our most popular grooming essentials — handpicked for better texture, cleaner
+        beards, and a premium finishing scent.
+      </p>
+    </header>
+
+    <div class="shop-ess__grid">
+      <!-- Featured: Savoir EDP. data-reveal-stagger* lines stagger the
+           4 product/bundle reveals 80ms apart in source order. -->
+      <a class="shop-ess__card shop-ess__card--featured"
+         href={featured.productUrl}
+         target="_blank"
+         rel="noopener noreferrer"
+         data-reveal
+         style="--reveal-delay: 0ms">
+        <div class:list={['shop-ess__media', featured.whiteBg && 'shop-ess__media--white']}>
+          <img src={featured.imageUrl} alt={featured.alt} loading="lazy" decoding="async" />
+        </div>
+        <div class="shop-ess__body">
+          <p class="shop-ess__category">{featured.category}</p>
+          <p class="shop-ess__tagline">{featured.tagline}</p>
+          <h3 class="shop-ess__name shop-ess__name--lg">{featured.name}</h3>
+          <p class="shop-ess__desc">{featured.description}</p>
+          <div class="shop-ess__foot">
+            <span class="shop-ess__price">{featured.price}</span>
+            <span class="shop-ess__cta">
+              {featured.cta} <span class="arrow" aria-hidden="true">→</span>
+            </span>
+          </div>
+        </div>
+      </a>
+
+      <!-- Two smaller cards stacked in the right column on desktop -->
+      {small.map((p, i) => (
+        <a class="shop-ess__card shop-ess__card--small"
+           href={p.productUrl}
+           target="_blank"
+           rel="noopener noreferrer"
+           data-reveal
+           style={`--reveal-delay: ${(i + 1) * 80}ms`}>
+          <div class="shop-ess__media">
+            <img src={p.imageUrl} alt={p.alt} loading="lazy" decoding="async" />
+          </div>
+          <div class="shop-ess__body">
+            <p class="shop-ess__category">{p.category}</p>
+            <h3 class="shop-ess__name">{p.name}</h3>
+            <p class="shop-ess__desc">{p.description}</p>
+            <div class="shop-ess__foot">
+              <span class="shop-ess__price">{p.price}</span>
+              <span class="shop-ess__cta">
+                {p.cta} <span class="arrow" aria-hidden="true">→</span>
+              </span>
+            </div>
+          </div>
+        </a>
+      ))}
+    </div>
+
+    <!-- Bundle callout — full-width strip, visually distinct from the cards -->
+    <a class="shop-ess__bundle"
+       href={bundle.productUrl}
+       target="_blank"
+       rel="noopener noreferrer"
+       data-reveal
+       style="--reveal-delay: 240ms">
+      <div class="shop-ess__bundle-image">
+        <img src={bundle.imageUrl} alt={bundle.alt} loading="lazy" decoding="async" />
+      </div>
+      <div class="shop-ess__bundle-body">
+        <span class="shop-ess__bundle-badge">{bundle.badge}</span>
+        <h3 class="shop-ess__bundle-title">{bundle.title}</h3>
+        <p class="shop-ess__bundle-desc">{bundle.description}</p>
+        <div class="shop-ess__bundle-foot">
+          <p class="shop-ess__bundle-price">
+            <span class="shop-ess__bundle-price-now">{bundle.priceNow}</span>
+            <s class="shop-ess__bundle-price-was">{bundle.priceWas}</s>
+          </p>
+          <span class="btn">
+            {bundle.cta} <span class="arrow" aria-hidden="true">→</span>
+          </span>
+        </div>
+      </div>
+    </a>
+  </div>
+</section>
+
+<style>
+  .shop-ess {
+    background:
+      radial-gradient(900px 400px at 50% 0%, rgba(201,163,92,0.06), transparent 70%),
+      var(--color-bg);
+  }
+
+  /* ---------- Asymmetric 3-card grid ---------- */
+  .shop-ess__grid {
+    display: grid;
+    grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+    grid-template-rows: 1fr 1fr;
+    gap: 1.25rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .shop-ess__card {
+    /* Cards are anchors; reset link styling. */
+    display: grid;
+    background: linear-gradient(180deg, var(--color-surface), var(--color-bg-soft));
+    border: 1px solid var(--color-border);
+    border-radius: 2px;
+    overflow: hidden;
+    color: var(--color-text);
+    text-decoration: none;
+    transition: border-color var(--dur) var(--ease),
+                transform var(--dur) var(--ease),
+                box-shadow var(--dur) var(--ease);
+  }
+  .shop-ess__card:hover {
+    border-color: rgba(201, 163, 92, 0.45);
+    transform: translateY(-3px);
+    box-shadow: 0 18px 50px -25px rgba(0, 0, 0, 0.7);
+  }
+
+  /* Featured spans both grid rows in the first column. Stacks: image on top,
+     copy underneath. */
+  .shop-ess__card--featured {
+    grid-column: 1;
+    grid-row: 1 / span 2;
+    grid-template-rows: 1fr auto;
+  }
+  .shop-ess__card--featured .shop-ess__media {
+    aspect-ratio: 4 / 5;
+  }
+  .shop-ess__card--featured .shop-ess__body {
+    padding: clamp(1.5rem, 2.4vw, 2.25rem);
+  }
+
+  /* Smaller cards: side-by-side image + copy for a denser horizontal layout. */
+  .shop-ess__card--small {
+    grid-template-columns: minmax(140px, 42%) 1fr;
+    grid-template-rows: 1fr;
+  }
+  .shop-ess__card--small .shop-ess__media {
+    aspect-ratio: auto;
+    height: 100%;
+  }
+  .shop-ess__card--small .shop-ess__body {
+    /* ~20% tighter than before (was clamp 1.1–1.5rem). */
+    padding: clamp(0.85rem, 1.6vw, 1.2rem) clamp(1rem, 1.8vw, 1.35rem);
+    gap: 0.4rem;
+  }
+
+  /* ---------- Media (image plate) ----------
+     The small-card glow (small radius, low alpha, fades fully transparent
+     well before reaching any edge) sits on the base dark gradient. The
+     featured + bundle override this with their own warmer treatments. */
+  .shop-ess__media {
+    position: relative;
+    background:
+      radial-gradient(circle at 50% 50%,
+        rgba(201, 163, 92, 0.10) 0%,
+        rgba(201, 163, 92, 0.04) 28%,
+        transparent 52%),
+      linear-gradient(180deg, #1a1612, #0e0c0a);
+    display: grid;
+    place-items: center;
+    overflow: hidden;
+  }
+  .shop-ess__media img {
+    /* Small-card default sizing — overridden by the featured + small-card
+       rules below for image-size consistency. */
+    max-width: 72%;
+    max-height: 72%;
+    width: auto;
+    height: auto;
+    object-fit: contain;
+    transition: transform var(--dur-slow) var(--ease);
+    filter: drop-shadow(0 14px 28px rgba(0, 0, 0, 0.5));
+  }
+  .shop-ess__card:hover .shop-ess__media img { transform: scale(1.04); }
+
+  /* ---------- Featured (Savoir) media: warm gold halo + larger bottle ---------- */
+  .shop-ess__card--featured .shop-ess__media {
+    background:
+      radial-gradient(circle at center,
+        rgba(212, 175, 55, 0.25) 0%,
+        rgba(212, 175, 55, 0.10) 30%,
+        transparent 60%),
+      linear-gradient(180deg, #1a1612, #0a0807);
+  }
+  /* Image scaled up so the bottle reads at ~60–70% of media height.
+     Width allowed to overflow horizontally; the vignette and overflow:hidden
+     on the parent clip the white plate edges out. */
+  .shop-ess__card--featured .shop-ess__media img {
+    max-width: none;
+    max-height: none;
+    width: 138%;
+    height: 138%;
+    object-fit: contain;
+  }
+  /* Vignette overlay for the white-seamless Savoir JPG. Tightened to the
+     bottle silhouette so only the bottle reads; the white plate is covered
+     and the warm gold halo behind it shows through everywhere else. */
+  .shop-ess__media--white::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(ellipse 22% 42% at 50% 52%,
+      transparent 0%,
+      rgba(11, 10, 8, 0.82) 70%,
+      rgba(11, 10, 8, 0.97) 100%);
+    pointer-events: none;
+    z-index: 1;
+  }
+
+  /* ---------- Small-card media: consistent product size across both ---------- */
+  .shop-ess__card--small .shop-ess__media img {
+    /* Both products render at the same display footprint regardless of
+       intrinsic aspect ratio — capped on both axes so neither the tall
+       beard-oil bottle nor the squat powder jar dominates. */
+    max-width: 64%;
+    max-height: 78%;
+  }
+
+  /* ---------- Body copy ---------- */
+  .shop-ess__body {
+    display: grid;
+    align-content: start;
+    gap: 0.55rem;
+  }
+  /* Category tag — librarian-classification feel.
+     Smaller, more tracked-out, and noticeably more muted than the
+     existing eyebrow (--color-gold-deep at #8a6e35 vs --color-gold
+     at #c9a35c) so it can sit ABOVE the eyebrow on Savoir without
+     competing with it, and stand alone on the small cards. */
+  .shop-ess__category {
+    font-family: var(--font-body);
+    font-size: 0.62rem;
+    font-weight: 600;
+    letter-spacing: 0.3em;
+    text-transform: uppercase;
+    color: var(--color-gold-deep);
+    margin: 0;
+  }
+  .shop-ess__tagline {
+    font-size: 0.72rem;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--color-gold);
+    margin: 0;
+    /* When stacked under the category tag, tighten the gap so the two
+       eyebrow-style lines read as a unit rather than two separate stops. */
+    margin-top: -0.25rem;
+  }
+  .shop-ess__name {
+    font-family: var(--font-display);
+    font-weight: 500;
+    letter-spacing: -0.005em;
+    line-height: 1.15;
+    font-size: 1.45rem;
+    font-variation-settings: 'opsz' 100;
+    margin: 0;
+  }
+  .shop-ess__name--lg {
+    font-size: clamp(1.75rem, 1.2rem + 1.6vw, 2.5rem);
+    font-variation-settings: 'opsz' 144, 'SOFT' 50;
+    line-height: 1.05;
+  }
+  .shop-ess__desc {
+    color: var(--color-text-muted);
+    font-size: 0.96rem;
+    line-height: 1.55;
+    margin: 0;
+  }
+  .shop-ess__foot {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.75rem;
+    margin-top: 0.5rem;
+  }
+  /* Cleaner sans for the price string ($65, $23, $22). The decorative
+     display serif lost contrast at small sizes — the dollar sign in
+     particular almost vanished. Same treatment as the service-card
+     price for cross-section consistency. */
+  .shop-ess__price {
+    font-family: var(--font-body);
+    font-size: 1.1rem;
+    font-weight: 600;
+    letter-spacing: 0.005em;
+    color: var(--color-gold-light);
+    white-space: nowrap;
+  }
+  .shop-ess__cta {
+    font-size: 0.78rem;
+    font-weight: 600;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--color-gold);
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+  }
+  .shop-ess__cta .arrow { transition: transform var(--dur) var(--ease); }
+  .shop-ess__card:hover .shop-ess__cta { color: var(--color-gold-light); }
+  .shop-ess__card:hover .shop-ess__cta .arrow { transform: translateX(3px); }
+
+  /* ---------- Bundle callout strip ---------- */
+  .shop-ess__bundle {
+    display: grid;
+    grid-template-columns: minmax(220px, 38%) 1fr;
+    align-items: stretch;
+    /* Visually distinct from the cards: warmer gold-tinted gradient,
+       gold-deep border, slight gold halo on hover. */
+    background:
+      radial-gradient(80% 120% at 0% 50%, rgba(201, 163, 92, 0.16), transparent 60%),
+      linear-gradient(135deg, rgba(201, 163, 92, 0.08), rgba(20, 17, 14, 0.95));
+    border: 1px solid var(--color-gold-deep);
+    border-radius: 2px;
+    overflow: hidden;
+    color: var(--color-text);
+    text-decoration: none;
+    transition: border-color var(--dur) var(--ease),
+                transform var(--dur) var(--ease),
+                box-shadow var(--dur) var(--ease);
+  }
+  .shop-ess__bundle:hover {
+    border-color: var(--color-gold);
+    transform: translateY(-2px);
+    box-shadow: 0 18px 50px -22px rgba(201, 163, 92, 0.25),
+                0 18px 50px -25px rgba(0, 0, 0, 0.7);
+  }
+  .shop-ess__bundle-image {
+    position: relative;
+    /* Removed the partial gold circle that previously sat behind the kit;
+       the strip now reads as a clean dark plate with the bundle gold halo
+       supplied by the parent gradient. */
+    background: linear-gradient(135deg, #1d1916, #0d0b09);
+    display: grid;
+    place-items: center;
+    /* Wider-than-tall so the strip reads visibly shorter than Savoir's 4:5. */
+    aspect-ratio: 5 / 3;
+    overflow: hidden;
+  }
+  .shop-ess__bundle-image img {
+    width: 78%;
+    height: 78%;
+    object-fit: contain;
+    transition: transform var(--dur-slow) var(--ease);
+    filter: drop-shadow(0 16px 32px rgba(0, 0, 0, 0.6));
+  }
+  .shop-ess__bundle:hover .shop-ess__bundle-image img { transform: scale(1.04); }
+
+  .shop-ess__bundle-body {
+    /* Tighter padding than before (was 1.5–2.25rem) so the strip holds
+       a shorter overall height than the Savoir card. */
+    padding: clamp(1.1rem, 2.4vw, 1.75rem);
+    display: grid;
+    align-content: center;
+    gap: 0.45rem;
+  }
+  /* Compact gold pill — replaces the previous full-width-feeling chip. */
+  .shop-ess__bundle-badge {
+    display: inline-flex;
+    align-self: start;
+    align-items: center;
+    gap: 0.35em;
+    padding: 0.22rem 0.55rem;
+    background: var(--color-gold);
+    color: var(--color-text-on-gold);
+    font-family: var(--font-body);
+    font-size: 0.66rem;
+    font-weight: 700;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    border-radius: 999px;
+  }
+  .shop-ess__bundle-title {
+    font-family: var(--font-display);
+    /* Sized below the Savoir name (clamp 1.75–2.5rem) so visual hierarchy
+       stays: Savoir > bundle > small cards. */
+    font-size: clamp(1.35rem, 1rem + 1.1vw, 1.7rem);
+    font-weight: 500;
+    line-height: 1.1;
+    letter-spacing: -0.005em;
+    font-variation-settings: 'opsz' 144, 'SOFT' 50;
+    margin: 0;
+  }
+  .shop-ess__bundle-desc {
+    color: var(--color-text-muted);
+    font-size: 0.94rem;
+    line-height: 1.5;
+    max-width: 52ch;
+    margin: 0;
+  }
+  .shop-ess__bundle-foot {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    margin-top: 0.35rem;
+  }
+  .shop-ess__bundle-price {
+    display: flex;
+    align-items: baseline;
+    gap: 0.55rem;
+    margin: 0;
+  }
+  .shop-ess__bundle-price-now {
+    /* Same clean sans as the small product prices, just larger and
+       heavier so the bundle's headline number scans as the offer. */
+    font-family: var(--font-body);
+    font-size: 1.55rem;
+    font-weight: 700;
+    letter-spacing: 0.005em;
+    color: var(--color-gold-light);
+    line-height: 1;
+  }
+  .shop-ess__bundle-price-was {
+    /* Crossed-out original price — same body sans so it reads as a
+       paired number to the now price, not a different language. */
+    font-family: var(--font-body);
+    font-size: 1rem;
+    font-weight: 500;
+    color: var(--color-text-dim);
+    text-decoration: line-through;
+    text-decoration-thickness: 1.5px;
+    text-decoration-color: rgba(176, 166, 149, 0.55);
+  }
+  .shop-ess__bundle .btn {
+    /* Inline anchor inside the bundle anchor — render as a button shape
+       without nested-link semantics (the parent <a> handles navigation). */
+    pointer-events: none;
+    /* Sized below the hero primary so the bundle reads as a clean offer,
+       not a second hero CTA. */
+    padding: 0.78em 1.25em;
+    font-size: 0.82rem;
+  }
+
+  /* ---------- Responsive ---------- */
+  /* Two-up grid breaks down before the small cards become unreadable. */
+  @media (max-width: 880px) {
+    .shop-ess__grid {
+      grid-template-columns: 1fr;
+      grid-template-rows: auto;
+    }
+    .shop-ess__card--featured {
+      grid-column: 1;
+      grid-row: auto;
+    }
+    .shop-ess__card--featured .shop-ess__media {
+      aspect-ratio: 4 / 3;
+    }
+    .shop-ess__bundle {
+      grid-template-columns: 1fr;
+    }
+    .shop-ess__bundle-image {
+      aspect-ratio: 16 / 9;
+    }
+  }
+  /* Below ~520px the small cards' side-by-side layout gets cramped — stack. */
+  @media (max-width: 520px) {
+    .shop-ess__card--small {
+      grid-template-columns: 1fr;
+      grid-template-rows: auto auto;
+    }
+    .shop-ess__card--small .shop-ess__media {
+      aspect-ratio: 4 / 3;
+      height: auto;
+    }
+    .shop-ess__bundle-foot {
+      flex-direction: column;
+      align-items: flex-start;
+    }
+    /* Slimmer bundle CTA on mobile — keeps the bundle visually quieter
+       than the hero CTAs while still tappable (44px+). */
+    .shop-ess__bundle .btn {
+      padding: 0.62em 1.1em;
+      font-size: 0.78rem;
+      width: 100%;
+      justify-content: center;
+    }
+    .shop-ess__bundle .btn { width: 100%; justify-content: center; }
+  }
+</style>

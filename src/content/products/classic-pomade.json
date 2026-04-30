@@ -9,6 +9,6 @@
   "ingredients": "Aqua, Ceteareth-25, Sodium Cocoamphoacetate, Glycerin, PVP, Propylene Glycol, PEG-75 Lanolin, Polyquaternium-11, Parfum, Linalool, Tetrasodium EDTA, BHT, Diazolidinyl Urea, Iodopropynyl Butylcarbamate, CI14700, CI42090.",
   "imageUrl": "https://mdrnclassic.com/cdn/shop/files/100mldeluxepomade.png?v=1707896769&width=600",
   "productUrl": "https://mdrnclassic.com/products/mdrn%E2%84%A2-classic-100ml-deluxe-pomade",
-  "featured": false,
-  "order": 7
+  "featured": true,
+  "order": 4
 }

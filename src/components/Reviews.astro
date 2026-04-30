@@ -1,47 +1,508 @@
 ---
-import ReviewCard from './ReviewCard.astro';
+// Rotating reviews carousel — replaces the previous static 3-up grid.
+// Crossfade transitions, 8s auto-advance, pauses on hover/focus/touch,
+// respects prefers-reduced-motion (no auto-advance, manual only).
 
 const reviews = [
   {
-    product: 'Salt Spray',
-    body: 'Is the only thing I put in my hair other than the powder, and my wife loves it too. The best smelling hair product on the market for sure.',
-    attribution: 'S.V.',
+    pull: 'I drive nearly 2 hours roundtrip to come visit Mike for the best of cuts and skin fade he has.',
+    full: "I started going to Michael over 6 years ago. Since I've moved to Columbus I drive nearly 2 hours roundtrip to come visit Mike for the best of cuts and skin fade he has. It's worth the drive every time.",
+    name: 'Eric Locke',
+    context: 'Drives nearly 2 hours for his cut',
   },
   {
-    product: 'Soft Clay',
-    body: 'A staple in my routine for months. Strong hold from morning to night, easy to work with, finishes natural. Highly recommend.',
-    attribution: 'Andrew H.',
+    pull: "Rick gave me a great haircut and styled my hair using the shop's own line of products!",
+    full: "Went in there to get my haircut after a few months of growth. Rick gave me a great haircut and styled my hair using the shop's own line of products! Highly recommend checking out their sea salt spray and cologne. Can't wait to come back!",
+    name: 'Hunter Zizak',
+    context: 'Recommends the in-house products',
   },
   {
-    product: 'Texture Powder & Matte Paste',
-    body: 'Softer and more durable than your normal clay paste. The powder holds your hair all day and the paste is easy to apply. You don’t want to miss out.',
-    attribution: 'Mario V.',
+    pull: 'Best barbershop in the area! Their professionalism is second to none.',
+    full: 'Best barbershop in the area! Michael, Rick, and Clayton not only do a top notch job, but their professionalism is second to none. It is a clean, family environment. Thanks for all you guys do!',
+    name: 'Bruce Trick',
+    context: 'Long-time regular',
+  },
+  {
+    pull: 'They paid great attention to detail and made him feel comfortable throughout the process.',
+    full: "I had a fantastic experience with my 5-year-old son's haircut! They paid great attention to detail and really took the time to ensure the cut was perfect. Not only that, but they made him feel comfortable throughout the process. Highly recommend.",
+    name: 'Vanessa Mineer',
+    context: 'Brings her 5-year-old son',
+  },
+  {
+    pull: "My beard hasn't been this sharp in ages!",
+    full: "Michael is the best! Very warm and welcoming atmosphere. My beard hasn't been this sharp in ages!",
+    name: 'Anthony Vasquez',
+    context: 'Beard trim regular',
   },
 ];
+
+const total = reviews.length;
+const reviewsUrl = 'https://maps.app.goo.gl/YfX4xGxFwHc8rJRZ6';
+const pad = (n: number) => String(n).padStart(2, '0');
 ---
 <section class="reviews" aria-labelledby="reviews-heading">
   <div class="container">
-    <header class="section-head section-head--center">
-      <span class="eyebrow">From the Chair</span>
+    <header class="section-head section-head--center" data-reveal>
+      <div class="reviews__google-lockup">
+        <svg class="reviews__google-wordmark"
+             viewBox="0 0 272 92"
+             aria-label="Google"
+             role="img">
+          <title>Google</title>
+          <path fill="#EA4335" d="M115.75 47.18c0 12.77-9.99 22.18-22.25 22.18s-22.25-9.41-22.25-22.18C71.25 34.32 81.24 25 93.5 25s22.25 9.32 22.25 22.18zm-9.74 0c0-7.98-5.79-13.44-12.51-13.44S80.99 39.2 80.99 47.18c0 7.9 5.79 13.44 12.51 13.44s12.51-5.55 12.51-13.44z"/>
+          <path fill="#FBBC05" d="M163.75 47.18c0 12.77-9.99 22.18-22.25 22.18s-22.25-9.41-22.25-22.18c0-12.85 9.99-22.18 22.25-22.18s22.25 9.32 22.25 22.18zm-9.74 0c0-7.98-5.79-13.44-12.51-13.44s-12.51 5.46-12.51 13.44c0 7.9 5.79 13.44 12.51 13.44s12.51-5.55 12.51-13.44z"/>
+          <path fill="#4285F4" d="M209.75 26.34v39.82c0 16.38-9.66 23.07-21.08 23.07-10.75 0-17.22-7.19-19.66-13.07l8.48-3.53c1.51 3.61 5.21 7.87 11.17 7.87 7.31 0 11.84-4.51 11.84-13v-3.19h-.34c-2.18 2.69-6.38 5.04-11.68 5.04-11.09 0-21.25-9.66-21.25-22.09 0-12.52 10.16-22.26 21.25-22.26 5.29 0 9.49 2.35 11.68 4.96h.34v-3.61h9.25zm-8.56 20.92c0-7.81-5.21-13.52-11.84-13.52-6.72 0-12.35 5.71-12.35 13.52 0 7.73 5.63 13.36 12.35 13.36 6.63 0 11.84-5.63 11.84-13.36z"/>
+          <path fill="#34A853" d="M225 3v65h-9.5V3z"/>
+          <path fill="#EA4335" d="M262.02 54.48l7.56 5.04c-2.44 3.61-8.32 9.83-18.48 9.83-12.6 0-22.01-9.74-22.01-22.18 0-13.19 9.49-22.18 20.92-22.18 11.51 0 17.14 9.16 18.98 14.11l1.01 2.52-29.65 12.28c2.27 4.45 5.8 6.72 10.75 6.72 4.96 0 8.4-2.44 10.92-6.14zm-23.27-7.98l19.82-8.23c-1.09-2.77-4.37-4.7-8.23-4.7-4.95 0-11.84 4.37-11.59 12.93z"/>
+          <path fill="#4285F4" d="M35.29 41.41V32.05H67c.31 1.64.47 3.58.47 5.68 0 7.06-1.93 15.79-8.15 22.01-6.05 6.3-13.78 9.66-24.02 9.66C16.32 69.4.36 53.94.36 34.95.36 15.96 16.32.5 35.3.5c10.5 0 17.98 4.12 23.6 9.49l-6.64 6.64c-4.03-3.78-9.49-6.72-16.97-6.72-13.86 0-24.7 11.17-24.7 25.04 0 13.86 10.84 25.04 24.7 25.04 8.99 0 14.11-3.61 17.39-6.89 2.66-2.66 4.41-6.46 5.1-11.65l-22.49.02z"/>
+        </svg>
+        <span class="reviews__stars" aria-label="5 out of 5 stars">★★★★★</span>
+        <span class="reviews__rating">5.0</span>
+      </div>
+      <p class="reviews__google-caption">
+        100+ Five-Star Reviews
+        <span class="reviews__google-caption-sep" aria-hidden="true">·</span>
+        Zanesville, OH
+      </p>
+      <span class="eyebrow">Real Reviews</span>
       <h2 id="reviews-heading">
-        What clients <span class="italic-accent">say.</span>
+        From the <span class="italic-accent">Chair.</span>
       </h2>
+      <p class="lede" style="text-align:center; margin-inline:auto;">
+        From skin fades to beard trims and kids' cuts, our customers come back
+        for the detail, the atmosphere, and the way they feel walking out.
+      </p>
     </header>
 
-    <div class="reviews__grid">
-      {reviews.map((r) => (
-        <ReviewCard product={r.product} body={r.body} attribution={r.attribution} />
-      ))}
+    <div class="reviews__carousel"
+         role="region"
+         aria-roledescription="carousel"
+         aria-label="Customer reviews"
+         data-total={total}
+         data-reveal
+         style="--reveal-delay: 80ms">
+
+      <button class="reviews__nav reviews__nav--prev"
+              type="button"
+              aria-label="Previous review"
+              data-direction="-1">
+        <svg viewBox="0 0 24 24" width="22" height="22" fill="none"
+             stroke="currentColor" stroke-width="1.4"
+             stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <polyline points="15,5 8,12 15,19"/>
+        </svg>
+      </button>
+
+      <div class="reviews__track" aria-live="polite">
+        {reviews.map((r, i) => (
+          <blockquote class="reviews__slide"
+                      data-active={i === 0 ? 'true' : 'false'}
+                      data-index={i}
+                      aria-hidden={i === 0 ? 'false' : 'true'}>
+            <p class="reviews__stars" aria-label="5 out of 5 stars">
+              <span aria-hidden="true">★★★★★</span>
+            </p>
+            <p class="reviews__pull">&ldquo;{r.pull}&rdquo;</p>
+            <p class="reviews__body">{r.full}</p>
+            <cite class="reviews__cite">
+              <span class="reviews__name">{r.name}</span>
+              <span class="reviews__context">{r.context}</span>
+              <span class="reviews__source">
+                <svg class="g-mark" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
+                  <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+                  <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
+                  <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
+                </svg>
+                Verified Google Review
+              </span>
+            </cite>
+          </blockquote>
+        ))}
+      </div>
+
+      <button class="reviews__nav reviews__nav--next"
+              type="button"
+              aria-label="Next review"
+              data-direction="1">
+        <svg viewBox="0 0 24 24" width="22" height="22" fill="none"
+             stroke="currentColor" stroke-width="1.4"
+             stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <polyline points="9,5 16,12 9,19"/>
+        </svg>
+      </button>
+
+      <p class="reviews__counter" aria-hidden="true">
+        <span class="reviews__counter-current">{pad(1)}</span>
+        <span class="reviews__counter-sep">/</span>
+        <span class="reviews__counter-total">{pad(total)}</span>
+      </p>
+    </div>
+
+    <div class="reviews__foot">
+      <a class="reviews__all-link"
+         href={reviewsUrl}
+         target="_blank"
+         rel="noopener noreferrer">
+        <svg class="g-mark" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
+          <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+          <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
+          <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
+        </svg>
+        See all 104 reviews on Google <span class="arrow" aria-hidden="true">→</span>
+      </a>
     </div>
   </div>
 </section>
 
+<script is:inline>
+  (function () {
+    const carousel = document.querySelector('.reviews__carousel');
+    if (!carousel) return;
+
+    const slides = Array.from(carousel.querySelectorAll('.reviews__slide'));
+    const counter = carousel.querySelector('.reviews__counter-current');
+    const navButtons = carousel.querySelectorAll('.reviews__nav');
+    const total = slides.length;
+    const AUTO_MS = 8000;
+
+    let current = 0;
+    let timer = null;
+
+    const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const prefersReduced = () => reduceMotion.matches;
+
+    const pad2 = (n) => String(n).padStart(2, '0');
+
+    const show = (index) => {
+      const next = ((index % total) + total) % total;
+      slides.forEach((slide, i) => {
+        const active = i === next;
+        slide.dataset.active = active ? 'true' : 'false';
+        slide.setAttribute('aria-hidden', active ? 'false' : 'true');
+      });
+      if (counter) counter.textContent = pad2(next + 1);
+      current = next;
+    };
+
+    const stop = () => {
+      if (timer) {
+        clearInterval(timer);
+        timer = null;
+      }
+    };
+
+    const start = () => {
+      if (prefersReduced()) return;
+      stop();
+      timer = setInterval(() => show(current + 1), AUTO_MS);
+    };
+
+    navButtons.forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const dir = Number(btn.dataset.direction || 1);
+        show(current + dir);
+        // User interaction restarts the auto-advance window so the next
+        // auto-advance is a full 8s away.
+        start();
+      });
+    });
+
+    // Pause on hover, focus-within, and touch.
+    ['mouseenter', 'focusin', 'touchstart'].forEach((evt) => {
+      carousel.addEventListener(evt, stop, { passive: true });
+    });
+    ['mouseleave', 'focusout', 'touchend', 'touchcancel'].forEach((evt) => {
+      carousel.addEventListener(evt, start, { passive: true });
+    });
+
+    // React to user toggling reduced-motion preference at runtime.
+    reduceMotion.addEventListener?.('change', () => {
+      if (prefersReduced()) stop();
+      else start();
+    });
+
+    // Kick off (no-op when reduced-motion is on).
+    start();
+  })();
+</script>
+
 <style>
-  .reviews { background: var(--color-bg-soft); }
-  .reviews__grid {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 1.25rem;
+  .reviews {
+    background: var(--color-bg-soft);
+    /* Extra bottom padding on mobile so the sticky Book Now bar at the
+       viewport bottom can never overlap the 'See all reviews' link. */
+    padding-bottom: clamp(4rem, 8vw, 7rem);
   }
-  @media (max-width: 880px) { .reviews__grid { grid-template-columns: 1fr; max-width: 38rem; margin-inline: auto; } }
+  @media (max-width: 720px) {
+    .reviews {
+      padding-bottom: clamp(5rem, 10vw, 7rem);
+    }
+  }
+
+  /* Google review lockup — full multi-colour wordmark + 5 gold stars +
+     5.0 rating, all centred in one row above the eyebrow. The official
+     fills are hard-coded on every path so nothing in the cascade can
+     recolour the wordmark. */
+  .reviews__google-lockup {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: clamp(0.55rem, 1.4vw, 1rem);
+    margin-bottom: 0.4rem;
+  }
+  .reviews__google-wordmark {
+    height: clamp(32px, 6vw, 56px);
+    width: auto;
+    flex: none;
+  }
+  .reviews__stars {
+    color: var(--color-gold);
+    font-size: clamp(1.05rem, 2.4vw, 1.55rem);
+    letter-spacing: 0.05em;
+    line-height: 1;
+    /* Slight nudge to align optically with the Google wordmark x-height. */
+    transform: translateY(-0.04em);
+  }
+  .reviews__rating {
+    font-family: var(--font-body);
+    font-weight: 700;
+    font-size: clamp(1.25rem, 2.8vw, 1.75rem);
+    color: var(--color-text);
+    letter-spacing: 0.005em;
+    line-height: 1;
+  }
+  .reviews__google-caption {
+    margin: 0 auto 0.25rem;
+    font-family: var(--font-body);
+    font-size: 0.7rem;
+    font-weight: 600;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--color-text-muted);
+  }
+  .reviews__google-caption-sep {
+    color: var(--color-gold);
+    margin-inline: 0.25em;
+    opacity: 0.7;
+  }
+
+  /* ---------- Carousel shell ---------- */
+  .reviews__carousel {
+    position: relative;
+    max-width: 60rem;
+    margin: 0 auto;
+    padding: clamp(1rem, 3vw, 2.5rem) clamp(2.75rem, 5vw, 4rem) 3rem;
+    /* Soft warm gold halo behind the card. */
+    background:
+      radial-gradient(circle at center,
+        rgba(212, 175, 55, 0.15) 0%,
+        rgba(212, 175, 55, 0.06) 40%,
+        transparent 70%);
+    border-radius: 4px;
+  }
+
+  /* The track lays all slides in the same grid cell so the visible card
+     crossfades cleanly without layout shift. The container sizes to the
+     tallest slide; shorter slides centre vertically. */
+  .reviews__track {
+    display: grid;
+    grid-template-areas: 'stack';
+    align-items: center;
+    justify-items: stretch;
+  }
+  .reviews__slide {
+    grid-area: stack;
+    margin: 0;
+    padding: clamp(1.75rem, 3vw, 2.75rem) clamp(1.25rem, 3vw, 2.5rem);
+    background: linear-gradient(180deg, var(--color-surface), var(--color-bg-soft));
+    border: 1px solid var(--color-rule);
+    border-radius: 2px;
+    text-align: center;
+    color: var(--color-text);
+    display: grid;
+    gap: 1.1rem;
+    justify-items: center;
+    /* All slides occupy the same grid cell at the height of the tallest
+       slide. Shorter slides get their content centred vertically so
+       they don't sit at the top with empty space below. */
+    align-content: center;
+
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transition: opacity 600ms var(--ease), visibility 0s linear 600ms;
+  }
+  .reviews__slide[data-active='true'] {
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+    transition: opacity 600ms var(--ease), visibility 0s linear 0s;
+  }
+
+  /* ---------- Slide content ---------- */
+  .reviews__stars {
+    color: var(--color-gold);
+    font-size: 1.05rem;
+    letter-spacing: 0.18em;
+    margin: 0;
+  }
+  .reviews__pull {
+    font-family: var(--font-display);
+    font-style: italic;
+    font-weight: 400;
+    font-size: clamp(1.25rem, 0.95rem + 1.6vw, 1.85rem);
+    line-height: 1.4;
+    letter-spacing: -0.005em;
+    color: var(--color-text);
+    font-variation-settings: 'opsz' 144, 'SOFT' 80;
+    max-width: 36ch;
+    margin: 0 auto;
+  }
+  .reviews__body {
+    color: var(--color-text-muted);
+    font-size: 0.96rem;
+    line-height: 1.6;
+    max-width: 52ch;
+    margin: 0 auto;
+  }
+  .reviews__cite {
+    display: grid;
+    gap: 0.3rem;
+    font-style: normal;
+    margin-top: 0.4rem;
+  }
+  .reviews__name {
+    font-family: var(--font-body);
+    font-size: 0.74rem;
+    font-weight: 700;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--color-gold);
+  }
+  .reviews__context {
+    color: var(--color-text-muted);
+    font-size: 0.92rem;
+    font-style: italic;
+    /* This single line shouldn't wrap aggressively. */
+    max-width: 36ch;
+    margin: 0 auto;
+  }
+  .reviews__source {
+    color: var(--color-text-dim);
+    font-size: 0.66rem;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    margin-top: 0.45rem;
+    /* Inline-flex so the Google G sits on the same baseline as the
+       'Verified Google Review' caps, not on its own line. */
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.45em;
+  }
+
+  /* Official Google G — multi-color paths inline above. Sized to ≤ surrounding
+     text (per brand spec — credibility mark, not design element). Colors must
+     not be overridden, so currentColor is never used here. */
+  .g-mark {
+    width: 1em;
+    height: 1em;
+    flex: none;
+    display: inline-block;
+    vertical-align: -0.12em;
+  }
+
+  /* ---------- Nav arrows ---------- */
+  .reviews__nav {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 2.4rem;
+    height: 2.4rem;
+    display: grid;
+    place-items: center;
+    border: 1px solid var(--color-rule);
+    border-radius: 50%;
+    color: var(--color-gold);
+    background: rgba(11, 10, 8, 0.55);
+    cursor: pointer;
+    transition: border-color var(--dur) var(--ease),
+                background var(--dur) var(--ease),
+                color var(--dur) var(--ease);
+    z-index: 2;
+  }
+  .reviews__nav:hover,
+  .reviews__nav:focus-visible {
+    border-color: var(--color-gold);
+    color: var(--color-gold-light);
+    background: rgba(201, 163, 92, 0.08);
+  }
+  .reviews__nav--prev { left: 0; }
+  .reviews__nav--next { right: 0; }
+  @media (max-width: 720px) {
+    .reviews__nav {
+      width: 2.1rem;
+      height: 2.1rem;
+    }
+  }
+
+  /* ---------- Counter ---------- */
+  .reviews__counter {
+    position: absolute;
+    bottom: 1rem;
+    left: 50%;
+    transform: translateX(-50%);
+    margin: 0;
+    color: var(--color-gold);
+    font-size: 0.7rem;
+    letter-spacing: 0.32em;
+    text-transform: uppercase;
+    font-family: var(--font-body);
+    font-weight: 600;
+    display: inline-flex;
+    gap: 0.4em;
+  }
+  .reviews__counter-sep { opacity: 0.55; }
+  .reviews__counter-total { color: var(--color-text-dim); }
+
+  /* ---------- See all reviews link ---------- */
+  .reviews__foot {
+    margin-top: var(--space-7);
+    text-align: center;
+  }
+  .reviews__all-link {
+    /* Already inline-flex; gap handles spacing between the G mark, the
+       text, and the trailing arrow uniformly. */
+    display: inline-flex;
+    align-items: center;
+    gap: 0.55em;
+    font-family: var(--font-body);
+    font-size: 0.78rem;
+    font-weight: 600;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--color-gold);
+    border-bottom: 1px solid var(--color-rule);
+    padding-bottom: 4px;
+    transition: color var(--dur) var(--ease),
+                border-color var(--dur) var(--ease);
+  }
+  .reviews__all-link:hover,
+  .reviews__all-link:focus-visible {
+    color: var(--color-gold-light);
+    border-bottom-color: var(--color-gold-light);
+  }
+  .reviews__all-link .arrow { transition: transform var(--dur) var(--ease); }
+  .reviews__all-link:hover .arrow { transform: translateX(3px); }
+
+  /* ---------- Reduced motion: skip the crossfade ---------- */
+  @media (prefers-reduced-motion: reduce) {
+    .reviews__slide,
+    .reviews__slide[data-active='true'] {
+      transition: none;
+    }
+  }
 </style>

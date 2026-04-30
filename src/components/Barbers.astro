@@ -10,7 +10,7 @@ const bookUrl = 'https://modern-classic.square.site';
 ---
 <section id="barbers" class="barbers" aria-labelledby="barbers-heading">
   <div class="container">
-    <header class="section-head section-head--center">
+    <header class="section-head section-head--center" data-reveal>
       <span class="eyebrow">The Chairs</span>
       <h2 id="barbers-heading">
         Meet the <span class="italic-accent">barbers.</span>
@@ -22,7 +22,7 @@ const bookUrl = 'https://modern-classic.square.site';
 
     <div class="barbers__grid">
       {barbers.map((b) => (
-        <article class="barber">
+        <article class="barber" data-reveal>
           <div class="barber__crest" aria-hidden="true">
             <svg viewBox="0 0 120 120" class="barber__svg">
               <defs>
@@ -121,11 +121,14 @@ const bookUrl = 'https://modern-classic.square.site';
     margin-top: 0.1rem;
   }
   .barber__rate span {
-    font-family: var(--font-display);
+    /* Body sans, semibold, brighter gold — matches the price treatment
+       used on service cards and the Shop The Essentials products. */
+    font-family: var(--font-body);
+    font-weight: 600;
     color: var(--color-gold-light);
     font-size: 1.05rem;
-    font-variation-settings: 'opsz' 100;
-    margin-left: 0.2rem;
+    letter-spacing: 0.005em;
+    margin-left: 0.25rem;
   }
   .barber__cta {
     margin-top: 0.6rem;

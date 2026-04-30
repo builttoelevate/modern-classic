@@ -62,12 +62,33 @@ const priceLabel = Number.isInteger(price) ? `$${price}` : `$${price.toFixed(2)}
     transition: transform var(--dur-slow) var(--ease);
     filter: drop-shadow(0 14px 28px rgba(0,0,0,0.5));
   }
+  /* Shopify ships some product photos as JPGs shot on a white seamless
+     background (Savoir EDP, Savoir Gold, Shaving Cream). Rather than
+     blending the photo (multiply darkens the bottle past readability),
+     we lay a heavy radial vignette over the JPG: bottle stays at full
+     brightness in the centre, the white edges fade into the card.
+     Phase 2 replaces these with locally edited PNGs. */
+  .prod__media:has(img[src*=".jpg"])::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    /* Tight ellipse — only the bottle area gets the transparent
+       window; the rest of the photo (white plate) gets covered. */
+    background:
+      radial-gradient(ellipse 16% 30% at 50% 52%,
+        transparent 0%,
+        rgba(11, 10, 8, 0.85) 75%,
+        rgba(11, 10, 8, 0.98) 100%);
+    pointer-events: none;
+    z-index: 1;
+  }
   .prod:hover .prod__media img { transform: scale(1.04); }
 
   .prod__chip {
     position: absolute;
     top: 0.85rem;
     left: 0.85rem;
+    z-index: 2;
     font-size: 0.65rem;
     letter-spacing: 0.22em;
     text-transform: uppercase;

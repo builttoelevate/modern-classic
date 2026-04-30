@@ -3,9 +3,11 @@ const nav = [
   { href: '/#services', label: 'Services' },
   { href: '/#products', label: 'Shop' },
   { href: '/gallery', label: 'Gallery' },
+  { href: '/#barbers', label: 'Barbers' },
   { href: '/#story', label: 'About' },
   { href: '/#location', label: 'Visit' },
 ];
+const bookUrl = 'https://modern-classic.square.site';
 ---
 <header class="site-header" data-elevated="false">
   <div class="container header-inner">
@@ -17,30 +19,104 @@ const nav = [
 
     <nav class="nav" aria-label="Primary">
       <ul>
-        {nav.map(({ href, label }) => (
+        {nav.slice(0, 4).map(({ href, label }) => (
           <li><a href={href}>{label}</a></li>
         ))}
       </ul>
     </nav>
 
-    <a class="btn btn--small book-cta" href="https://modern-classic.square.site"
-       target="_blank" rel="noopener">
-      Book Now <span class="arrow" aria-hidden="true">→</span>
-    </a>
+    <div class="header-actions">
+      <a class="btn btn--small book-cta" href={bookUrl}
+         target="_blank" rel="noopener">
+        Book Now <span class="arrow" aria-hidden="true">→</span>
+      </a>
+      <button class="hamburger" type="button"
+              aria-label="Open menu"
+              aria-controls="mobile-menu"
+              aria-expanded="false">
+        <span class="hamburger__bar"></span>
+        <span class="hamburger__bar"></span>
+        <span class="hamburger__bar"></span>
+      </button>
+    </div>
   </div>
   <hr class="rule rule--header" />
 </header>
 
+<!-- Mobile drawer -->
+<div id="mobile-menu" class="drawer" aria-hidden="true" role="dialog" aria-label="Menu">
+  <div class="drawer__panel">
+    <nav class="drawer__nav" aria-label="Mobile primary">
+      <ul>
+        {nav.map(({ href, label }) => (
+          <li><a href={href} data-drawer-link>{label}</a></li>
+        ))}
+      </ul>
+    </nav>
+    <a class="btn drawer__cta" href={bookUrl} target="_blank" rel="noopener" data-drawer-link>
+      Book a Visit <span class="arrow" aria-hidden="true">→</span>
+    </a>
+    <div class="drawer__foot">
+      <p class="drawer__addr">819 Linden Ave · Zanesville, OH</p>
+      <ul class="drawer__social" aria-label="Social">
+        <li>
+          <a href="https://www.instagram.com/mdrnclassic" target="_blank" rel="noopener" aria-label="Instagram">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+              <rect x="3" y="3" width="18" height="18" rx="4"/>
+              <circle cx="12" cy="12" r="4"/>
+              <circle cx="17.5" cy="6.5" r="0.8" fill="currentColor"/>
+            </svg>
+          </a>
+        </li>
+        <li>
+          <a href="https://www.facebook.com/profile.php?id=61558232180660" target="_blank" rel="noopener" aria-label="Facebook">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+              <path d="M14 8h2.5V5h-2.5C12.6 5 11 6.3 11 8.2V11H8.5v3H11v7h3v-7h2.5l.5-3H14V8.5c0-.3.2-.5.5-.5z" fill="currentColor" stroke="none"/>
+            </svg>
+          </a>
+        </li>
+      </ul>
+    </div>
+  </div>
+  <button class="drawer__scrim" aria-label="Close menu" data-drawer-close></button>
+</div>
+
 <script is:inline>
-  // Add elevation shadow / background after a small scroll
   (function () {
     const header = document.querySelector('.site-header');
-    if (!header) return;
-    const onScroll = () => {
-      header.dataset.elevated = window.scrollY > 8 ? 'true' : 'false';
+    if (header) {
+      const onScroll = () => {
+        header.dataset.elevated = window.scrollY > 8 ? 'true' : 'false';
+      };
+      document.addEventListener('scroll', onScroll, { passive: true });
+      onScroll();
+    }
+
+    const drawer = document.getElementById('mobile-menu');
+    const button = document.querySelector('.hamburger');
+    if (!drawer || !button) return;
+
+    const setOpen = (open) => {
+      drawer.dataset.open = open ? 'true' : 'false';
+      drawer.setAttribute('aria-hidden', open ? 'false' : 'true');
+      button.setAttribute('aria-expanded', open ? 'true' : 'false');
+      button.setAttribute('aria-label', open ? 'Close menu' : 'Open menu');
+      button.dataset.open = open ? 'true' : 'false';
+      document.body.style.overflow = open ? 'hidden' : '';
     };
-    document.addEventListener('scroll', onScroll, { passive: true });
-    onScroll();
+
+    button.addEventListener('click', () => {
+      const isOpen = drawer.dataset.open === 'true';
+      setOpen(!isOpen);
+    });
+
+    drawer.querySelectorAll('[data-drawer-close], [data-drawer-link]').forEach((el) => {
+      el.addEventListener('click', () => setOpen(false));
+    });
+
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && drawer.dataset.open === 'true') setOpen(false);
+    });
   })();
 </script>
 
@@ -66,22 +142,30 @@ const nav = [
     justify-content: space-between;
     gap: var(--space-5);
   }
-  .rule--header {
-    margin: 0;
-    opacity: 0.55;
-  }
+  .rule--header { margin: 0; opacity: 0.55; }
 
   .wordmark {
     display: inline-flex;
     align-items: baseline;
     gap: 0.45em;
+    /* Explicit font shorthand so descendants can't fall back to a system
+       serif if a parent rule slips a generic family in. */
     font-family: var(--font-display);
-    font-size: 1.18rem;
+    font-size: 1.22rem;
     font-weight: 500;
-    letter-spacing: 0.01em;
+    letter-spacing: 0.005em;
     color: var(--color-text);
-    font-variation-settings: 'opsz' 60, 'SOFT' 30;
+    /* Match the H1's display rendering (opsz 144, SOFT 50). At opsz 60
+       Fraunces flips into its "text" style — narrower, less character —
+       which read as a generic serif next to the H1. */
+    font-variation-settings: 'opsz' 144, 'SOFT' 50;
     transition: color var(--dur) var(--ease);
+  }
+  /* Inheritance defense: spans inside the wordmark explicitly use the
+     display family so any future global rule can't override them. */
+  .wordmark__primary {
+    font-family: var(--font-display);
+    font-variation-settings: inherit;
   }
   .wordmark__sep {
     color: var(--color-gold);
@@ -122,8 +206,177 @@ const nav = [
   .nav a:hover { color: var(--color-text); }
   .nav a:hover::after { transform: scaleX(1); }
 
+  /* Right cluster: book CTA + hamburger */
+  .header-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  /* Hamburger button — desktop hides it */
+  .hamburger {
+    --bar: 22px;
+    width: 40px;
+    height: 40px;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    gap: 5px;
+    border: 1px solid var(--color-rule);
+    border-radius: 2px;
+    background: transparent;
+    cursor: pointer;
+    transition: border-color var(--dur) var(--ease),
+                background var(--dur) var(--ease);
+  }
+  .hamburger:hover { border-color: var(--color-gold); }
+  .hamburger__bar {
+    display: block;
+    width: var(--bar);
+    height: 1.5px;
+    background: var(--color-gold);
+    transition: transform var(--dur) var(--ease),
+                opacity var(--dur) var(--ease);
+    transform-origin: center;
+  }
+  .hamburger[data-open='true'] .hamburger__bar:nth-child(1) {
+    transform: translateY(6.5px) rotate(45deg);
+  }
+  .hamburger[data-open='true'] .hamburger__bar:nth-child(2) {
+    opacity: 0;
+  }
+  .hamburger[data-open='true'] .hamburger__bar:nth-child(3) {
+    transform: translateY(-6.5px) rotate(-45deg);
+  }
+
+  /* Drawer */
+  .drawer {
+    position: fixed;
+    inset: 0;
+    z-index: 100;
+    pointer-events: none;
+    visibility: hidden;
+  }
+  .drawer[data-open='true'] {
+    pointer-events: auto;
+    visibility: visible;
+  }
+  .drawer__scrim {
+    position: absolute;
+    inset: 0;
+    background: rgba(5, 4, 3, 0.7);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    border: 0;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity var(--dur) var(--ease);
+  }
+  .drawer[data-open='true'] .drawer__scrim { opacity: 1; }
+
+  .drawer__panel {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: min(100%, 22rem);
+    background: linear-gradient(180deg, var(--color-bg-soft), var(--color-bg));
+    border-left: 1px solid var(--color-border);
+    padding: calc(var(--header-h) + 1.5rem) clamp(1.5rem, 5vw, 2rem) 2rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+    transform: translateX(100%);
+    transition: transform var(--dur-slow) var(--ease);
+    box-shadow: -20px 0 60px -20px rgba(0,0,0,0.7);
+  }
+  .drawer[data-open='true'] .drawer__panel { transform: translateX(0); }
+
+  .drawer__nav ul {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: grid;
+    gap: 0.25rem;
+  }
+  .drawer__nav a {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 1rem 0;
+    font-family: var(--font-display);
+    font-size: 1.6rem;
+    font-weight: 400;
+    letter-spacing: -0.01em;
+    color: var(--color-text);
+    border-bottom: 1px solid var(--color-border-soft);
+    transition: color var(--dur) var(--ease),
+                padding-left var(--dur) var(--ease);
+    font-variation-settings: 'opsz' 144, 'SOFT' 50;
+  }
+  .drawer__nav a::after {
+    content: '→';
+    color: var(--color-gold);
+    opacity: 0;
+    transform: translateX(-6px);
+    transition: opacity var(--dur) var(--ease),
+                transform var(--dur) var(--ease);
+  }
+  .drawer__nav a:hover,
+  .drawer__nav a:focus-visible {
+    color: var(--color-gold-light);
+    padding-left: 0.4rem;
+  }
+  .drawer__nav a:hover::after,
+  .drawer__nav a:focus-visible::after {
+    opacity: 1;
+    transform: translateX(0);
+  }
+
+  .drawer__cta {
+    margin-top: 0.25rem;
+    width: 100%;
+    justify-content: center;
+  }
+
+  .drawer__foot {
+    margin-top: auto;
+    display: grid;
+    gap: 1rem;
+    border-top: 1px solid var(--color-border-soft);
+    padding-top: 1.25rem;
+  }
+  .drawer__addr {
+    color: var(--color-text-muted);
+    font-size: 0.82rem;
+    letter-spacing: 0.05em;
+  }
+  .drawer__social {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    gap: 0.6rem;
+  }
+  .drawer__social a {
+    display: grid;
+    place-items: center;
+    width: 38px;
+    height: 38px;
+    border: 1px solid var(--color-border);
+    border-radius: 50%;
+    color: var(--color-gold);
+    transition: border-color var(--dur) var(--ease), color var(--dur) var(--ease);
+  }
+  .drawer__social a:hover {
+    border-color: var(--color-gold);
+    color: var(--color-gold-light);
+  }
+
   @media (max-width: 820px) {
     .nav { display: none; }
+    .hamburger { display: inline-flex; }
   }
   @media (max-width: 480px) {
     .wordmark__sep { display: none; }

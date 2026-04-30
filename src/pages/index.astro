@@ -1,12 +1,13 @@
 ---
 import BaseLayout from '../layouts/BaseLayout.astro';
 import Header from '../components/Header.astro';
+import TrustStrip from '../components/TrustStrip.astro';
 import Hero from '../components/Hero.astro';
 import QuickActions from '../components/QuickActions.astro';
 import Services from '../components/Services.astro';
 import Barbers from '../components/Barbers.astro';
 import Story from '../components/Story.astro';
-import Products from '../components/Products.astro';
+import ShopEssentials from '../components/ShopEssentials.astro';
 import Reviews from '../components/Reviews.astro';
 import Location from '../components/Location.astro';
 import FinalCTA from '../components/FinalCTA.astro';
@@ -15,13 +16,14 @@ import MobileBookCTA from '../components/MobileBookCTA.astro';
 ---
 <BaseLayout>
   <Header />
+  <TrustStrip />
   <main id="main">
     <Hero />
     <QuickActions />
     <Services />
     <Barbers />
     <Story />
-    <Products />
+    <ShopEssentials />
     <Reviews />
     {/* TODO: phase 2 — Facebook recent-photos grid lives here, between Reviews and Location */}
     <Location />

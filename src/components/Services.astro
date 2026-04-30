@@ -8,7 +8,7 @@ const services = (await getCollection('services'))
 ---
 <section id="services" class="services" aria-labelledby="services-heading">
   <div class="container">
-    <header class="section-head">
+    <header class="section-head" data-reveal>
       <span class="eyebrow">In the Chair</span>
       <h2 id="services-heading">
         Services, <span class="italic-accent">tailored sharp.</span>
@@ -42,7 +42,11 @@ const services = (await getCollection('services'))
 </section>
 
 <style>
-  .services { background: linear-gradient(180deg, var(--color-bg), var(--color-bg-soft)); }
+  .services {
+    background-color: var(--color-bg);
+    background-image: linear-gradient(180deg, var(--color-bg), var(--color-bg-soft));
+    position: relative;
+  }
   .services__grid {
     display: grid;
     grid-template-columns: repeat(3, 1fr);

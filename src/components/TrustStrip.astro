@@ -1,0 +1,105 @@
+---
+// Thin trust strip directly below the header. Wayfinding feel — not a banner.
+const items = [
+  { kind: 'rating', label: 'Google Rating', value: '5.0' },
+  { kind: 'plain',  label: '100+ Reviews' },
+  { kind: 'plain',  label: 'Barber-Owned' },
+  { kind: 'plain',  label: 'Walk-Ins Welcome' },
+];
+---
+<aside class="trust-strip" aria-label="Trust indicators">
+  <div class="container trust-strip__inner">
+    {items.map((item, i) => (
+      <>
+        {i > 0 && <span class="trust-strip__sep" aria-hidden="true">·</span>}
+        <span class="trust-strip__item">
+          {item.kind === 'rating' && (
+            <span class="trust-strip__star" aria-hidden="true">★</span>
+          )}
+          {item.kind === 'rating' && (
+            <strong class="trust-strip__value">{item.value}</strong>
+          )}
+          <span>{item.label}</span>
+        </span>
+      </>
+    ))}
+  </div>
+</aside>
+
+<style>
+  .trust-strip {
+    /* Body-bg gap between the nav and this strip so they read as
+       separate elements (per spec: 20–24px). */
+    margin-top: 1.375rem; /* 22px */
+    /* Slightly lighter than the page bg so it reads as its own band, plus
+       hairline gold rules top + bottom for a wayfinding feel. */
+    background: linear-gradient(180deg, var(--color-bg-soft), var(--color-surface));
+    border-top: 1px solid var(--color-rule-soft);
+    border-bottom: 1px solid var(--color-rule-soft);
+    color: var(--color-text-muted);
+  }
+  .trust-strip__inner {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 0.55rem 1rem;
+    /* Internal vertical padding bumped from 0.7rem to ~14px so the text
+       has breathing room inside the strip. */
+    padding-block: 0.875rem;
+    /* Eyebrow-style typography to match the rest of the site. */
+    font-family: var(--font-body);
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    line-height: 1;
+  }
+  .trust-strip__item {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4em;
+    color: var(--color-text-muted);
+    white-space: nowrap;
+  }
+  .trust-strip__star {
+    color: var(--color-gold);
+    font-size: 0.95em;
+    line-height: 0;
+    transform: translateY(-0.05em);
+  }
+  .trust-strip__value {
+    font-weight: 700;
+    color: var(--color-gold);
+    letter-spacing: 0.08em;
+  }
+  .trust-strip__sep {
+    color: var(--color-gold);
+    opacity: 0.55;
+    font-size: 1.1em;
+    line-height: 0;
+  }
+
+  /* Mobile (≤620px): force a balanced 2x2 grid layout. The previous
+     flex-wrap was producing an awkward 3+1 break (Walk-Ins Welcome alone
+     on row 2). Grid gives a deterministic two-up-two-down. Separators
+     are hidden in this mode since each item already has its own cell. */
+  @media (max-width: 620px) {
+    .trust-strip__inner {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      column-gap: 1rem;
+      /* Tighter than before (0.6rem) — the two rows now sit close enough
+         to read as one unified block rather than two separated bands. */
+      row-gap: 0.35rem;
+      padding-block: 0.8rem;
+      letter-spacing: 0.18em;
+      font-size: 0.7rem;
+    }
+    .trust-strip__sep { display: none; }
+    .trust-strip__item {
+      justify-content: center;
+      white-space: normal;
+    }
+  }
+</style>
