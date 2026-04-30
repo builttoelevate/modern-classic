@@ -1,5 +1,9 @@
 ---
-const bookUrl = 'https://modern-classic.square.site';
+const base = import.meta.env.BASE_URL.replace(/\/$/, '');
+const isGhPages = import.meta.env.BASE_URL && import.meta.env.BASE_URL !== '/';
+const bookUrl = isGhPages ? 'https://modern-classic.square.site' : `${base}/book`;
+const bookTarget = isGhPages ? '_blank' : '_self';
+const bookRel = isGhPages ? 'noopener' : '';
 ---
 <section class="fcta" aria-labelledby="fcta-heading">
   <div class="container fcta__inner" data-reveal>
@@ -13,7 +17,7 @@ const bookUrl = 'https://modern-classic.square.site';
       Book your chair, then take the style home with you.
     </p>
     <div class="fcta__ctas">
-      <a class="btn" href={bookUrl} target="_blank" rel="noopener">
+      <a class="btn" href={bookUrl} target={bookTarget} rel={bookRel}>
         Book a Visit <span class="arrow" aria-hidden="true">→</span>
       </a>
       <a class="btn btn--ghost" href="#products">

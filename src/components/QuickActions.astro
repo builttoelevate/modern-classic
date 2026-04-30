@@ -1,18 +1,23 @@
 ---
+const base = import.meta.env.BASE_URL.replace(/\/$/, '');
+const isGhPages = import.meta.env.BASE_URL && import.meta.env.BASE_URL !== '/';
+const bookHref = isGhPages ? 'https://modern-classic.square.site' : `${base}/book`;
+const bookExternal = isGhPages;
+
 const actions = [
   {
     label: 'Book a Haircut',
     sub: 'In-and-out, sharp.',
-    href: 'https://modern-classic.square.site',
+    href: bookHref,
     icon: 'scissors',
-    external: true,
+    external: bookExternal,
   },
   {
     label: 'Cut + Beard',
     sub: 'The full grooming.',
-    href: 'https://modern-classic.square.site',
+    href: bookHref,
     icon: 'diamond',
-    external: true,
+    external: bookExternal,
   },
   {
     label: 'Shop Products',
@@ -24,9 +29,9 @@ const actions = [
   {
     label: 'First Visit',
     sub: 'Start here.',
-    href: 'https://modern-classic.square.site',
+    href: bookHref,
     icon: 'star',
-    external: true,
+    external: bookExternal,
   },
 ];
 ---

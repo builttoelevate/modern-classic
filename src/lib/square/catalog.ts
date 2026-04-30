@@ -10,6 +10,14 @@ import type {
 // SQUARE_REFERENCE.md §4 — VIC is currently not bookable; hide it.
 const HIDDEN_ITEM_IDS = new Set<string>(['REEU27HVQBIP27KEI47RI73V']);
 
+// SQUARE_REFERENCE.md §3 — Bill Chicha is the dev account. Square attaches
+// his id to every bookable variation's `team_member_ids` (presumably so the
+// dashboard owner can fill in for any barber), but customers must never
+// see him as a bookable option. Strip him at the catalog layer so every
+// downstream consumer (eligibility checks, the hasPerBarberVariations
+// heuristic, etc.) sees the real barber list.
+const HIDDEN_TEAM_MEMBER_IDS = new Set<string>(['TM3BJwsVNRbNXVZp']);
+
 const APPOINTMENTS_PRODUCT_TYPE = 'APPOINTMENTS_SERVICE';
 
 function durationMsToMinutes(ms: number | undefined): number {
@@ -24,13 +32,16 @@ function variationToDerived(v: CatalogItemVariation): ServiceVariation {
     pricingType === 'FIXED_PRICING' && typeof data.price_money?.amount === 'number'
       ? data.price_money.amount
       : null;
+  const eligibleTeamMemberIds = (data.team_member_ids ?? []).filter(
+    (id) => !HIDDEN_TEAM_MEMBER_IDS.has(id),
+  );
   return {
     id: v.id,
     name: data.name ?? '',
     priceCents,
     durationMinutes: durationMsToMinutes(data.service_duration),
     version: v.version,
-    eligibleTeamMemberIds: data.team_member_ids ?? [],
+    eligibleTeamMemberIds,
     pricingType,
     availableForBooking: data.available_for_booking ?? true,
   };

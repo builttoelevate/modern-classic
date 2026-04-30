@@ -1,6 +1,10 @@
 ---
 const directionsUrl = 'https://www.google.com/maps/search/?api=1&query=819+Linden+Avenue+Zanesville+OH+43701';
-const bookUrl = 'https://modern-classic.square.site';
+const base = import.meta.env.BASE_URL.replace(/\/$/, '');
+const isGhPages = import.meta.env.BASE_URL && import.meta.env.BASE_URL !== '/';
+const bookUrl = isGhPages ? 'https://modern-classic.square.site' : `${base}/book`;
+const bookTarget = isGhPages ? '_blank' : '_self';
+const bookRel = isGhPages ? 'noopener' : '';
 ---
 <section id="location" class="loc" aria-labelledby="loc-heading">
   <div class="container loc__grid">
@@ -44,7 +48,7 @@ const bookUrl = 'https://modern-classic.square.site';
       </dl>
 
       <div class="loc__ctas">
-        <a class="btn" href={bookUrl} target="_blank" rel="noopener">
+        <a class="btn" href={bookUrl} target={bookTarget} rel={bookRel}>
           Book Now <span class="arrow" aria-hidden="true">→</span>
         </a>
         <a class="btn btn--ghost" href={directionsUrl} target="_blank" rel="noopener">

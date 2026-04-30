@@ -1,6 +1,8 @@
 ---
 // Strip trailing slash so concatenation always lands on a clean form.
 const base = import.meta.env.BASE_URL.replace(/\/$/, '');
+const isGhPages = import.meta.env.BASE_URL && import.meta.env.BASE_URL !== '/';
+const bookHref = isGhPages ? 'https://modern-classic.square.site' : `${base}/book`;
 const year = new Date().getFullYear();
 const cols = [
   {
@@ -11,7 +13,7 @@ const cols = [
       { label: 'Gallery', href: `${base}/gallery` },
       { label: 'About', href: `${base}/#about` },
       { label: 'Visit', href: `${base}/visit` },
-      { label: 'Book a Visit', href: 'https://modern-classic.square.site', external: true },
+      { label: 'Book a Visit', href: bookHref, external: isGhPages },
     ],
   },
   {
