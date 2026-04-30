@@ -1,17 +1,23 @@
 ---
+// Strip trailing slash so concatenation always lands on a clean form.
+// At mdrnclassic.com → BASE_URL is "/" → base becomes ""
+// At gh-pages       → BASE_URL is "/modern-classic/" → base becomes "/modern-classic"
+const base = import.meta.env.BASE_URL.replace(/\/$/, '');
+const home = base + '/';
+
 const nav = [
-  { href: '/#services', label: 'Services' },
-  { href: '/#products', label: 'Shop' },
-  { href: '/gallery', label: 'Gallery' },
-  { href: '/#barbers', label: 'Barbers' },
-  { href: '/#story', label: 'About' },
-  { href: '/#location', label: 'Visit' },
+  { href: `${base}/#services`, label: 'Services' },
+  { href: `${base}/#products`, label: 'Shop' },
+  { href: `${base}/gallery`,   label: 'Gallery' },
+  { href: `${base}/#barbers`,  label: 'Barbers' },
+  { href: `${base}/#story`,    label: 'About' },
+  { href: `${base}/#location`, label: 'Visit' },
 ];
 const bookUrl = 'https://modern-classic.square.site';
 ---
 <header class="site-header" data-elevated="false">
   <div class="container header-inner">
-    <a class="wordmark" href="/" aria-label="Modern Classic — home">
+    <a class="wordmark" href={home} aria-label="Modern Classic — home">
       <span class="wordmark__primary">Modern</span>
       <span class="wordmark__sep" aria-hidden="true">·</span>
       <span class="wordmark__primary">Classic</span>
