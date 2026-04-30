@@ -80,8 +80,7 @@ export type WizardAction =
   | { type: 'NEXT' }
   | { type: 'BACK' }
   | { type: 'STATUS'; status: WizardStatus }
-  | { type: 'RESET' }
-  | { type: 'HYDRATE'; state: WizardState };
+  | { type: 'RESET' };
 
 export function reducer(state: WizardState, action: WizardAction): WizardState {
   switch (action.type) {
@@ -171,8 +170,6 @@ export function reducer(state: WizardState, action: WizardAction): WizardState {
       return { ...state, status: action.status };
     case 'RESET':
       return initialState;
-    case 'HYDRATE':
-      return action.state;
   }
 }
 

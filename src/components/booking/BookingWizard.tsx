@@ -10,7 +10,6 @@ import {
   reducer,
   isStepReachable,
   digits,
-  type WizardState,
   type WizardStep,
 } from './wizardState';
 import type { CreateBookingResponse } from '../../lib/booking/types';
@@ -21,45 +20,7 @@ interface Props {
   location: Location | null;
 }
 
-const STORAGE_KEY = 'mc:booking-wizard:v1';
 const STEP_LABELS = ['Service', 'Barber', 'Time', 'Details', 'Confirm'];
-
-function loadPersisted(): WizardState | null {
-  try {
-    if (typeof sessionStorage === 'undefined') return null;
-    const raw = sessionStorage.getItem(STORAGE_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as Partial<WizardState>;
-    // Only restore the data, never a stale status (e.g. submitting).
-    if (!parsed || typeof parsed !== 'object') return null;
-    return {
-      ...initialState,
-      ...parsed,
-      status: { kind: 'idle' },
-    };
-  } catch {
-    return null;
-  }
-}
-
-function persist(state: WizardState): void {
-  try {
-    if (typeof sessionStorage === 'undefined') return;
-    const { status: _ignore, ...rest } = state;
-    sessionStorage.setItem(STORAGE_KEY, JSON.stringify(rest));
-  } catch {
-    /* ignore quota errors */
-  }
-}
-
-function clearPersisted(): void {
-  try {
-    if (typeof sessionStorage === 'undefined') return;
-    sessionStorage.removeItem(STORAGE_KEY);
-  } catch {
-    /* ignore */
-  }
-}
 
 function estimatedTimeRemaining(step: WizardStep): string {
   const map: Record<WizardStep, string> = {
@@ -75,23 +36,6 @@ function estimatedTimeRemaining(step: WizardStep): string {
 export default function BookingWizard({ services, barbers, location }: Props) {
   const [state, dispatch] = useReducer(reducer, initialState);
   const [toast, setToast] = useState<string | null>(null);
-  const hydratedRef = useRef(false);
-
-  // One-time hydration from sessionStorage. We do this in an effect (not as
-  // an initial reducer arg) so SSR markup matches what hydrates.
-  useEffect(() => {
-    if (hydratedRef.current) return;
-    hydratedRef.current = true;
-    const persisted = loadPersisted();
-    if (persisted && isStateRehydratable(persisted, services, barbers)) {
-      dispatch({ type: 'HYDRATE', state: persisted });
-    }
-  }, [services, barbers]);
-
-  useEffect(() => {
-    if (!hydratedRef.current) return;
-    persist(state);
-  }, [state]);
 
   // Toast auto-dismiss
   useEffect(() => {
@@ -100,14 +44,12 @@ export default function BookingWizard({ services, barbers, location }: Props) {
     return () => clearTimeout(t);
   }, [toast]);
 
-  // Scroll to the top of the wizard whenever the step changes. The first
-  // render is gated by hydratedRef so a deep-link / sessionStorage restore
-  // doesn't yank a user out of where they were. Honors prefers-reduced-
-  // motion: that subset gets an instant jump instead of a smooth scroll.
+  // Scroll to the top of the wizard whenever the step changes. The
+  // lastScrolledStepRef guard avoids scrolling on the very first render
+  // (state.step == initialState.step). Honors prefers-reduced-motion.
   const wizardRootRef = useRef<HTMLDivElement | null>(null);
   const lastScrolledStepRef = useRef<number>(initialState.step);
   useEffect(() => {
-    if (!hydratedRef.current) return;
     if (lastScrolledStepRef.current === state.step) return;
     lastScrolledStepRef.current = state.step;
     const reduceMotion =
@@ -198,7 +140,6 @@ export default function BookingWizard({ services, barbers, location }: Props) {
     }
 
     if (body.ok) {
-      clearPersisted();
       dispatch({
         type: 'STATUS',
         status: {
@@ -245,7 +186,6 @@ export default function BookingWizard({ services, barbers, location }: Props) {
   };
 
   const reset = () => {
-    clearPersisted();
     dispatch({ type: 'RESET' });
   };
 
@@ -388,18 +328,3 @@ function friendlyError(code: string, detail: string): string {
   return 'Something went wrong. Please try again.';
 }
 
-function isStateRehydratable(
-  state: WizardState,
-  services: Service[],
-  barbers: Barber[],
-): boolean {
-  if (state.selectedService) {
-    const match = services.find((s) => s.id === state.selectedService!.id);
-    if (!match) return false;
-  }
-  if (state.selectedBarber) {
-    const match = barbers.find((b) => b.id === state.selectedBarber!.id);
-    if (!match) return false;
-  }
-  return true;
-}
