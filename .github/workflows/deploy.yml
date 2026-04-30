@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - main
-      - claude/build-modern-classic-gqXxR
   workflow_dispatch:
 
 permissions:
