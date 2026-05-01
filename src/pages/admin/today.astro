@@ -1,0 +1,414 @@
+---
+export const prerender = false;
+
+import { listBookings } from '../../lib/square/bookings';
+import { getBarbers } from '../../lib/square/team';
+import { getServices } from '../../lib/square/catalog';
+import { getCustomerById } from '../../lib/square/customers';
+import { checkBasicAuth } from '../../lib/admin/auth';
+import { SquareApiError } from '../../lib/square/client';
+import type { Booking, Customer } from '../../lib/square/types';
+
+const auth = checkBasicAuth(Astro.request);
+if (!auth.ok) {
+  return auth.challenge;
+}
+
+const SHOP_TZ = 'America/New_York';
+const TERMINAL = new Set<Booking['status']>([
+  'CANCELLED_BY_CUSTOMER',
+  'CANCELLED_BY_SELLER',
+  'NO_SHOW',
+  'DECLINED',
+]);
+
+// Today's local-midnight in shop tz, in UTC. listBookings filters by UTC range.
+function shopMidnightUtc(daysOffset: number): Date {
+  const now = new Date();
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: SHOP_TZ,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(now);
+  const get = (t: string) => parts.find((p) => p.type === t)?.value ?? '0';
+  const y = Number(get('year'));
+  const m = Number(get('month'));
+  const d = Number(get('day'));
+  // Iterate to absorb DST without pulling in a tz library.
+  let utc = new Date(Date.UTC(y, m - 1, d + daysOffset, 0, 0, 0));
+  for (let i = 0; i < 2; i++) {
+    const ps = new Intl.DateTimeFormat('en-US', {
+      timeZone: SHOP_TZ,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    }).formatToParts(utc);
+    const g = (t: string) => ps.find((p) => p.type === t)?.value ?? '0';
+    const localAsUtc = Date.UTC(
+      Number(g('year')),
+      Number(g('month')) - 1,
+      Number(g('day')),
+      Number(g('hour') === '24' ? '00' : g('hour')),
+      Number(g('minute')),
+      0,
+    );
+    const target = Date.UTC(y, m - 1, d + daysOffset, 0, 0, 0);
+    const diff = target - localAsUtc;
+    if (diff === 0) break;
+    utc = new Date(utc.getTime() + diff);
+  }
+  return utc;
+}
+
+const startUtc = shopMidnightUtc(0);
+const endUtc = shopMidnightUtc(2); // through end of tomorrow
+
+let bookings: Booking[] = [];
+let customers = new Map<string, Customer>();
+let loadError: string | null = null;
+const barberNames = new Map<string, string>();
+const serviceNames = new Map<string, string>();
+
+try {
+  const [list, barbers, services] = await Promise.all([
+    listBookings({ startAtMin: startUtc.toISOString(), startAtMax: endUtc.toISOString(), limit: 200 }),
+    getBarbers(),
+    getServices(),
+  ]);
+  bookings = list.bookings.filter((b) => !TERMINAL.has(b.status));
+  for (const b of barbers) barberNames.set(b.id, b.displayName);
+  for (const s of services) {
+    for (const v of s.variations) serviceNames.set(v.id, s.name);
+  }
+
+  // Fetch each unique customer in parallel so the table can show name + phone
+  // alongside each booking. Best-effort: a single failed lookup leaves the
+  // booking with a "—" placeholder rather than blowing up the whole page.
+  const customerIds = Array.from(new Set(bookings.map((b) => b.customer_id).filter(Boolean) as string[]));
+  const customerEntries = await Promise.all(
+    customerIds.map(async (id) => {
+      try {
+        const c = await getCustomerById(id);
+        return c ? ([id, c] as const) : null;
+      } catch {
+        return null;
+      }
+    }),
+  );
+  customers = new Map(customerEntries.filter((e): e is readonly [string, Customer] => e !== null));
+} catch (err) {
+  if (err instanceof SquareApiError) {
+    loadError = `${err.code}: ${err.detail}`;
+  } else {
+    loadError = err instanceof Error ? err.message : 'Unknown error';
+  }
+}
+
+interface Row {
+  booking: Booking;
+  startUtc: Date;
+  service: string;
+  barber: string;
+  customerName: string;
+  customerPhone: string;
+  customerEmail: string;
+  note: string;
+  isTomorrow: boolean;
+  status: Booking['status'];
+}
+
+const rows: Row[] = bookings
+  .map((b) => {
+    const seg = b.appointment_segments?.[0];
+    const c = b.customer_id ? customers.get(b.customer_id) : undefined;
+    const startUtcDate = new Date(b.start_at);
+    const isTomorrow = startUtcDate.getTime() >= shopMidnightUtc(1).getTime();
+    return {
+      booking: b,
+      startUtc: startUtcDate,
+      service: seg ? (serviceNames.get(seg.service_variation_id) ?? '—') : '—',
+      barber: seg ? (barberNames.get(seg.team_member_id) ?? '—') : '—',
+      customerName: c
+        ? `${c.given_name ?? ''} ${c.family_name ?? ''}`.trim() || '—'
+        : '—',
+      customerPhone: c?.phone_number?.trim() ?? '',
+      customerEmail: c?.email_address?.trim() ?? '',
+      note: b.customer_note?.trim() ?? '',
+      isTomorrow,
+      status: b.status,
+    };
+  })
+  .sort((a, b) => a.startUtc.getTime() - b.startUtc.getTime());
+
+const todayRows = rows.filter((r) => !r.isTomorrow);
+const tomorrowRows = rows.filter((r) => r.isTomorrow);
+
+const fmtTime = new Intl.DateTimeFormat('en-US', {
+  timeZone: SHOP_TZ,
+  hour: 'numeric',
+  minute: '2-digit',
+  hour12: true,
+});
+const fmtDate = new Intl.DateTimeFormat('en-US', {
+  timeZone: SHOP_TZ,
+  weekday: 'long',
+  month: 'long',
+  day: 'numeric',
+});
+const todayLabel = fmtDate.format(shopMidnightUtc(0));
+const tomorrowLabel = fmtDate.format(shopMidnightUtc(1));
+
+function statusClass(status: string): string {
+  if (status === 'ACCEPTED') return 'ok';
+  if (status === 'PENDING') return 'pending';
+  return 'cancelled';
+}
+
+function formatPhone(raw: string): string {
+  const d = raw.replace(/[^0-9]/g, '');
+  if (d.length === 11 && d.startsWith('1')) {
+    return `(${d.slice(1, 4)}) ${d.slice(4, 7)}-${d.slice(7)}`;
+  }
+  if (d.length === 10) {
+    return `(${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6)}`;
+  }
+  return raw;
+}
+---
+
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>Today — Modern Classic Admin</title>
+    <style>
+      :root {
+        --bg: #0b0a08;
+        --surface: #161311;
+        --surface-2: #1d1916;
+        --border: #2a2520;
+        --text: #f3ece0;
+        --muted: #b0a695;
+        --dim: #80776a;
+        --gold: #c9a35c;
+      }
+      *, *::before, *::after { box-sizing: border-box; }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font: 16px/1.5 ui-sans-serif, system-ui, sans-serif;
+      }
+      .wrap { max-width: 76rem; margin: 0 auto; padding: 32px 24px; }
+      h1 { font-family: Georgia, serif; font-weight: 400; font-size: 1.8rem; margin: 0 0 6px; }
+      h2 {
+        font-family: Georgia, serif;
+        font-weight: 400;
+        font-size: 1.25rem;
+        margin: 36px 0 12px;
+        color: var(--text);
+      }
+      h2 .day-meta { color: var(--dim); font-size: 0.88rem; margin-left: 8px; font-family: ui-sans-serif, system-ui, sans-serif; }
+      .sub { color: var(--muted); font-size: 0.95rem; margin-bottom: 20px; }
+      .err {
+        background: rgba(220, 80, 60, 0.08);
+        border: 1px solid rgba(220, 80, 60, 0.4);
+        color: #f0a37a;
+        padding: 12px 16px;
+        border-radius: 6px;
+      }
+      .topnav {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 1.5rem;
+        align-items: center;
+        padding-bottom: 18px;
+        margin-bottom: 24px;
+        border-bottom: 1px solid var(--border);
+        font-size: 0.78rem;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+      }
+      .topnav a { color: var(--muted); text-decoration: none; padding-bottom: 4px; }
+      .topnav a.active { color: var(--gold); border-bottom: 2px solid var(--gold); }
+      .topnav a:hover { color: var(--gold); }
+      table { width: 100%; border-collapse: collapse; font-size: 0.92rem; }
+      th, td {
+        padding: 10px 12px;
+        text-align: left;
+        border-bottom: 1px solid var(--border);
+        vertical-align: top;
+      }
+      th {
+        font-size: 0.7rem;
+        font-weight: 700;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: var(--muted);
+        background: var(--surface);
+      }
+      tr:hover td { background: var(--surface-2); }
+      .pill {
+        display: inline-block;
+        padding: 2px 8px;
+        border-radius: 999px;
+        font-size: 0.72rem;
+        font-weight: 600;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+      }
+      .pill.ok { background: rgba(122, 184, 110, 0.15); color: #a4d091; }
+      .pill.pending { background: rgba(201, 163, 92, 0.15); color: var(--gold); }
+      .time-cell { white-space: nowrap; font-weight: 600; color: var(--gold); }
+      .name-cell strong { color: var(--text); }
+      .name-cell .meta { display: block; font-size: 0.78rem; color: var(--dim); margin-top: 2px; }
+      .note-cell { font-size: 0.86rem; color: var(--text); max-width: 18rem; }
+      .empty {
+        background: var(--surface);
+        border: 1px dashed var(--border);
+        border-radius: 8px;
+        padding: 18px 20px;
+        color: var(--muted);
+        font-size: 0.92rem;
+      }
+      a.tel { color: var(--gold); text-decoration: none; }
+      a.tel:hover { text-decoration: underline; }
+      @media (max-width: 720px) {
+        thead { display: none; }
+        table, tbody, tr, td { display: block; width: 100%; }
+        tr {
+          border-bottom: 1px solid var(--border);
+          padding: 12px 4px;
+        }
+        td { padding: 4px 0; border: 0; }
+        td::before {
+          content: attr(data-label);
+          font-size: 0.68rem;
+          letter-spacing: 0.16em;
+          text-transform: uppercase;
+          color: var(--dim);
+          display: block;
+          margin-bottom: 2px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <nav class="topnav">
+        <a href="/admin">Admin</a>
+        <a href="/admin/today" class="active">Today</a>
+        <a href="/admin/bookings">Bookings</a>
+        <a href="/admin/customers">Customers</a>
+        <a href="/admin/reviews">Reviews</a>
+      </nav>
+      <h1>Today &amp; tomorrow</h1>
+      <p class="sub">Live from Square. Excludes cancellations + no-shows. Times in shop time (Eastern).</p>
+
+      {loadError && <p class="err">Failed to load bookings: {loadError}</p>}
+
+      {!loadError && (
+        <>
+          <h2>
+            Today
+            <span class="day-meta">{todayLabel} · {todayRows.length} {todayRows.length === 1 ? 'appointment' : 'appointments'}</span>
+          </h2>
+          {todayRows.length === 0 ? (
+            <p class="empty">No appointments today.</p>
+          ) : (
+            <table>
+              <thead>
+                <tr>
+                  <th>Time</th>
+                  <th>Customer</th>
+                  <th>Service</th>
+                  <th>Barber</th>
+                  <th>Note</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {todayRows.map((r) => (
+                  <tr>
+                    <td data-label="Time" class="time-cell">{fmtTime.format(r.startUtc)}</td>
+                    <td data-label="Customer" class="name-cell">
+                      <strong>{r.customerName}</strong>
+                      {r.customerPhone && (
+                        <span class="meta">
+                          <a class="tel" href={`tel:${r.customerPhone.replace(/[^0-9+]/g, '')}`}>
+                            {formatPhone(r.customerPhone)}
+                          </a>
+                        </span>
+                      )}
+                      {r.customerEmail && (
+                        <span class="meta">{r.customerEmail}</span>
+                      )}
+                    </td>
+                    <td data-label="Service">{r.service}</td>
+                    <td data-label="Barber">{r.barber}</td>
+                    <td data-label="Note" class="note-cell">{r.note || '—'}</td>
+                    <td data-label="Status">
+                      <span class={`pill ${statusClass(r.status)}`}>{r.status.replace(/_/g, ' ')}</span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+
+          <h2>
+            Tomorrow
+            <span class="day-meta">{tomorrowLabel} · {tomorrowRows.length} {tomorrowRows.length === 1 ? 'appointment' : 'appointments'}</span>
+          </h2>
+          {tomorrowRows.length === 0 ? (
+            <p class="empty">Nothing on the books for tomorrow yet.</p>
+          ) : (
+            <table>
+              <thead>
+                <tr>
+                  <th>Time</th>
+                  <th>Customer</th>
+                  <th>Service</th>
+                  <th>Barber</th>
+                  <th>Note</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {tomorrowRows.map((r) => (
+                  <tr>
+                    <td data-label="Time" class="time-cell">{fmtTime.format(r.startUtc)}</td>
+                    <td data-label="Customer" class="name-cell">
+                      <strong>{r.customerName}</strong>
+                      {r.customerPhone && (
+                        <span class="meta">
+                          <a class="tel" href={`tel:${r.customerPhone.replace(/[^0-9+]/g, '')}`}>
+                            {formatPhone(r.customerPhone)}
+                          </a>
+                        </span>
+                      )}
+                      {r.customerEmail && (
+                        <span class="meta">{r.customerEmail}</span>
+                      )}
+                    </td>
+                    <td data-label="Service">{r.service}</td>
+                    <td data-label="Barber">{r.barber}</td>
+                    <td data-label="Note" class="note-cell">{r.note || '—'}</td>
+                    <td data-label="Status">
+                      <span class={`pill ${statusClass(r.status)}`}>{r.status.replace(/_/g, ' ')}</span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </>
+      )}
+    </div>
+  </body>
+</html>

@@ -144,11 +144,12 @@ export async function createCustomer(input: CustomerInput): Promise<Customer> {
 
 export async function updateCustomer(
   id: string,
-  patch: { givenName?: string; familyName?: string; phone?: string },
+  patch: { givenName?: string; familyName?: string; email?: string; phone?: string },
 ): Promise<Customer> {
   const body: Record<string, string | undefined> = {};
   if (patch.givenName !== undefined) body.given_name = patch.givenName;
   if (patch.familyName !== undefined) body.family_name = patch.familyName;
+  if (patch.email !== undefined) body.email_address = patch.email.trim().toLowerCase() || undefined;
   if (patch.phone !== undefined) body.phone_number = normalizePhone(patch.phone);
   const res = await squareFetch<UpdateCustomerResponse>(`/v2/customers/${id}`, {
     method: 'PUT',

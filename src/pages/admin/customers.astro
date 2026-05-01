@@ -1,0 +1,450 @@
+---
+export const prerender = false;
+
+import { findCustomerByEmail, findCustomerByPhone } from '../../lib/square/customers';
+import { checkBasicAuth } from '../../lib/admin/auth';
+import { SquareApiError } from '../../lib/square/client';
+import type { Customer } from '../../lib/square/types';
+
+const auth = checkBasicAuth(Astro.request);
+if (!auth.ok) {
+  return auth.challenge;
+}
+
+const url = new URL(Astro.request.url);
+const rawQuery = (url.searchParams.get('q') ?? '').trim();
+
+function looksLikeEmail(s: string): boolean {
+  return /^\S+@\S+\.\S+$/.test(s.trim());
+}
+function looksLikePhone(s: string): boolean {
+  const d = s.replace(/[^0-9]/g, '');
+  return d.length >= 7 && d.length <= 16;
+}
+
+let customer: Customer | null = null;
+let searchError: string | null = null;
+let notFound = false;
+let lookupMethod: 'email' | 'phone' | null = null;
+
+if (rawQuery) {
+  const isEmail = looksLikeEmail(rawQuery);
+  const isPhone = !isEmail && looksLikePhone(rawQuery);
+  try {
+    if (isEmail) {
+      customer = await findCustomerByEmail(rawQuery);
+      lookupMethod = 'email';
+    } else if (isPhone) {
+      customer = await findCustomerByPhone(rawQuery);
+      lookupMethod = 'phone';
+    } else {
+      searchError = "That doesn't look like an email or a phone number.";
+    }
+    if (!searchError && !customer) notFound = true;
+  } catch (err) {
+    if (err instanceof SquareApiError) {
+      searchError = `${err.code}: ${err.detail}`;
+    } else {
+      searchError = err instanceof Error ? err.message : 'Lookup failed.';
+    }
+  }
+}
+
+function fmtPhone(raw: string): string {
+  const d = raw.replace(/[^0-9]/g, '');
+  if (d.length === 11 && d.startsWith('1')) {
+    return `(${d.slice(1, 4)}) ${d.slice(4, 7)}-${d.slice(7)}`;
+  }
+  if (d.length === 10) {
+    return `(${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6)}`;
+  }
+  return raw;
+}
+
+function fmtTimestamp(iso: string | undefined): string {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return iso;
+  return new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York',
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  }).format(d);
+}
+---
+
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>Customers — Modern Classic Admin</title>
+    <style>
+      :root {
+        --bg: #0b0a08;
+        --surface: #161311;
+        --surface-2: #1d1916;
+        --border: #2a2520;
+        --text: #f3ece0;
+        --muted: #b0a695;
+        --dim: #80776a;
+        --gold: #c9a35c;
+        --gold-light: #e6c785;
+        --danger: #d88a8a;
+      }
+      *, *::before, *::after { box-sizing: border-box; }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font: 16px/1.5 ui-sans-serif, system-ui, sans-serif;
+      }
+      .wrap { max-width: 56rem; margin: 0 auto; padding: 32px 24px; }
+      h1 { font-family: Georgia, serif; font-weight: 400; font-size: 1.8rem; margin: 0 0 6px; }
+      .sub { color: var(--muted); font-size: 0.95rem; margin-bottom: 24px; }
+      .topnav {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 1.5rem;
+        align-items: center;
+        padding-bottom: 18px;
+        margin-bottom: 24px;
+        border-bottom: 1px solid var(--border);
+        font-size: 0.78rem;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+      }
+      .topnav a { color: var(--muted); text-decoration: none; padding-bottom: 4px; }
+      .topnav a.active { color: var(--gold); border-bottom: 2px solid var(--gold); }
+      .topnav a:hover { color: var(--gold); }
+      .err {
+        background: rgba(220, 80, 60, 0.08);
+        border: 1px solid rgba(220, 80, 60, 0.4);
+        color: #f0a37a;
+        padding: 12px 16px;
+        border-radius: 6px;
+        margin-bottom: 18px;
+      }
+      .info {
+        background: rgba(201, 163, 92, 0.06);
+        border: 1px solid rgba(201, 163, 92, 0.3);
+        color: var(--muted);
+        padding: 12px 16px;
+        border-radius: 6px;
+        margin-bottom: 18px;
+      }
+
+      form.search {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 8px;
+        margin-bottom: 8px;
+      }
+      input[type='text'], input[type='email'], input[type='tel'] {
+        width: 100%;
+        padding: 10px 12px;
+        background: var(--surface-2);
+        border: 1px solid var(--border);
+        color: var(--text);
+        border-radius: 6px;
+        font-size: 1rem;
+        font-family: inherit;
+      }
+      input:focus {
+        outline: 2px solid rgba(201, 163, 92, 0.4);
+        outline-offset: 1px;
+        border-color: var(--gold);
+      }
+      button {
+        padding: 10px 18px;
+        background: var(--gold);
+        color: var(--bg);
+        font-weight: 700;
+        font-size: 0.78rem;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        border: 0;
+        border-radius: 4px;
+        cursor: pointer;
+        font-family: inherit;
+      }
+      button:hover { background: var(--gold-light); }
+      button[disabled] { opacity: 0.55; cursor: not-allowed; }
+      button.ghost {
+        background: transparent;
+        color: var(--muted);
+        border: 1px solid var(--border);
+      }
+      button.ghost:hover { border-color: var(--gold); color: var(--text); }
+      .helper { color: var(--dim); font-size: 0.85rem; margin: 4px 0 24px; }
+
+      .card {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 22px 24px;
+        margin-top: 18px;
+      }
+      .card h2 {
+        font-family: Georgia, serif;
+        font-weight: 400;
+        font-size: 1.3rem;
+        margin: 0 0 4px;
+      }
+      .card .meta {
+        color: var(--dim);
+        font-size: 0.82rem;
+        font-family: ui-monospace, Menlo, monospace;
+        margin-bottom: 18px;
+        word-break: break-all;
+      }
+      .grid2 {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 12px;
+      }
+      @media (max-width: 540px) { .grid2 { grid-template-columns: 1fr; } }
+      label {
+        display: block;
+        font-size: 0.7rem;
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+        color: var(--muted);
+        margin-bottom: 4px;
+      }
+      .row + .row { margin-top: 14px; }
+      .actions {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+        margin-top: 22px;
+        padding-top: 18px;
+        border-top: 1px solid var(--border);
+      }
+      .status {
+        margin-top: 12px;
+        font-size: 0.9rem;
+      }
+      .status.ok { color: #a4d091; }
+      .status.error { color: var(--danger); }
+      .status[hidden] { display: none; }
+      .original {
+        display: block;
+        font-size: 0.78rem;
+        color: var(--dim);
+        margin-top: 4px;
+      }
+      .empty {
+        margin-top: 14px;
+        padding: 18px 20px;
+        background: var(--surface);
+        border: 1px dashed var(--border);
+        border-radius: 8px;
+        color: var(--muted);
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <nav class="topnav">
+        <a href="/admin">Admin</a>
+        <a href="/admin/today">Today</a>
+        <a href="/admin/bookings">Bookings</a>
+        <a href="/admin/customers" class="active">Customers</a>
+        <a href="/admin/reviews">Reviews</a>
+      </nav>
+
+      <h1>Customer lookup &amp; edit</h1>
+      <p class="sub">
+        Search by email or phone. Use this to add a missing email so a phone-only
+        customer can sign in to <code>/my-bookings</code>.
+      </p>
+
+      <form class="search" method="get" action="/admin/customers">
+        <input
+          type="text"
+          name="q"
+          value={rawQuery}
+          placeholder="Email or phone — e.g. jane@example.com or (740) 555-0123"
+          autocapitalize="none"
+          spellcheck="false"
+          autocomplete="off"
+        />
+        <button type="submit">Search</button>
+      </form>
+      <p class="helper">Lookup is exact then fuzzy on Square. Phone digits only matter (formatting ignored).</p>
+
+      {searchError && <p class="err">Search failed: {searchError}</p>}
+
+      {notFound && (
+        <p class="empty">
+          No customer found for <strong>{rawQuery}</strong>. Try the other field — e.g. if you
+          searched the email and it's not in Square, search the phone instead.
+        </p>
+      )}
+
+      {customer && (
+        <div class="card">
+          <h2>{`${customer.given_name ?? ''} ${customer.family_name ?? ''}`.trim() || '(no name on file)'}</h2>
+          <p class="meta">
+            {customer.id} · matched by {lookupMethod}
+            {customer.created_at && ` · created ${fmtTimestamp(customer.created_at)}`}
+          </p>
+
+          <form id="edit-form" data-customer-id={customer.id}>
+            <div class="grid2">
+              <div class="row">
+                <label for="givenName">First name</label>
+                <input
+                  type="text"
+                  id="givenName"
+                  name="givenName"
+                  value={customer.given_name ?? ''}
+                  data-original={customer.given_name ?? ''}
+                />
+              </div>
+              <div class="row">
+                <label for="familyName">Last name</label>
+                <input
+                  type="text"
+                  id="familyName"
+                  name="familyName"
+                  value={customer.family_name ?? ''}
+                  data-original={customer.family_name ?? ''}
+                />
+              </div>
+            </div>
+
+            <div class="row">
+              <label for="email">Email</label>
+              <input
+                type="email"
+                id="email"
+                name="email"
+                value={customer.email_address ?? ''}
+                data-original={customer.email_address ?? ''}
+                autocapitalize="none"
+                spellcheck="false"
+              />
+              {!customer.email_address && (
+                <span class="original">⚠ No email on file — they can't sign in until you add one.</span>
+              )}
+            </div>
+
+            <div class="row">
+              <label for="phone">Phone</label>
+              <input
+                type="tel"
+                id="phone"
+                name="phone"
+                value={customer.phone_number ? fmtPhone(customer.phone_number) : ''}
+                data-original={customer.phone_number ?? ''}
+              />
+            </div>
+
+            <div class="actions">
+              <button type="submit">Save changes</button>
+              <button type="button" class="ghost" data-reset>Reset</button>
+            </div>
+            <p class="status" id="edit-status" hidden></p>
+          </form>
+        </div>
+      )}
+
+      {!customer && !notFound && !rawQuery && (
+        <p class="empty">
+          Enter an email or phone above. Useful for fixing sign-in issues — phone-only
+          customers (booked at the chair, no email) can't access /my-bookings until
+          you add an email here.
+        </p>
+      )}
+    </div>
+
+    <script is:inline>
+      (function () {
+        const form = document.getElementById('edit-form');
+        if (!form) return;
+        const status = document.getElementById('edit-status');
+        const submitBtn = form.querySelector('button[type="submit"]');
+        const resetBtn = form.querySelector('[data-reset]');
+
+        const showStatus = (msg, kind) => {
+          status.textContent = msg;
+          status.className = 'status ' + kind;
+          status.hidden = false;
+        };
+        const hideStatus = () => {
+          status.hidden = true;
+        };
+
+        if (resetBtn) {
+          resetBtn.addEventListener('click', () => {
+            form.querySelectorAll('input').forEach((input) => {
+              const original = input.dataset.original ?? '';
+              if (input.name === 'phone' && original) {
+                // Re-format phone like the server-rendered initial value
+                const d = original.replace(/[^0-9]/g, '');
+                if (d.length === 11 && d.startsWith('1')) {
+                  input.value = '(' + d.slice(1, 4) + ') ' + d.slice(4, 7) + '-' + d.slice(7);
+                } else if (d.length === 10) {
+                  input.value = '(' + d.slice(0, 3) + ') ' + d.slice(3, 6) + '-' + d.slice(6);
+                } else {
+                  input.value = original;
+                }
+              } else {
+                input.value = original;
+              }
+            });
+            hideStatus();
+          });
+        }
+
+        form.addEventListener('submit', async (e) => {
+          e.preventDefault();
+          hideStatus();
+          submitBtn.disabled = true;
+          submitBtn.textContent = 'Saving…';
+          const customerId = form.dataset.customerId;
+          const payload = {
+            customerId,
+            givenName: form.givenName.value.trim(),
+            familyName: form.familyName.value.trim(),
+            email: form.email.value.trim(),
+            phone: form.phone.value.trim(),
+          };
+          try {
+            const res = await fetch('/api/admin/update-customer', {
+              method: 'POST',
+              credentials: 'same-origin',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(payload),
+            });
+            const data = await res.json();
+            if (!res.ok || !data.ok) {
+              showStatus(data?.error?.detail || 'Update failed.', 'error');
+              submitBtn.disabled = false;
+              submitBtn.textContent = 'Save changes';
+              return;
+            }
+            if (data.changed === false) {
+              showStatus('No changes to save.', 'ok');
+            } else {
+              showStatus('Saved. Updated: ' + (data.fields || []).join(', ') + '.', 'ok');
+              // Update originals so a second submit doesn't think they changed.
+              form.querySelectorAll('input').forEach((input) => {
+                input.dataset.original = input.value;
+              });
+            }
+            submitBtn.disabled = false;
+            submitBtn.textContent = 'Save changes';
+          } catch (err) {
+            showStatus('Network error. Please try again.', 'error');
+            submitBtn.disabled = false;
+            submitBtn.textContent = 'Save changes';
+          }
+        });
+      })();
+    </script>
+  </body>
+</html>
