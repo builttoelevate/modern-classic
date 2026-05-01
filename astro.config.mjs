@@ -30,7 +30,18 @@ export default defineConfig({
     ? undefined
     : isLocalPreview
       ? node({ mode: 'standalone' })
-      : vercel(),
+      : vercel({
+          // Route Astro's <Image /> through Vercel's Image Optimization
+          // API rather than the default sharp service. Without this the
+          // serverless function's image URLs fail at runtime and the hero
+          // logo + background render as broken-image placeholders.
+          imageService: true,
+          imagesConfig: {
+            sizes: [320, 480, 640, 720, 1080, 1280, 1440, 1600, 1920],
+            domains: ['mdrnclassic.com'],
+            formats: ['image/webp'],
+          },
+        }),
   trailingSlash: 'ignore',
   build: {
     inlineStylesheets: 'auto',
