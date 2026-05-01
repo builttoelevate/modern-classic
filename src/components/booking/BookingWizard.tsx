@@ -32,12 +32,22 @@ export interface WizardPreselectProps {
   teamMemberId?: string;
 }
 
+export interface SignedInCustomer {
+  givenName: string;
+  familyName: string;
+  email: string;
+  phone: string;
+}
+
 interface Props {
   services: Service[];
   barbers: Barber[];
   location: Location | null;
   reschedule?: RescheduleContext;
   preselect?: WizardPreselectProps;
+  /** When set, the wizard skips Step 4 (Details) — the customer is signed
+   * in and we already have all four contact fields. */
+  signedInCustomer?: SignedInCustomer;
 }
 
 const STEP_LABELS = ['Service', 'Barber', 'Time', 'Details', 'Confirm'];
@@ -153,16 +163,53 @@ function buildRescheduleInitialState(
   };
 }
 
-export default function BookingWizard({ services, barbers, location, reschedule, preselect }: Props) {
+function isCompleteCustomer(c: SignedInCustomer | undefined): c is SignedInCustomer {
+  if (!c) return false;
+  return (
+    c.givenName.trim().length > 0 &&
+    c.familyName.trim().length > 0 &&
+    /^\S+@\S+\.\S+$/.test(c.email.trim()) &&
+    digits(c.phone).length >= 10
+  );
+}
+
+export default function BookingWizard({
+  services,
+  barbers,
+  location,
+  reschedule,
+  preselect,
+  signedInCustomer,
+}: Props) {
+  const skipDetailsStep = isCompleteCustomer(signedInCustomer);
   const initialState = useMemo<WizardState>(() => {
+    let base: WizardState;
     if (reschedule) {
-      return buildRescheduleInitialState(reschedule, services, barbers) ?? defaultInitialState;
+      base = buildRescheduleInitialState(reschedule, services, barbers) ?? defaultInitialState;
+    } else if (preselect && (preselect.serviceVariationId || preselect.teamMemberId)) {
+      base = buildPreselectInitialState(preselect, services, barbers) ?? defaultInitialState;
+    } else {
+      base = defaultInitialState;
     }
-    if (preselect && (preselect.serviceVariationId || preselect.teamMemberId)) {
-      return buildPreselectInitialState(preselect, services, barbers) ?? defaultInitialState;
+    // Pre-fill the customer info from the signed-in session so the
+    // submit step has everything it needs without Step 4 collecting it
+    // a second time. Reschedule mode already pre-fills via its own ctx;
+    // we only patch missing fields here so it doesn't overwrite the
+    // reschedule's known-good values.
+    if (signedInCustomer) {
+      base = {
+        ...base,
+        customer: {
+          ...base.customer,
+          givenName: base.customer.givenName || signedInCustomer.givenName,
+          familyName: base.customer.familyName || signedInCustomer.familyName,
+          email: base.customer.email || signedInCustomer.email,
+          phone: base.customer.phone || signedInCustomer.phone,
+        },
+      };
     }
-    return defaultInitialState;
-  }, [reschedule, preselect, services, barbers]);
+    return base;
+  }, [reschedule, preselect, services, barbers, signedInCustomer]);
   const [state, dispatch] = useReducer(reducer, initialState);
   const [toast, setToast] = useState<string | null>(null);
   const rescheduleMode = !!reschedule;
@@ -221,6 +268,28 @@ export default function BookingWizard({ services, barbers, location, reschedule,
       dispatch({ type: 'GO_TO', step: 3 });
     }
   }, [state.step, rescheduleMode, state.selectedSlot, state.selectedVariation, state.status.kind]);
+
+  // Signed-in customers with a complete contact record on file skip the
+  // Details step too — same auto-advance pattern as reschedule mode.
+  // Going BACK from Step 5 lands here, so we redirect again to Step 3.
+  useEffect(() => {
+    if (!skipDetailsStep) return;
+    if (rescheduleMode) return;
+    if (state.step !== 4) return;
+    if (state.status.kind === 'submitting') return;
+    if (state.selectedSlot && state.selectedVariation) {
+      dispatch({ type: 'GO_TO', step: 5 });
+    } else {
+      dispatch({ type: 'GO_TO', step: 3 });
+    }
+  }, [
+    state.step,
+    skipDetailsStep,
+    rescheduleMode,
+    state.selectedSlot,
+    state.selectedVariation,
+    state.status.kind,
+  ]);
 
   const submit = async () => {
     if (!state.selectedService || !state.selectedVariation || !state.selectedSlot) return;
@@ -398,11 +467,21 @@ export default function BookingWizard({ services, barbers, location, reschedule,
     if (state.step === 5) return 2;
     return 1;
   })();
-  const totalSteps = rescheduleMode ? 2 : 5;
-  const currentStep = rescheduleMode ? rescheduleStepIndex : state.step;
+  // Signed-in customers skip Step 4 (Details) — relabel the progress bar
+  // so "STEP X of 4" is honest. Step 5 (Confirm) becomes "Step 4".
+  const skippedDetailsLabels = ['Service', 'Barber', 'Time', 'Confirm'];
+  const skippedStepIndex = state.step === 5 ? 4 : state.step;
+  const totalSteps = rescheduleMode ? 2 : skipDetailsStep ? 4 : 5;
+  const currentStep = rescheduleMode
+    ? rescheduleStepIndex
+    : skipDetailsStep
+      ? skippedStepIndex
+      : state.step;
   const stepLabel = rescheduleMode
     ? RESCHEDULE_STEP_LABELS[rescheduleStepIndex - 1]
-    : STEP_LABELS[state.step - 1];
+    : skipDetailsStep
+      ? skippedDetailsLabels[skippedStepIndex - 1] ?? STEP_LABELS[state.step - 1]
+      : STEP_LABELS[state.step - 1];
 
   return (
     <div className="bw" ref={wizardRootRef}>

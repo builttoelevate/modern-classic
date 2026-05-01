@@ -5,7 +5,7 @@ import BaseLayout from '../layouts/BaseLayout.astro';
 import Header from '../components/Header.astro';
 import Footer from '../components/Footer.astro';
 import BookingWizard from '../components/booking/BookingWizard.tsx';
-import type { RescheduleContext, WizardPreselectProps } from '../components/booking/BookingWizard.tsx';
+import type { RescheduleContext, SignedInCustomer, WizardPreselectProps } from '../components/booking/BookingWizard.tsx';
 import { getServices } from '../lib/square/catalog';
 import { getBarbers } from '../lib/square/team';
 import { getLocation } from '../lib/square/locations';
@@ -35,6 +35,7 @@ let location: Location | null = null;
 let loadError: string | null = null;
 let reschedule: RescheduleContext | undefined;
 let rescheduleError: string | null = null;
+let signedInCustomer: SignedInCustomer | undefined;
 
 try {
   const [s, b, l] = await Promise.all([getServices(), getBarbers(), getLocation()]);
@@ -45,6 +46,29 @@ try {
   loadError = err instanceof Error ? err.message : String(err);
   // eslint-disable-next-line no-console
   console.error('[book] failed to load services/barbers/location', err);
+}
+
+// If the visitor is signed in (and not rescheduling — that path runs its
+// own customer lookup below), hydrate their contact info so the wizard
+// can skip Step 4 entirely. Best-effort; any failure just falls back to
+// the normal Step 4 details flow.
+if (!rescheduleId && !loadError) {
+  const session = getSession(Astro.request);
+  if (session) {
+    try {
+      const customer = await findCustomerByEmail(session.email);
+      if (customer) {
+        signedInCustomer = {
+          givenName: customer.given_name?.trim() ?? '',
+          familyName: customer.family_name?.trim() ?? '',
+          email: session.email,
+          phone: customer.phone_number?.trim() ?? '',
+        };
+      }
+    } catch {
+      // Silent — Step 4 will still collect details.
+    }
+  }
 }
 
 if (rescheduleId && !loadError) {
@@ -151,6 +175,7 @@ if (rescheduleId && !loadError) {
         location={location}
         reschedule={reschedule}
         preselect={preselect}
+        signedInCustomer={signedInCustomer}
       />
     )}
   </main>
