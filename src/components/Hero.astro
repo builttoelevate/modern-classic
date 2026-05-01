@@ -2,9 +2,21 @@
 import { Image } from 'astro:assets';
 import logo from '../assets/logo-light.png';
 import shopInterior from '../assets/shop-interior.jpg';
+import HeroAvailability from './home/HeroAvailability.astro';
+import type { AvailabilitySlot } from '../lib/square/types';
+
+interface Props {
+  availability?: {
+    mode: 'personalized' | 'soonest' | 'fallback';
+    slot?: AvailabilitySlot | null;
+    barberName?: string;
+    teamMemberId?: string;
+  };
+}
+const { availability } = Astro.props as Props;
 
 const base = import.meta.env.BASE_URL.replace(/\/$/, '');
-const isGhPages = import.meta.env.BASE_URL && import.meta.env.BASE_URL !== '/';
+const isGhPages = Boolean(import.meta.env.BASE_URL && import.meta.env.BASE_URL !== '/');
 const bookUrl = isGhPages ? 'https://modern-classic.square.site' : `${base}/book`;
 const bookTarget = isGhPages ? '_blank' : '_self';
 const bookRel = isGhPages ? 'noopener' : '';
@@ -71,6 +83,17 @@ const bookRel = isGhPages ? 'noopener' : '';
         Shop Our Products
       </a>
     </div>
+
+    {availability && (
+      <HeroAvailability
+        mode={availability.mode}
+        slot={availability.slot}
+        barberName={availability.barberName}
+        teamMemberId={availability.teamMemberId}
+        basePath={base}
+        isGhPages={isGhPages}
+      />
+    )}
 
     <ul class="hero__meta" aria-label="What we do">
       <li>Haircuts</li>

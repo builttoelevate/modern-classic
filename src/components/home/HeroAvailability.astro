@@ -1,0 +1,131 @@
+---
+// Phase 6 Part C — homepage hero availability widget.
+//
+// Four modes:
+//   • personalized — signed-in customer with a usual barber
+//   • soonest      — guest, soonest slot across all barbers
+//   • fallback     — no slot inside the 7-day window
+//   • disabled     — Square errored or anyone signed-in but no usual yet
+//                    AND we couldn't find soonest. Render the warm CTA.
+
+import { formatRelativeSlot } from '../../lib/availability/timing';
+import type { AvailabilitySlot } from '../../lib/square/types';
+
+type Mode = 'personalized' | 'soonest' | 'fallback';
+
+interface Props {
+  mode: Mode;
+  slot?: AvailabilitySlot | null;
+  /** Display name of the barber whose slot we're showing. */
+  barberName?: string;
+  /** Square team_member_id for the "Book" link. */
+  teamMemberId?: string;
+  /** Base path (gh-pages prefix); empty string on production. */
+  basePath: string;
+  /** True when running on gh-pages (no /book page → fall back to Square). */
+  isGhPages: boolean;
+}
+
+const { mode, slot, barberName, teamMemberId, basePath, isGhPages } = Astro.props as Props;
+
+const FALLBACK_SQUARE = 'https://modern-classic.square.site';
+const bookHref = (() => {
+  if (isGhPages) return FALLBACK_SQUARE;
+  if (mode === 'fallback') return `${basePath}/book`;
+  if (teamMemberId) return `${basePath}/book?barber=${encodeURIComponent(teamMemberId)}`;
+  return `${basePath}/book`;
+})();
+const target = isGhPages ? '_blank' : '_self';
+const rel = isGhPages ? 'noopener' : '';
+
+const showSlot = (mode === 'personalized' || mode === 'soonest') && slot !== null && slot !== undefined;
+const slotLabel = showSlot && slot ? formatRelativeSlot(slot.startAtUtc) : '';
+---
+<a class={`hero-avail hero-avail--${mode}`} href={bookHref} target={target} rel={rel}>
+  <span class="hero-avail__dot" aria-hidden="true"></span>
+  {mode === 'personalized' && showSlot && barberName && (
+    <span class="hero-avail__text">
+      <span class="hero-avail__lead">{barberName}'s next opening:</span>
+      <span class="hero-avail__when">{slotLabel}</span>
+    </span>
+  )}
+  {mode === 'soonest' && showSlot && barberName && (
+    <span class="hero-avail__text">
+      <span class="hero-avail__lead">Next available:</span>
+      <span class="hero-avail__when">{slotLabel}</span>
+      <span class="hero-avail__with">with {barberName}</span>
+    </span>
+  )}
+  {mode === 'fallback' && (
+    <span class="hero-avail__text">
+      <span class="hero-avail__lead">Find your next time</span>
+    </span>
+  )}
+  <span class="hero-avail__arrow" aria-hidden="true">→</span>
+</a>
+
+<style>
+  .hero-avail {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.55rem;
+    padding: 0.65rem 1rem;
+    margin-top: clamp(0.6rem, 1.5vw, 1rem);
+    background: rgba(11, 10, 8, 0.55);
+    border: 1px solid rgba(108, 184, 124, 0.45);
+    border-radius: 999px;
+    font-family: var(--font-body);
+    font-size: 0.92rem;
+    color: var(--color-text);
+    text-decoration: none;
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    box-shadow: 0 8px 24px -12px rgba(0,0,0,0.6);
+    transition: border-color var(--dur) var(--ease), color var(--dur) var(--ease), transform var(--dur) var(--ease);
+    line-height: 1.25;
+    max-width: 90vw;
+  }
+  .hero-avail:hover {
+    border-color: rgba(140, 215, 156, 0.7);
+    color: var(--color-text);
+    transform: translateY(-1px);
+  }
+  .hero-avail--fallback {
+    border-color: var(--color-rule);
+  }
+  .hero-avail--fallback .hero-avail__dot { background: var(--color-gold); box-shadow: 0 0 0 2px rgba(201,163,92,0.18); }
+  .hero-avail__dot {
+    display: inline-block;
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: #6cb87c;
+    box-shadow: 0 0 0 2px rgba(108, 184, 124, 0.22);
+    flex: none;
+  }
+  .hero-avail__text {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.35rem;
+  }
+  .hero-avail__lead {
+    color: var(--color-text-muted);
+    font-size: 0.82rem;
+    letter-spacing: 0.04em;
+  }
+  .hero-avail__when {
+    color: var(--color-text);
+    font-weight: 600;
+    font-size: 0.95rem;
+  }
+  .hero-avail__with {
+    color: var(--color-text-muted);
+    font-size: 0.82rem;
+  }
+  .hero-avail__arrow {
+    color: var(--color-gold);
+    transition: transform var(--dur) var(--ease);
+  }
+  .hero-avail:hover .hero-avail__arrow { transform: translateX(3px); color: var(--color-gold-light); }
+</style>

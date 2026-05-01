@@ -1,16 +1,78 @@
 ---
-// Barber roster sourced from the Square booking flow.
-// TODO: phase 2 — add headshots, individual bios, and per-barber Square deep links.
-const barbers = [
-  { name: 'Michael', initial: 'M', from: '$30' },
-  { name: 'Rick', initial: 'R', from: '$30' },
-  { name: 'Clayton', initial: 'C', from: '$30' },
-];
+// Barber roster sourced from Square. The "from" price comes from the live
+// catalog (Men's Haircut variation per barber); falls back to $30 if the
+// catalog fetch fails so the homepage still renders.
+import { getServicesCached } from '../lib/catalog/liveServices';
+import NextAvailableLine from './availability/NextAvailableLine.astro';
+import { getNextAvailability, type NextAvailability } from '../lib/availability/nextAvailable';
+
+const SQUARE_BARBER_IDS = {
+  Michael: '523GMGEC1FY0Z',
+  Rick: 'TMZ4GRNFpRhnzLbv',
+  Clayton: 'TMwUNkXCCC_i3vyZ',
+} as const;
+
+interface BarberTile {
+  name: string;
+  initial: string;
+  id: string;
+  from: string;
+}
+
 const base = import.meta.env.BASE_URL.replace(/\/$/, '');
-const isGhPages = import.meta.env.BASE_URL && import.meta.env.BASE_URL !== '/';
-const bookUrl = isGhPages ? 'https://modern-classic.square.site' : `${base}/book`;
+const isGhPages = Boolean(import.meta.env.BASE_URL && import.meta.env.BASE_URL !== '/');
 const bookTarget = isGhPages ? '_blank' : '_self';
 const bookRel = isGhPages ? 'noopener' : '';
+const FALLBACK_BOOK = 'https://modern-classic.square.site';
+
+function priceFor(services: Awaited<ReturnType<typeof getServicesCached>>, barberId: string): string {
+  // Find the cheapest fixed-price variation that includes this barber.
+  let best: number | null = null;
+  for (const s of services) {
+    for (const v of s.variations) {
+      if (v.priceCents === null) continue;
+      if (!v.eligibleTeamMemberIds.includes(barberId)) continue;
+      if (best === null || v.priceCents < best) best = v.priceCents;
+    }
+  }
+  if (best === null) return '$30';
+  return `$${(best / 100).toFixed(0)}`;
+}
+
+let priceMichael = '$30';
+let priceRick = '$30';
+let priceClayton = '$30';
+try {
+  const services = await getServicesCached();
+  priceMichael = priceFor(services, SQUARE_BARBER_IDS.Michael);
+  priceRick = priceFor(services, SQUARE_BARBER_IDS.Rick);
+  priceClayton = priceFor(services, SQUARE_BARBER_IDS.Clayton);
+} catch {
+  // Silent — already initialized to $30 fallback.
+}
+
+const barbers: BarberTile[] = [
+  { name: 'Michael', initial: 'M', id: SQUARE_BARBER_IDS.Michael, from: priceMichael },
+  { name: 'Rick', initial: 'R', id: SQUARE_BARBER_IDS.Rick, from: priceRick },
+  { name: 'Clayton', initial: 'C', id: SQUARE_BARBER_IDS.Clayton, from: priceClayton },
+];
+
+// Live availability per barber (10-min cache).
+const NO_AVAIL: NextAvailability = { slot: null, withinSevenDays: false };
+const availLookups = await Promise.all(
+  barbers.map(async (b) => {
+    try {
+      return await getNextAvailability(b.id);
+    } catch {
+      return NO_AVAIL;
+    }
+  }),
+);
+
+function barberBookUrl(id: string): string {
+  if (isGhPages) return FALLBACK_BOOK;
+  return `${base}/book?barber=${encodeURIComponent(id)}`;
+}
 ---
 <section id="barbers" class="barbers" aria-labelledby="barbers-heading">
   <div class="container">
@@ -25,7 +87,7 @@ const bookRel = isGhPages ? 'noopener' : '';
     </header>
 
     <div class="barbers__grid">
-      {barbers.map((b) => (
+      {barbers.map((b, i) => (
         <article class="barber" data-reveal>
           <div class="barber__crest" aria-hidden="true">
             <svg viewBox="0 0 120 120" class="barber__svg">
@@ -49,7 +111,12 @@ const bookRel = isGhPages ? 'noopener' : '';
           <h3 class="barber__name">{b.name}</h3>
           <p class="barber__role">Barber</p>
           <p class="barber__rate">Cuts from <span>{b.from}</span></p>
-          <a class="barber__cta" href={bookUrl} target={bookTarget} rel={bookRel}>
+          <NextAvailableLine
+            slot={availLookups[i].slot}
+            withinSevenDays={availLookups[i].withinSevenDays}
+            size="sm"
+          />
+          <a class="barber__cta" href={barberBookUrl(b.id)} target={bookTarget} rel={bookRel}>
             Book with {b.name} <span class="arrow" aria-hidden="true">→</span>
           </a>
         </article>

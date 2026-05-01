@@ -1,0 +1,148 @@
+// Phase 6 Part A — "next available" lookups, cached at 10 minutes.
+//
+// Three callers hit this:
+//   • Rebook-your-usual on /my-bookings           (per-combo)
+//   • /barbers cards                              (per-barber)
+//   • Homepage hero (signed-in or guest)          (per-barber or any)
+
+import { cached } from './cache';
+import { searchAvailability } from '../square/availability';
+import { getBarbers } from '../square/team';
+import { getServices } from '../square/catalog';
+import type { AvailabilitySlot, Barber, Service, ServiceVariation } from '../square/types';
+import { isWithinDays } from './timing';
+
+const CACHE_TTL_SECONDS = 600;
+const SEARCH_WINDOW_DAYS = 14;
+const WITHIN_DAYS_THRESHOLD = 7;
+
+function searchEnd(): Date {
+  return new Date(Date.now() + SEARCH_WINDOW_DAYS * 24 * 60 * 60 * 1000);
+}
+
+function searchStart(): Date {
+  // Search starts "now"; Square's lead-time policy will exclude any
+  // slots too close to wall-clock time.
+  return new Date();
+}
+
+/**
+ * Pick the variations for a given barber that we should query. We prefer
+ * Men's Haircut variations first (most common), then any other variation
+ * the barber serves. Returns at most 2 variations to avoid hammering
+ * Square with parallel calls per barber.
+ */
+function variationsForBarber(services: Service[], barberId: string): ServiceVariation[] {
+  const candidates: ServiceVariation[] = [];
+  for (const s of services) {
+    for (const v of s.variations) {
+      if (!v.availableForBooking) continue;
+      if (v.eligibleTeamMemberIds.includes(barberId)) {
+        candidates.push(v);
+      }
+    }
+  }
+  // Prefer the shortest non-variable-priced variations first — those have
+  // the most open slots. Tiebreak by stable variation id.
+  candidates.sort((a, b) => {
+    if (a.priceCents === null && b.priceCents !== null) return 1;
+    if (a.priceCents !== null && b.priceCents === null) return -1;
+    if (a.durationMinutes !== b.durationMinutes) return a.durationMinutes - b.durationMinutes;
+    return a.id.localeCompare(b.id);
+  });
+  return candidates.slice(0, 2);
+}
+
+async function computeNextForBarber(
+  barberId: string,
+  services: Service[],
+): Promise<AvailabilitySlot | null> {
+  const variations = variationsForBarber(services, barberId);
+  if (variations.length === 0) return null;
+  const start = searchStart();
+  const end = searchEnd();
+
+  const results = await Promise.all(
+    variations.map((v) =>
+      searchAvailability({
+        serviceVariationId: v.id,
+        teamMemberId: barberId,
+        startAt: start,
+        endAt: end,
+      }).catch(() => [] as AvailabilitySlot[]),
+    ),
+  );
+
+  // Pick the soonest slot across all queried variations.
+  let soonest: AvailabilitySlot | null = null;
+  for (const slots of results) {
+    for (const s of slots) {
+      if (!soonest || s.startAtUtc < soonest.startAtUtc) {
+        soonest = s;
+      }
+    }
+  }
+  return soonest;
+}
+
+export interface NextAvailability {
+  slot: AvailabilitySlot | null;
+  withinSevenDays: boolean;
+}
+
+export async function getNextAvailability(barberId: string): Promise<NextAvailability> {
+  return cached(`next-avail:${barberId}`, CACHE_TTL_SECONDS, async () => {
+    const services = await getServices();
+    const slot = await computeNextForBarber(barberId, services);
+    return {
+      slot,
+      withinSevenDays: slot ? isWithinDays(slot.startAtUtc, WITHIN_DAYS_THRESHOLD) : false,
+    };
+  });
+}
+
+export interface ComboSlotsInput {
+  serviceVariationId: string;
+  teamMemberId: string;
+  count: number;
+}
+
+export async function getNextSlotsForCombo(
+  input: ComboSlotsInput,
+): Promise<AvailabilitySlot[]> {
+  const key = `combo-slots:${input.serviceVariationId}:${input.teamMemberId}:${input.count}`;
+  return cached(key, CACHE_TTL_SECONDS, async () => {
+    const slots = await searchAvailability({
+      serviceVariationId: input.serviceVariationId,
+      teamMemberId: input.teamMemberId,
+      startAt: searchStart(),
+      endAt: searchEnd(),
+    }).catch(() => [] as AvailabilitySlot[]);
+    return slots.slice(0, Math.max(1, input.count));
+  });
+}
+
+export interface SoonestAcrossBarbers {
+  barber: Barber;
+  slot: AvailabilitySlot;
+}
+
+export async function getSoonestAcrossBarbers(): Promise<SoonestAcrossBarbers | null> {
+  return cached('soonest-across-barbers', CACHE_TTL_SECONDS, async () => {
+    const [barbers, services] = await Promise.all([getBarbers(), getServices()]);
+    const perBarber = await Promise.all(
+      barbers.map(async (b) => ({
+        barber: b,
+        slot: await computeNextForBarber(b.id, services),
+      })),
+    );
+    let best: SoonestAcrossBarbers | null = null;
+    for (const entry of perBarber) {
+      if (!entry.slot) continue;
+      if (!best || entry.slot.startAtUtc < best.slot.startAtUtc) {
+        best = { barber: entry.barber, slot: entry.slot };
+      }
+    }
+    return best;
+  });
+}

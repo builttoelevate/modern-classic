@@ -5,14 +5,22 @@ import BaseLayout from '../layouts/BaseLayout.astro';
 import Header from '../components/Header.astro';
 import Footer from '../components/Footer.astro';
 import MyBookingsList from '../components/bookings/MyBookingsList.tsx';
+import RebookUsualCard from '../components/bookings/RebookUsualCard.tsx';
+import NewCustomerCard from '../components/bookings/NewCustomerCard.tsx';
 import { ProductRecommendations } from '../components/bookings/ProductRecommendations.tsx';
 import { getSession, refreshSessionCookie } from '../lib/auth/middleware';
 import { isAuthConfigured } from '../lib/auth/session';
 import { getCustomerBookings } from '../lib/square/customerBookings';
 import { getRetailProducts } from '../lib/square/products';
+import { getBarbers } from '../lib/square/team';
 import { recommendForBooking, generalRecommendations } from '../lib/recommendations/forBooking';
+import { findUsualCombo, type UsualCombo } from '../lib/booking/usual';
+import { shouldShowRebookCard } from '../lib/booking/rebookEligibility';
+import { getNextSlotsForCombo } from '../lib/availability/nextAvailable';
+import { isWithinDays } from '../lib/availability/timing';
 import type { CustomerBookings } from '../lib/square/customerBookings';
 import type { Product } from '../lib/square/products';
+import type { AvailabilitySlot } from '../lib/square/types';
 
 import '../styles/booking.css';
 import '../styles/portal.css';
@@ -38,15 +46,18 @@ if (!session) {
 
 let bookings: CustomerBookings = { upcoming: [], past: [] };
 let products: Product[] = [];
+let activeBarberIds = new Set<string>();
 let loadError: string | null = null;
 
 try {
-  const [b, p] = await Promise.all([
+  const [b, p, bs] = await Promise.all([
     getCustomerBookings(session.customerId),
     getRetailProducts(),
+    getBarbers(),
   ]);
   bookings = b;
   products = p;
+  activeBarberIds = new Set(bs.map((m) => m.id));
 } catch (err) {
   loadError = err instanceof Error ? err.message : 'Failed to load.';
   // eslint-disable-next-line no-console
@@ -54,6 +65,41 @@ try {
     `[BOOK] ${JSON.stringify({ ts: new Date().toISOString(), phase: 'my-bookings-load-failed', detail: loadError })}`,
   );
 }
+
+const allBookings = [...bookings.upcoming, ...bookings.past];
+const usualCombo: UsualCombo | null = activeBarberIds.size > 0
+  ? findUsualCombo(allBookings, activeBarberIds)
+  : null;
+const showRebook = shouldShowRebookCard({
+  usualCombo,
+  upcomingBookings: bookings.upcoming,
+});
+
+let quickSlots: AvailabilitySlot[] = [];
+let withinSevenDays = false;
+if (showRebook && usualCombo) {
+  try {
+    quickSlots = await getNextSlotsForCombo({
+      serviceVariationId: usualCombo.serviceVariationId,
+      teamMemberId: usualCombo.teamMemberId,
+      count: 3,
+    });
+    if (quickSlots.length > 0) {
+      withinSevenDays = isWithinDays(quickSlots[0].startAtUtc, 7);
+    }
+  } catch (err) {
+    // Best-effort — if availability fails the card just won't render.
+    quickSlots = [];
+    // eslint-disable-next-line no-console
+    console.log(
+      `[BOOK] ${JSON.stringify({ ts: new Date().toISOString(), phase: 'rebook-availability-failed', detail: err instanceof Error ? err.message : String(err) })}`,
+    );
+  }
+}
+
+// True new customer = no upcoming AND no past bookings (any status).
+const isTrueNewCustomer =
+  !showRebook && bookings.upcoming.length === 0 && bookings.past.length === 0;
 
 const seedBooking = bookings.upcoming[0] ?? bookings.past[0];
 const recs = seedBooking
@@ -90,7 +136,19 @@ Astro.response.headers.append('Set-Cookie', refreshSessionCookie(session));
         <p>We couldn't load your bookings right now. Please try again in a moment, or call us at <a class="link-gold" href="tel:+17402974462">740-297-4462</a>.</p>
       </div>
     ) : (
-      <MyBookingsList client:load initial={bookings} basePath={base} />
+      <>
+        {showRebook && usualCombo && quickSlots.length > 0 && (
+          <RebookUsualCard
+            client:load
+            usual={usualCombo}
+            quickSlots={quickSlots}
+            withinSevenDays={withinSevenDays}
+            basePath={base}
+          />
+        )}
+        {isTrueNewCustomer && <NewCustomerCard client:load basePath={base} />}
+        <MyBookingsList client:load initial={bookings} basePath={base} />
+      </>
     )}
 
     {recs.length > 0 && <ProductRecommendations products={recs} />}

@@ -1,5 +1,12 @@
 ---
-export const prerender = true;
+// Phase 6 — switched from static prerender to SSR so the hero can show
+// live availability tailored to whether the visitor is signed in.
+// Behind a 10-min cache, so most renders are sub-100ms.
+//
+// On the gh-pages preview (output: 'static'), we stay prerendered with
+// a build-time snapshot of "soonest across barbers" — no auth, no
+// per-request data. The Vercel deploy is the real SSR experience.
+export const prerender = process.env.DEPLOY_TARGET === 'gh-pages';
 
 import BaseLayout from '../layouts/BaseLayout.astro';
 import Header from '../components/Header.astro';
@@ -17,12 +24,103 @@ import FAQ from '../components/FAQ.astro';
 import FinalCTA from '../components/FinalCTA.astro';
 import Footer from '../components/Footer.astro';
 import MobileBookCTA from '../components/MobileBookCTA.astro';
+import {
+  getNextAvailability,
+  getSoonestAcrossBarbers,
+} from '../lib/availability/nextAvailable';
+import { getSession } from '../lib/auth/middleware';
+import { getCustomerBookings } from '../lib/square/customerBookings';
+import { getBarbers } from '../lib/square/team';
+import { findUsualCombo } from '../lib/booking/usual';
+import type { AvailabilitySlot } from '../lib/square/types';
+
+interface AvailabilityProps {
+  mode: 'personalized' | 'soonest' | 'fallback';
+  slot?: AvailabilitySlot | null;
+  barberName?: string;
+  teamMemberId?: string;
+}
+
+let availability: AvailabilityProps = { mode: 'fallback' };
+
+try {
+  const session = getSession(Astro.request);
+  if (session) {
+    // Signed-in path: try to find their usual barber and that barber's
+    // next slot.
+    let personalized = false;
+    try {
+      const [bookings, barbers] = await Promise.all([
+        getCustomerBookings(session.customerId),
+        getBarbers(),
+      ]);
+      const activeBarberIds = new Set(barbers.map((b) => b.id));
+      const usual = findUsualCombo(
+        [...bookings.upcoming, ...bookings.past],
+        activeBarberIds,
+      );
+      if (usual) {
+        const next = await getNextAvailability(usual.teamMemberId);
+        if (next.slot && next.withinSevenDays) {
+          availability = {
+            mode: 'personalized',
+            slot: next.slot,
+            barberName: usual.barberName,
+            teamMemberId: usual.teamMemberId,
+          };
+          personalized = true;
+        }
+      }
+    } catch {
+      // Fall through to soonest.
+    }
+    if (!personalized) {
+      const soonest = await getSoonestAcrossBarbers();
+      if (soonest && soonest.slot) {
+        const within7 = (() => {
+          const target = new Date(soonest.slot.startAtUtc);
+          const ms = target.getTime() - Date.now();
+          return ms <= 7 * 24 * 60 * 60 * 1000;
+        })();
+        if (within7) {
+          availability = {
+            mode: 'soonest',
+            slot: soonest.slot,
+            barberName: soonest.barber.displayName,
+            teamMemberId: soonest.barber.id,
+          };
+        }
+      }
+    }
+  } else {
+    // Guest path.
+    const soonest = await getSoonestAcrossBarbers();
+    if (soonest && soonest.slot) {
+      const within7 = (() => {
+        const target = new Date(soonest.slot.startAtUtc);
+        const ms = target.getTime() - Date.now();
+        return ms <= 7 * 24 * 60 * 60 * 1000;
+      })();
+      if (within7) {
+        availability = {
+          mode: 'soonest',
+          slot: soonest.slot,
+          barberName: soonest.barber.displayName,
+          teamMemberId: soonest.barber.id,
+        };
+      }
+    }
+  }
+} catch {
+  // If anything goes sideways, fall back to the warm CTA.
+  availability = { mode: 'fallback' };
+}
 ---
 <BaseLayout includeBusinessSchema={true}>
   <Header />
   <TrustStrip />
   <main id="main">
-    <Hero />
+    <Hero availability={availability} />
     <QuickActions />
     <Services />
     <Barbers />

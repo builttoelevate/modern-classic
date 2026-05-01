@@ -1,13 +1,60 @@
 ---
+// Phase 6 Part D — homepage service tiles read from Square's catalog
+// (cached 30 min). Falls back to the content collection if the live
+// fetch fails so the page never renders blank.
 import { getCollection } from 'astro:content';
 import ServiceCard from './ServiceCard.astro';
+import { getServicesCached, toLiveServiceCards } from '../lib/catalog/liveServices';
 
 const base = import.meta.env.BASE_URL.replace(/\/$/, '');
-// Home page shows the 3 headline services; the rest live on /services.
-const services = (await getCollection('services'))
-  .filter((s) => s.data.featured)
-  .sort((a, b) => a.data.order - b.data.order)
-  .slice(0, 3);
+const isGhPages = import.meta.env.BASE_URL && import.meta.env.BASE_URL !== '/';
+const bookUrl = isGhPages ? 'https://modern-classic.square.site' : `${base}/book`;
+
+interface FeaturedCard {
+  name: string;
+  price: string;
+  duration: string;
+  audience: string | null;
+  description: string;
+}
+
+// The homepage carries 3 headline services. The slug list mirrors what's
+// `featured: true` in the content collection, so the visual layout
+// matches whether we hit the live catalog or the fallback.
+const FEATURED_SLUGS = ['mens-haircut', 'haircut-beard', 'straight-razor-shave'];
+
+let cards: FeaturedCard[] = [];
+try {
+  const live = await getServicesCached();
+  const liveCards = toLiveServiceCards(live);
+  cards = FEATURED_SLUGS.map((slug) => liveCards.find((c) => c.slug === slug))
+    .filter((c): c is NonNullable<typeof c> => Boolean(c))
+    .map((c) => ({
+      name: c.name,
+      price: c.priceLabel,
+      duration: c.durationLabel,
+      audience: c.audience,
+      description: c.description,
+    }));
+  if (cards.length === 0) throw new Error('no featured services in live catalog');
+} catch (err) {
+  // eslint-disable-next-line no-console
+  console.log(
+    `[CATALOG] homepage live fetch failed, using content fallback: ${err instanceof Error ? err.message : String(err)}`,
+  );
+  const fallback = (await getCollection('services'))
+    .filter((s) => s.data.featured)
+    .sort((a, b) => a.data.order - b.data.order)
+    .slice(0, 3)
+    .map((s) => s.data);
+  cards = fallback.map((s) => ({
+    name: s.name,
+    price: s.price,
+    duration: s.duration,
+    audience: s.audience,
+    description: s.description,
+  }));
+}
 ---
 <section id="services" class="services" aria-labelledby="services-heading">
   <div class="container">
@@ -23,14 +70,14 @@ const services = (await getCollection('services'))
     </header>
 
     <div class="services__grid">
-      {services.map((s) => (
+      {cards.map((s) => (
         <ServiceCard
-          name={s.data.name}
-          price={s.data.price}
-          duration={s.data.duration}
-          audience={s.data.audience}
-          description={s.data.description}
-          bookingUrl={s.data.bookingUrl}
+          name={s.name}
+          price={s.price}
+          duration={s.duration}
+          audience={s.audience}
+          description={s.description}
+          bookingUrl={bookUrl}
         />
       ))}
     </div>

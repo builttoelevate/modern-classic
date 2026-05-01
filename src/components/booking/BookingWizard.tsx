@@ -27,11 +27,17 @@ export interface RescheduleContext {
   customerFamilyName?: string;
 }
 
+export interface WizardPreselectProps {
+  serviceVariationId?: string;
+  teamMemberId?: string;
+}
+
 interface Props {
   services: Service[];
   barbers: Barber[];
   location: Location | null;
   reschedule?: RescheduleContext;
+  preselect?: WizardPreselectProps;
 }
 
 const STEP_LABELS = ['Service', 'Barber', 'Time', 'Details', 'Confirm'];
@@ -46,6 +52,68 @@ function estimatedTimeRemaining(step: WizardStep): string {
     5: '15 sec',
   };
   return map[step];
+}
+
+function buildPreselectInitialState(
+  pre: WizardPreselectProps,
+  services: Service[],
+  barbers: Barber[],
+): WizardState | null {
+  if (!pre.serviceVariationId && !pre.teamMemberId) return null;
+
+  // Find the variation if specified.
+  let foundService: Service | null = null;
+  let foundVariation: ServiceVariation | null = null;
+  if (pre.serviceVariationId) {
+    for (const s of services) {
+      const v = s.variations.find((vv) => vv.id === pre.serviceVariationId);
+      if (v) {
+        foundService = s;
+        foundVariation = v;
+        break;
+      }
+    }
+  }
+  const foundBarber = pre.teamMemberId
+    ? barbers.find((b) => b.id === pre.teamMemberId) ?? null
+    : null;
+
+  // Case A: both service + barber → land on Step 3 (Date/Time) directly.
+  if (foundService && foundVariation && foundBarber) {
+    return {
+      ...defaultInitialState,
+      step: 3,
+      selectedService: foundService,
+      selectedVariation: foundVariation,
+      candidateVariations: [foundVariation],
+      selectedBarber: foundBarber,
+      anyBarber: false,
+    };
+  }
+
+  // Case B: service only → land on Step 2 (Barber) with the service set.
+  if (foundService && foundVariation && !foundBarber) {
+    return {
+      ...defaultInitialState,
+      step: 2,
+      selectedService: foundService,
+      selectedVariation: foundVariation,
+      candidateVariations: [foundVariation],
+    };
+  }
+
+  // Case C: barber only → stay on Step 1 (Service), but remember the
+  // barber so when they pick a service we can pin to the matching
+  // variation. We do that by setting selectedBarber early; the reducer
+  // will overwrite as the user advances.
+  if (!foundService && foundBarber) {
+    return {
+      ...defaultInitialState,
+      step: 1,
+      selectedBarber: foundBarber,
+    };
+  }
+  return null;
 }
 
 function buildRescheduleInitialState(
@@ -85,11 +153,16 @@ function buildRescheduleInitialState(
   };
 }
 
-export default function BookingWizard({ services, barbers, location, reschedule }: Props) {
+export default function BookingWizard({ services, barbers, location, reschedule, preselect }: Props) {
   const initialState = useMemo<WizardState>(() => {
-    if (!reschedule) return defaultInitialState;
-    return buildRescheduleInitialState(reschedule, services, barbers) ?? defaultInitialState;
-  }, [reschedule, services, barbers]);
+    if (reschedule) {
+      return buildRescheduleInitialState(reschedule, services, barbers) ?? defaultInitialState;
+    }
+    if (preselect && (preselect.serviceVariationId || preselect.teamMemberId)) {
+      return buildPreselectInitialState(preselect, services, barbers) ?? defaultInitialState;
+    }
+    return defaultInitialState;
+  }, [reschedule, preselect, services, barbers]);
   const [state, dispatch] = useReducer(reducer, initialState);
   const [toast, setToast] = useState<string | null>(null);
   const rescheduleMode = !!reschedule;

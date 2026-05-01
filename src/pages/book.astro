@@ -5,13 +5,14 @@ import BaseLayout from '../layouts/BaseLayout.astro';
 import Header from '../components/Header.astro';
 import Footer from '../components/Footer.astro';
 import BookingWizard from '../components/booking/BookingWizard.tsx';
-import type { RescheduleContext } from '../components/booking/BookingWizard.tsx';
+import type { RescheduleContext, WizardPreselectProps } from '../components/booking/BookingWizard.tsx';
 import { getServices } from '../lib/square/catalog';
 import { getBarbers } from '../lib/square/team';
 import { getLocation } from '../lib/square/locations';
 import { getBooking } from '../lib/square/bookings';
 import { findCustomerByEmail } from '../lib/square/customers';
 import { getSession } from '../lib/auth/middleware';
+import { preselectFromUrl } from '../lib/booking/wizardPreselect';
 import type { Barber, Location, Service } from '../lib/square/types';
 
 import '../styles/booking.css';
@@ -19,6 +20,14 @@ import '../styles/booking.css';
 const base = import.meta.env.BASE_URL.replace(/\/$/, '');
 const url = new URL(Astro.request.url);
 const rescheduleId = url.searchParams.get('reschedule');
+const urlPreselect = preselectFromUrl(url);
+const preselect: WizardPreselectProps | undefined =
+  urlPreselect.serviceVariationId || urlPreselect.teamMemberId
+    ? {
+        serviceVariationId: urlPreselect.serviceVariationId,
+        teamMemberId: urlPreselect.teamMemberId,
+      }
+    : undefined;
 
 let services: Service[] = [];
 let barbers: Barber[] = [];
@@ -141,6 +150,7 @@ if (rescheduleId && !loadError) {
         barbers={barbers}
         location={location}
         reschedule={reschedule}
+        preselect={preselect}
       />
     )}
   </main>

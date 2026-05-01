@@ -1,4 +1,9 @@
 ---
+// Phase 6 Part D — services + prices now come from Square's live catalog
+// at build time. Daily Vercel cron triggers a rebuild so Michael's edits
+// propagate within 24 hours. If Square is down at build time we fall
+// back to the content-collection JSON (last-known-good) so the page
+// still renders.
 export const prerender = true;
 
 import { getCollection } from 'astro:content';
@@ -7,25 +12,56 @@ import Header from '../components/Header.astro';
 import Footer from '../components/Footer.astro';
 import MobileBookCTA from '../components/MobileBookCTA.astro';
 import ServiceCard from '../components/ServiceCard.astro';
+import { getServices } from '../lib/square/catalog';
+import { toLiveServiceCards, type LiveServiceCard } from '../lib/catalog/liveServices';
 
 const base = import.meta.env.BASE_URL.replace(/\/$/, '');
-const bookUrl = 'https://modern-classic.square.site';
+const isGhPages = import.meta.env.BASE_URL && import.meta.env.BASE_URL !== '/';
+const bookUrl = isGhPages ? 'https://modern-classic.square.site' : `${base}/book`;
 
-const all = (await getCollection('services'))
-  .sort((a, b) => a.data.order - b.data.order)
-  .map((s) => s.data);
+let cards: LiveServiceCard[] = [];
+let usedFallback = false;
+try {
+  const live = await getServices();
+  cards = toLiveServiceCards(live);
+  if (cards.length === 0) throw new Error('No live services returned');
+} catch (err) {
+  // Fallback to the content collection. This is what shipped pre-Phase-6,
+  // so the page renders identically when Square is unreachable.
+  usedFallback = true;
+  // eslint-disable-next-line no-console
+  console.log(
+    `[CATALOG] live fetch failed at build, using content fallback: ${err instanceof Error ? err.message : String(err)}`,
+  );
+  const fallback = (await getCollection('services'))
+    .sort((a, b) => a.data.order - b.data.order)
+    .map((s) => s.data);
 
-// Group services by category for browseability. The slug list is the source
-// of truth — anything not listed falls into "Style & Detailing" so a future
-// addition won't silently disappear from the page.
-const haircutSlugs = new Set(['mens-haircut', 'kids-haircut', 'haircut-design', 'new-customer']);
-const beardSlugs   = new Set(['haircut-beard', 'beard-trim-edge']);
-const shaveSlugs   = new Set(['straight-razor-shave']);
+  const haircutSlugs = new Set(['mens-haircut', 'kids-haircut', 'haircut-design', 'new-customer']);
+  const beardSlugs = new Set(['haircut-beard', 'beard-trim-edge']);
+  const shaveSlugs = new Set(['straight-razor-shave']);
+  cards = fallback.map((s, i) => ({
+    slug: s.slug,
+    name: s.name,
+    priceLabel: s.price,
+    durationLabel: s.duration,
+    audience: s.audience,
+    description: s.description,
+    group: haircutSlugs.has(s.slug)
+      ? 'haircuts'
+      : beardSlugs.has(s.slug)
+        ? 'beard'
+        : shaveSlugs.has(s.slug)
+          ? 'shave'
+          : 'style',
+    order: s.order ?? i,
+  }));
+}
 
-const haircuts = all.filter((s) => haircutSlugs.has(s.slug));
-const beard    = all.filter((s) => beardSlugs.has(s.slug));
-const shave    = all.filter((s) => shaveSlugs.has(s.slug));
-const style    = all.filter((s) => !haircutSlugs.has(s.slug) && !beardSlugs.has(s.slug) && !shaveSlugs.has(s.slug));
+const haircuts = cards.filter((s) => s.group === 'haircuts');
+const beard = cards.filter((s) => s.group === 'beard');
+const shave = cards.filter((s) => s.group === 'shave');
+const style = cards.filter((s) => s.group === 'style');
 
 const groups = [
   {
@@ -65,7 +101,7 @@ const groups = [
 const itemListSchema = {
   '@context': 'https://schema.org',
   '@type': 'ItemList',
-  itemListElement: all.map((s, i) => ({
+  itemListElement: cards.map((s, i) => ({
     '@type': 'ListItem',
     position: i + 1,
     item: {
@@ -74,7 +110,7 @@ const itemListSchema = {
       description: s.description,
       offers: {
         '@type': 'Offer',
-        price: s.price.replace(/[^0-9.\-]/g, '').split('-')[0] || '0',
+        price: s.priceLabel.replace(/[^0-9.\-]/g, '').split('-')[0] || '0',
         priceCurrency: 'USD',
         url: bookUrl,
       },
@@ -142,11 +178,11 @@ const itemListSchema = {
             {group.items.map((s) => (
               <ServiceCard
                 name={s.name}
-                price={s.price}
-                duration={s.duration}
+                price={s.priceLabel}
+                duration={s.durationLabel}
                 audience={s.audience}
                 description={s.description}
-                bookingUrl={s.bookingUrl}
+                bookingUrl={bookUrl}
               />
             ))}
           </div>

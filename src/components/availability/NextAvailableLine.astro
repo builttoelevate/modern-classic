@@ -1,0 +1,64 @@
+---
+// Phase 6 Part C — small inline "Next available" pill, server-rendered.
+//
+// Renders nothing if the slot is null OR not within the 7-day window —
+// per the doc, we don't display far-future slots as a specific time.
+
+import { formatRelativeSlot } from '../../lib/availability/timing';
+import type { AvailabilitySlot } from '../../lib/square/types';
+
+interface Props {
+  slot: AvailabilitySlot | null;
+  withinSevenDays: boolean;
+  size?: 'sm' | 'md';
+}
+
+const { slot, withinSevenDays, size = 'md' } = Astro.props as Props;
+
+const shouldRender = slot !== null && withinSevenDays;
+const label = shouldRender && slot ? formatRelativeSlot(slot.startAtUtc) : '';
+---
+{shouldRender && (
+  <span class={`avail-line avail-line--${size}`} aria-label={`Next available: ${label}`}>
+    <span class="avail-line__dot" aria-hidden="true"></span>
+    <span class="avail-line__label">Next available:</span>
+    <span class="avail-line__when">{label}</span>
+  </span>
+)}
+
+<style>
+  .avail-line {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.35rem 0.65rem;
+    background: rgba(72, 158, 90, 0.08);
+    border: 1px solid rgba(108, 184, 124, 0.35);
+    border-radius: 999px;
+    font-family: var(--font-body);
+    font-size: 0.82rem;
+    color: var(--color-text);
+    line-height: 1.2;
+  }
+  .avail-line--sm {
+    font-size: 0.76rem;
+    padding: 0.28rem 0.55rem;
+  }
+  .avail-line__dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #6cb87c;
+    box-shadow: 0 0 0 2px rgba(108, 184, 124, 0.18);
+    flex: none;
+  }
+  .avail-line__label {
+    color: var(--color-text-muted);
+    letter-spacing: 0.04em;
+  }
+  .avail-line__when {
+    color: var(--color-text);
+    font-weight: 600;
+  }
+</style>

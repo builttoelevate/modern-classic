@@ -1,26 +1,56 @@
 ---
-export const prerender = true;
+// Phase 6 Part C — SSR on Vercel for live "Next available" data per
+// barber. On the gh-pages preview we stay prerendered (build-time
+// snapshot). The 10-min cache keeps repeat SSR requests sub-100ms.
+export const prerender = process.env.DEPLOY_TARGET === 'gh-pages';
 
 import BaseLayout from '../layouts/BaseLayout.astro';
 import Header from '../components/Header.astro';
 import Footer from '../components/Footer.astro';
 import MobileBookCTA from '../components/MobileBookCTA.astro';
+import NextAvailableLine from '../components/availability/NextAvailableLine.astro';
+import { getNextAvailability } from '../lib/availability/nextAvailable';
+import type { AvailabilitySlot } from '../lib/square/types';
 
 const base = import.meta.env.BASE_URL.replace(/\/$/, '');
 
-// Barber roster — pulled from the Square booking flow plus shop reviews.
-// TODO: Replace `photo: null` with real headshot paths and `bookingUrl` with
-// per-barber Square deep links once the owner provides them. Until then, the
-// shared shop URL covers booking and the gold initial monogram covers the
-// missing photo gracefully.
-// TODO: Replace placeholder Instagram handles below with the real per-barber
-// handles once confirmed. The shop's IG (@modernclassicbarbershop) is the
-// safe fallback used here.
+// Bio copy stays hand-written (Square doesn't carry it). The booking URL
+// for each barber is now /book?barber=<id> on Vercel — the wizard reads
+// the ?barber= URL param via wizardPreselect and pins the chair.
+// TODO: Replace placeholder Instagram handles with the real per-barber
+// handles once confirmed.
 const SHOP_IG = 'https://www.instagram.com/modernclassicbarbershop/';
-const BOOK_URL = 'https://modern-classic.square.site';
+const isGhPages = import.meta.env.BASE_URL && import.meta.env.BASE_URL !== '/';
+const BOOK_URL_FALLBACK = 'https://modern-classic.square.site';
 
-const barbers = [
+interface BarberCard {
+  id: string;
+  name: string;
+  initial: string;
+  role: string;
+  yearsLine: string;
+  bio: string;
+  specialties: string[];
+  bookingUrl: string;
+  bookingTarget: string;
+  bookingRel: string;
+  instagram: string;
+}
+
+const SQUARE_BARBER_IDS = {
+  Michael: '523GMGEC1FY0Z',
+  Rick: 'TMZ4GRNFpRhnzLbv',
+  Clayton: 'TMwUNkXCCC_i3vyZ',
+} as const;
+
+function bookingUrlFor(barberId: string): string {
+  if (isGhPages) return BOOK_URL_FALLBACK;
+  return `${base}/book?barber=${encodeURIComponent(barberId)}`;
+}
+
+const barbers: BarberCard[] = [
   {
+    id: SQUARE_BARBER_IDS.Michael,
     name: 'Michael',
     initial: 'M',
     role: 'Owner & Master Barber',
@@ -28,10 +58,13 @@ const barbers = [
     bio:
       "Michael is the founder of Modern Classic and the barber clients drive across state lines for. He specializes in skin fades, sharp line-ups, and the kind of detailed, no-shortcut haircut that still looks right two weeks later.",
     specialties: ['Skin Fades', 'Line-Ups', 'Beard Sculpts', 'Hair Design'],
-    bookingUrl: BOOK_URL,
+    bookingUrl: bookingUrlFor(SQUARE_BARBER_IDS.Michael),
+    bookingTarget: isGhPages ? '_blank' : '_self',
+    bookingRel: isGhPages ? 'noopener' : '',
     instagram: SHOP_IG,
   },
   {
+    id: SQUARE_BARBER_IDS.Rick,
     name: 'Rick',
     initial: 'R',
     role: 'Senior Barber',
@@ -39,10 +72,13 @@ const barbers = [
     bio:
       "Rick is the barber clients book when they want a clean cut and a styled finish — no guesswork at home afterwards. He'll cut, style with the in-house product line, and send you out knowing exactly how to recreate it.",
     specialties: ['Modern Cuts', 'Texture Styling', 'Beard Trims', 'Product Consults'],
-    bookingUrl: BOOK_URL,
+    bookingUrl: bookingUrlFor(SQUARE_BARBER_IDS.Rick),
+    bookingTarget: isGhPages ? '_blank' : '_self',
+    bookingRel: isGhPages ? 'noopener' : '',
     instagram: SHOP_IG,
   },
   {
+    id: SQUARE_BARBER_IDS.Clayton,
     name: 'Clayton',
     initial: 'C',
     role: 'Barber',
@@ -50,10 +86,27 @@ const barbers = [
     bio:
       "Clayton brings traditional barbering technique to every chair — clean clipper work, sharp scissor finishes, and a calm, family-friendly atmosphere whether you're 8 or 80. A favorite for kids' cuts and classic gentlemen's styles.",
     specialties: ['Classic Cuts', "Kids' Cuts", 'Scissor Work', 'Hot Towel Shaves'],
-    bookingUrl: BOOK_URL,
+    bookingUrl: bookingUrlFor(SQUARE_BARBER_IDS.Clayton),
+    bookingTarget: isGhPages ? '_blank' : '_self',
+    bookingRel: isGhPages ? 'noopener' : '',
     instagram: SHOP_IG,
   },
 ];
+
+// Fetch live availability for each barber in parallel. If Square is down
+// or any individual call fails, that barber's card just doesn't show
+// the line — the rest of the page still renders.
+type AvailLookup = { slot: AvailabilitySlot | null; withinSevenDays: boolean };
+const availResults = await Promise.all(
+  barbers.map(async (b) => {
+    try {
+      return await getNextAvailability(b.id);
+    } catch {
+      return { slot: null, withinSevenDays: false } as AvailLookup;
+    }
+  }),
+);
+const BOOK_URL = isGhPages ? BOOK_URL_FALLBACK : `${base}/book`;
 ---
 <BaseLayout
   title="Our Barbers — Modern Classic Barbershop, Zanesville OH"
@@ -82,7 +135,9 @@ const barbers = [
     <section class={`brbr-grid-wrap brbr-grid-wrap--n${barbers.length}`}>
       <div class="container">
         <div class={`brbr-grid brbr-grid--n${barbers.length}`}>
-          {barbers.map((b, i) => (
+          {barbers.map((b, i) => {
+            const avail = availResults[i];
+            return (
             <article class="brbr" data-reveal style={`--reveal-delay: ${i * 80}ms`}>
               <div class="brbr__photo" aria-hidden="true">
                 {/* TODO: Replace this monogram crest with a real headshot for {b.name}. */}
@@ -115,6 +170,7 @@ const barbers = [
                 <p class="brbr__role">{b.role}</p>
                 <h2 class="brbr__name">{b.name}</h2>
                 <p class="brbr__years">{b.yearsLine}</p>
+                <NextAvailableLine slot={avail.slot} withinSevenDays={avail.withinSevenDays} size="sm" />
                 <p class="brbr__bio">{b.bio}</p>
 
                 <ul class="brbr__specs" aria-label={`${b.name}'s specialties`}>
@@ -122,7 +178,7 @@ const barbers = [
                 </ul>
 
                 <div class="brbr__ctas">
-                  <a class="btn btn--small" href={b.bookingUrl} target="_blank" rel="noopener">
+                  <a class="btn btn--small" href={b.bookingUrl} target={b.bookingTarget} rel={b.bookingRel}>
                     Book with {b.name} <span class="arrow" aria-hidden="true">→</span>
                   </a>
                   {b.instagram && (
@@ -138,7 +194,8 @@ const barbers = [
                 </div>
               </div>
             </article>
-          ))}
+            );
+          })}
         </div>
       </div>
     </section>

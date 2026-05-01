@@ -168,7 +168,41 @@ ADMIN_PASSWORD=
 ```
 
 The booking flow uses **Square's built-in confirmation email** — we don't
-send our own. No `RESEND_API_KEY` required.
+send our own. No `RESEND_API_KEY` required for new bookings.
+
+### Phase 5+ env vars (customer auth + portal)
+
+```
+# 32+ char random hex string, used to HMAC-sign session cookies + magic
+# links. Generate with: openssl rand -hex 32
+AUTH_SECRET=
+
+# Resend API key. Sender domain `designedtoelevate.co` is verified on the
+# Resend account (configured in Resend → Domains).
+RESEND_API_KEY=
+```
+
+### Phase 6 env vars (live catalog cron)
+
+The `/services` page reads from Square's catalog at build time. A daily
+Vercel cron at 8 AM UTC (3-4 AM ET depending on DST) hits
+`/api/cron/rebuild`, which fires a Vercel deploy hook so Michael's
+catalog edits propagate within 24 hours.
+
+```
+# Vercel injects Authorization: Bearer $CRON_SECRET on its cron HTTP
+# requests. We compare with constant-time equality. Without it, the
+# rebuild endpoint returns 503.
+CRON_SECRET=
+
+# URL of a Vercel deploy hook (Project Settings → Git → Deploy Hooks).
+# The cron endpoint POSTs here to trigger a fresh build.
+VERCEL_DEPLOY_HOOK_URL=
+```
+
+Cron schedule lives in `vercel.json` under `crons[]`. To change the
+trigger time, edit the cron expression there. Vercel Hobby tier limits
+crons to once-daily granularity, which is what we use.
 
 ### Where things live
 
