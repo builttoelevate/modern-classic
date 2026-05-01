@@ -81,6 +81,14 @@ export default function MyBookingsList({ initial, basePath }: Props) {
     window.location.href = `${basePath}/book?${params.toString()}`;
   };
 
+  const handleBookAgain = (booking: BookingDetail) => {
+    const params = new URLSearchParams({
+      service: booking.serviceVariationId,
+      barber: booking.barberId,
+    });
+    window.location.href = `${basePath}/book?${params.toString()}`;
+  };
+
   return (
     <div className="mb-list">
       {toast && (
@@ -145,6 +153,7 @@ export default function MyBookingsList({ initial, basePath }: Props) {
                   variant="upcoming"
                   onCancel={handleCancel}
                   onReschedule={handleReschedule}
+                  onBookAgain={handleBookAgain}
                   busy={busyId === b.id}
                 />
               ))}
@@ -171,6 +180,7 @@ export default function MyBookingsList({ initial, basePath }: Props) {
                   variant="past"
                   onCancel={handleCancel}
                   onReschedule={handleReschedule}
+                  onBookAgain={handleBookAgain}
                   busy={false}
                 />
               ))}

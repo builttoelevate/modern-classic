@@ -6,12 +6,13 @@ interface Props {
   variant: 'upcoming' | 'past';
   onCancel: (booking: BookingDetail) => void;
   onReschedule: (booking: BookingDetail) => void;
+  onBookAgain: (booking: BookingDetail) => void;
   busy?: boolean;
 }
 
 const TWENTY_FOUR_HOURS_MS = 24 * 60 * 60 * 1000;
 
-export function BookingCard({ booking, variant, onCancel, onReschedule, busy }: Props) {
+export function BookingCard({ booking, variant, onCancel, onReschedule, onBookAgain, busy }: Props) {
   const [confirming, setConfirming] = useState(false);
   const [tooltipOpen, setTooltipOpen] = useState(false);
 
@@ -77,6 +78,18 @@ export function BookingCard({ booking, variant, onCancel, onReschedule, busy }: 
         )}
       </dl>
 
+      {variant === 'past' && (
+        <div className="mb-card__actions">
+          <button
+            type="button"
+            className="mb-btn"
+            onClick={() => onBookAgain(booking)}
+          >
+            Book again
+          </button>
+        </div>
+      )}
+
       {variant === 'upcoming' && !isCancelled && (
         <div className="mb-card__actions">
           {confirming ? (
@@ -135,13 +148,20 @@ export function BookingCard({ booking, variant, onCancel, onReschedule, busy }: 
               >
                 <button
                   type="button"
-                  className="mb-btn"
+                  className="mb-btn mb-btn--ghost"
                   disabled={!!lockedReason || busy}
                   onClick={() => onReschedule(booking)}
                 >
                   Reschedule
                 </button>
               </div>
+              <button
+                type="button"
+                className="mb-btn"
+                onClick={() => onBookAgain(booking)}
+              >
+                Book again
+              </button>
             </>
           )}
         </div>
