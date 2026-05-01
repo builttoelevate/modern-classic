@@ -1,21 +1,50 @@
 ---
+import { getServicesCached, toLiveServiceCards } from '../lib/catalog/liveServices';
+
 const base = import.meta.env.BASE_URL.replace(/\/$/, '');
 const isGhPages = import.meta.env.BASE_URL && import.meta.env.BASE_URL !== '/';
 const bookHref = isGhPages ? 'https://modern-classic.square.site' : `${base}/book`;
 const bookExternal = isGhPages;
 
+// Resolve live variation IDs so the QuickActions tiles can deep-link
+// straight into Step 2 (Choose your barber) with the service preselected,
+// matching what the homepage service cards already do. Falls back to the
+// bare /book URL if the live catalog fetch fails — the tiles still work,
+// they just dump the user on Step 1.
+const slugToVariation: Record<string, string | null> = {
+  'mens-haircut': null,
+  'haircut-beard': null,
+  'new-customer': null,
+};
+try {
+  const live = await getServicesCached();
+  const cards = toLiveServiceCards(live);
+  for (const slug of Object.keys(slugToVariation)) {
+    const found = cards.find((c) => c.slug === slug);
+    if (found?.primaryVariationId) slugToVariation[slug] = found.primaryVariationId;
+  }
+} catch {
+  // Silent — slugToVariation stays all-null and the fallback href handles it.
+}
+
+function deepLink(slug: string | null): string {
+  if (isGhPages) return bookHref;
+  const v = slug ? slugToVariation[slug] : null;
+  return v ? `${bookHref}?service=${encodeURIComponent(v)}` : bookHref;
+}
+
 const actions = [
   {
     label: 'Book a Haircut',
     sub: 'In-and-out, sharp.',
-    href: bookHref,
+    href: deepLink('mens-haircut'),
     icon: 'scissors',
     external: bookExternal,
   },
   {
     label: 'Cut + Beard',
     sub: 'The full grooming.',
-    href: bookHref,
+    href: deepLink('haircut-beard'),
     icon: 'diamond',
     external: bookExternal,
   },
@@ -29,7 +58,7 @@ const actions = [
   {
     label: 'First Visit',
     sub: 'Start here.',
-    href: bookHref,
+    href: deepLink('new-customer'),
     icon: 'star',
     external: bookExternal,
   },

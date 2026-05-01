@@ -10,6 +10,13 @@ interface Props {
 // but per the phase doc we assert it again here as a defensive guard.
 const HIDDEN_ITEM_IDS = new Set<string>(['REEU27HVQBIP27KEI47RI73V']);
 
+// Pin "New Customer" / first-visit service to the top of the list — first-
+// time customers should see it immediately, since the rest of the menu
+// assumes you already know what you want.
+function isFirstVisit(service: Service): boolean {
+  return service.name.toLowerCase().includes('new customer');
+}
+
 function priceLabel(service: Service): string {
   const { minPriceCents, maxPriceCents, variations } = service;
   const allVariable = variations.every((v) => v.pricingType === 'VARIABLE_PRICING');
@@ -29,7 +36,15 @@ function durationLabel(service: Service): string {
 }
 
 export function Step1ServicePicker({ services, selected, onPick }: Props) {
-  const visible = services.filter((s) => !HIDDEN_ITEM_IDS.has(s.id));
+  const visible = services
+    .filter((s) => !HIDDEN_ITEM_IDS.has(s.id))
+    .slice()
+    .sort((a, b) => {
+      const aFirst = isFirstVisit(a) ? 0 : 1;
+      const bFirst = isFirstVisit(b) ? 0 : 1;
+      if (aFirst !== bFirst) return aFirst - bFirst;
+      return 0;
+    });
 
   return (
     <div className="bw-step">
