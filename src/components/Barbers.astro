@@ -29,10 +29,15 @@ function priceFor(services: Awaited<ReturnType<typeof getServicesCached>>, barbe
   // Find the cheapest fixed-price variation that includes this barber, but
   // only across haircut-style services — otherwise a $15 Shampoo + Style
   // surfaces as "Cuts from $15", which is misleading. Same allowlist used
-  // by the homepage hero + barber-card "Next available" filter.
+  // by the homepage hero + barber-card "Next available" filter, minus
+  // kids-haircut so the under-10 rate doesn't undercut the adult floor on
+  // a card that adults are reading.
+  const PRICE_SKIP = new Set(['kids-haircut']);
   let best: number | null = null;
   for (const s of services) {
-    if (!HAIRCUT_SLUGS.has(slugForService(s).slug)) continue;
+    const slug = slugForService(s).slug;
+    if (!HAIRCUT_SLUGS.has(slug)) continue;
+    if (PRICE_SKIP.has(slug)) continue;
     for (const v of s.variations) {
       if (v.priceCents === null) continue;
       if (!v.eligibleTeamMemberIds.includes(barberId)) continue;
@@ -114,7 +119,7 @@ function barberBookUrl(id: string): string {
           </div>
           <h3 class="barber__name">{b.name}</h3>
           <p class="barber__role">Barber</p>
-          <p class="barber__rate">Cuts from <span>{b.from}</span></p>
+          <p class="barber__rate">Adult haircuts start at <span>{b.from}</span></p>
           <NextAvailableLine
             slot={availLookups[i].slot}
             size="sm"
