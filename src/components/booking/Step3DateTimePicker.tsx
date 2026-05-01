@@ -466,6 +466,8 @@ export function Step3DateTimePicker({
         onClose={() => setWaitlistOpen(false)}
         serviceName={serviceName}
         barberName={barberName}
+        serviceVariationId={variations[0]?.id ?? null}
+        teamMemberId={teamMemberId ?? null}
         prefillName={prefillName}
         prefillEmail={prefillEmail}
         prefillPhone={prefillPhone}

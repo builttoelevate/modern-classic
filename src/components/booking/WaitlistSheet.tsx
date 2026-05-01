@@ -6,6 +6,9 @@ interface Props {
   onClose: () => void;
   serviceName: string;
   barberName: string;
+  /** Square IDs — passed through to the admin so 'Schedule' can deep-link. */
+  serviceVariationId?: string | null;
+  teamMemberId?: string | null;
   /** Pre-fill these if we already collected them in Step 4. */
   prefillName?: string;
   prefillEmail?: string;
@@ -24,6 +27,8 @@ export function WaitlistSheet({
   onClose,
   serviceName,
   barberName,
+  serviceVariationId = null,
+  teamMemberId = null,
   prefillName = '',
   prefillEmail = '',
   prefillPhone = '',
@@ -92,6 +97,8 @@ export function WaitlistSheet({
           phone: phone.trim(),
           serviceName,
           barberName,
+          serviceVariationId,
+          teamMemberId,
           preferredDate: preferredDate.trim() || undefined,
           note: note.trim() || undefined,
         }),

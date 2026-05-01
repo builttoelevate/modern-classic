@@ -1,6 +1,7 @@
 import type { APIRoute } from 'astro';
 import { sendWaitlistRequest } from '../../lib/email/resend';
 import { redactEmail } from '../../lib/booking/log';
+import { recordWaitlistEntry } from '../../lib/marketing/waitlistLog';
 
 export const prerender = false;
 
@@ -64,6 +65,16 @@ export const POST: APIRoute = async ({ request, clientAddress }) => {
   const preferredDate =
     isString(b.preferredDate, FIELD_LIMITS.preferredDate) ? b.preferredDate.trim() : undefined;
   const note = isString(b.note, FIELD_LIMITS.note) ? b.note.trim() : undefined;
+  // Optional Square IDs the client passes through so admin can deep-link
+  // straight into /book?service=...&barber=... when scheduling. Either
+  // can be null if the client didn't have one (e.g. "Any barber" path
+  // hands over no teamMemberId).
+  const serviceVariationId = typeof b.serviceVariationId === 'string' && b.serviceVariationId.trim()
+    ? b.serviceVariationId.trim().slice(0, 64)
+    : null;
+  const teamMemberId = typeof b.teamMemberId === 'string' && b.teamMemberId.trim()
+    ? b.teamMemberId.trim().slice(0, 64)
+    : null;
 
   if (!name || !email || !phone || !serviceName || !barberName) {
     return Response.json(
@@ -140,6 +151,26 @@ export const POST: APIRoute = async ({ request, clientAddress }) => {
       barber: barberName,
       messageId: result.id,
     });
+
+    // Persist to KV so /admin/waitlist has a system of record beyond
+    // the shop's email inbox. KV failure is non-fatal — the email
+    // already went out and is the primary notification path.
+    try {
+      await recordWaitlistEntry({
+        customerName: name,
+        customerEmail: email,
+        customerPhone: phone,
+        serviceName,
+        barberName,
+        serviceVariationId,
+        teamMemberId,
+        preferredDate,
+        note,
+      });
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : String(err);
+      logWaitlist({ phase: 'kv-write-failed', email: redactEmail(email), detail });
+    }
     return Response.json({ ok: true });
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err);

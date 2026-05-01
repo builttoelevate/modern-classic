@@ -1,0 +1,433 @@
+---
+export const prerender = false;
+
+import { checkBasicAuth } from '../../lib/admin/auth';
+import {
+  listWaitlistEntries,
+  countWaitlistByStatus,
+  type WaitlistEntry,
+  type WaitlistStatus,
+} from '../../lib/marketing/waitlistLog';
+
+const auth = checkBasicAuth(Astro.request);
+if (!auth.ok) {
+  return auth.challenge;
+}
+
+const url = new URL(Astro.request.url);
+const showArchived = url.searchParams.get('archived') === '1';
+
+let entries: WaitlistEntry[] = [];
+let counts = { new: 0, contacted: 0, booked: 0, archived: 0 } as Record<WaitlistStatus, number>;
+let loadError: string | null = null;
+try {
+  [entries, counts] = await Promise.all([
+    listWaitlistEntries({ limit: 100, includeArchived: showArchived }),
+    countWaitlistByStatus(),
+  ]);
+} catch (err) {
+  loadError = err instanceof Error ? err.message : 'Unknown error';
+}
+
+const SHOP_TZ = 'America/New_York';
+const fmtSubmittedAt = new Intl.DateTimeFormat('en-US', {
+  timeZone: SHOP_TZ,
+  month: 'short',
+  day: 'numeric',
+  year: 'numeric',
+  hour: 'numeric',
+  minute: '2-digit',
+  hour12: true,
+});
+function tsLabel(iso: string): string {
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return iso;
+  return fmtSubmittedAt.format(d);
+}
+function fmtPhone(raw: string): string {
+  const d = raw.replace(/[^0-9]/g, '');
+  if (d.length === 11 && d.startsWith('1')) {
+    return `(${d.slice(1, 4)}) ${d.slice(4, 7)}-${d.slice(7)}`;
+  }
+  if (d.length === 10) {
+    return `(${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6)}`;
+  }
+  return raw;
+}
+
+function bookHrefFor(entry: WaitlistEntry): string {
+  const params = new URLSearchParams();
+  if (entry.serviceVariationId) params.set('service', entry.serviceVariationId);
+  if (entry.teamMemberId) params.set('barber', entry.teamMemberId);
+  const qs = params.toString();
+  return qs ? `/book?${qs}` : '/book';
+}
+---
+
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>Waitlist — Modern Classic Admin</title>
+    <style>
+      :root {
+        --bg: #0b0a08;
+        --surface: #161311;
+        --surface-2: #1d1916;
+        --border: #2a2520;
+        --text: #f3ece0;
+        --muted: #b0a695;
+        --dim: #80776a;
+        --gold: #c9a35c;
+        --gold-light: #e6c785;
+      }
+      *, *::before, *::after { box-sizing: border-box; }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font: 16px/1.5 ui-sans-serif, system-ui, sans-serif;
+      }
+      .wrap { max-width: 76rem; margin: 0 auto; padding: 32px 24px; }
+      h1 { font-family: Georgia, serif; font-weight: 400; font-size: 1.8rem; margin: 0 0 6px; }
+      .sub { color: var(--muted); font-size: 0.95rem; margin-bottom: 24px; }
+      .topnav {
+        display: flex; flex-wrap: wrap; gap: 1.5rem; align-items: center;
+        padding-bottom: 18px; margin-bottom: 24px;
+        border-bottom: 1px solid var(--border);
+        font-size: 0.78rem; letter-spacing: 0.16em; text-transform: uppercase;
+      }
+      .topnav a { color: var(--muted); text-decoration: none; padding-bottom: 4px; }
+      .topnav a.active { color: var(--gold); border-bottom: 2px solid var(--gold); }
+      .topnav a:hover { color: var(--gold); }
+      .err {
+        background: rgba(220, 80, 60, 0.08);
+        border: 1px solid rgba(220, 80, 60, 0.4);
+        color: #f0a37a;
+        padding: 12px 16px;
+        border-radius: 6px;
+        margin-bottom: 18px;
+      }
+      .summary {
+        display: flex; flex-wrap: wrap; gap: 14px;
+        margin-bottom: 24px;
+      }
+      .summary .card {
+        flex: 1 1 140px;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 14px 18px;
+      }
+      .summary .num { font-family: Georgia, serif; font-size: 1.6rem; color: var(--gold-light); }
+      .summary .lbl {
+        font-size: 0.7rem; letter-spacing: 0.16em;
+        text-transform: uppercase; color: var(--muted); margin-bottom: 4px;
+      }
+      .filters {
+        display: flex; gap: 12px; align-items: center;
+        margin-bottom: 16px;
+        font-size: 0.88rem;
+      }
+      .filters a {
+        color: var(--muted);
+        text-decoration: none;
+        padding: 6px 14px;
+        border: 1px solid var(--border);
+        border-radius: 999px;
+      }
+      .filters a.active { color: var(--gold); border-color: var(--gold); }
+      .filters a:hover { border-color: var(--gold); }
+
+      .entry {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 18px 20px;
+        margin-bottom: 14px;
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 16px;
+      }
+      .entry[data-status="new"] { border-color: rgba(201, 163, 92, 0.4); }
+      .entry[data-status="booked"] { opacity: 0.78; }
+      .entry[data-status="archived"] { opacity: 0.55; }
+      .entry-head {
+        display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px;
+        margin-bottom: 6px;
+      }
+      .entry-name { font-family: Georgia, serif; font-size: 1.2rem; font-weight: 500; color: var(--text); margin: 0; }
+      .entry-when { color: var(--dim); font-size: 0.82rem; }
+      .pill {
+        display: inline-block;
+        padding: 2px 10px;
+        border-radius: 999px;
+        font-size: 0.68rem;
+        font-weight: 600;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+      }
+      .pill[data-status="new"]       { background: rgba(201, 163, 92, 0.18); color: var(--gold-light); }
+      .pill[data-status="contacted"] { background: rgba(108, 184, 124, 0.15); color: #a4d091; }
+      .pill[data-status="booked"]    { background: rgba(96, 138, 196, 0.18); color: #9ec0eb; }
+      .pill[data-status="archived"]  { background: rgba(176, 166, 149, 0.16); color: var(--muted); }
+
+      .entry-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 6px 22px;
+        margin-top: 6px;
+        font-size: 0.92rem;
+      }
+      @media (max-width: 540px) { .entry-grid { grid-template-columns: 1fr; } }
+      .entry-grid dt {
+        font-size: 0.66rem;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+        color: var(--dim);
+        margin-top: 6px;
+      }
+      .entry-grid dd { margin: 0; color: var(--text); }
+      .entry-grid dd a { color: var(--gold); text-decoration: none; }
+      .entry-grid dd a:hover { text-decoration: underline; }
+      .entry-note {
+        margin-top: 10px;
+        padding: 10px 12px;
+        background: var(--surface-2);
+        border-left: 2px solid var(--gold);
+        font-size: 0.92rem;
+        line-height: 1.5;
+        color: var(--text);
+      }
+      .entry-note .lbl {
+        display: block;
+        font-size: 0.66rem;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+        color: var(--dim);
+        margin-bottom: 4px;
+      }
+
+      .actions {
+        display: flex; flex-direction: column; gap: 8px;
+        align-items: flex-end;
+        min-width: 11rem;
+      }
+      @media (max-width: 720px) {
+        .entry { grid-template-columns: 1fr; }
+        .actions { flex-direction: row; flex-wrap: wrap; align-items: stretch; min-width: 0; }
+      }
+      .btn {
+        padding: 8px 14px;
+        font-size: 0.74rem;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        font-weight: 700;
+        border-radius: 4px;
+        cursor: pointer;
+        border: 0;
+        font-family: inherit;
+        text-decoration: none;
+        text-align: center;
+        white-space: nowrap;
+      }
+      .btn.primary { background: var(--gold); color: var(--bg); }
+      .btn.primary:hover { background: var(--gold-light); }
+      .btn.ghost {
+        background: transparent;
+        color: var(--muted);
+        border: 1px solid var(--border);
+      }
+      .btn.ghost:hover { border-color: var(--gold); color: var(--text); }
+      .btn[disabled] { opacity: 0.5; cursor: not-allowed; }
+      .status-msg {
+        font-size: 0.82rem;
+        color: var(--muted);
+        margin-top: 6px;
+        min-height: 1em;
+      }
+      .status-msg.ok { color: #a4d091; }
+      .status-msg.error { color: #f0a37a; }
+      .empty {
+        background: var(--surface);
+        border: 1px dashed var(--border);
+        border-radius: 8px;
+        padding: 22px 24px;
+        color: var(--muted);
+        text-align: center;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <nav class="topnav">
+        <a href="/admin">Admin</a>
+        <a href="/admin/today">Today</a>
+        <a href="/admin/bookings">Bookings</a>
+        <a href="/admin/customers">Customers</a>
+        <a href="/admin/waitlist" class="active">Waitlist</a>
+        <a href="/admin/reviews">Reviews</a>
+      </nav>
+
+      <h1>Waitlist</h1>
+      <p class="sub">
+        Customers who couldn't find a time on the calendar and asked us to reach
+        out. Submitted via the booking-flow waitlist sheet. Schedule them with
+        one tap when an opening appears.
+      </p>
+
+      {loadError && <p class="err">Failed to load waitlist: {loadError}</p>}
+
+      {!loadError && (
+        <>
+          <div class="summary">
+            <div class="card">
+              <div class="lbl">New</div>
+              <div class="num">{counts.new}</div>
+            </div>
+            <div class="card">
+              <div class="lbl">Contacted</div>
+              <div class="num">{counts.contacted}</div>
+            </div>
+            <div class="card">
+              <div class="lbl">Booked</div>
+              <div class="num">{counts.booked}</div>
+            </div>
+            <div class="card">
+              <div class="lbl">Archived</div>
+              <div class="num">{counts.archived}</div>
+            </div>
+          </div>
+
+          <div class="filters">
+            <a href="/admin/waitlist" class={!showArchived ? 'active' : ''}>Active only</a>
+            <a href="/admin/waitlist?archived=1" class={showArchived ? 'active' : ''}>Show archived</a>
+          </div>
+
+          {entries.length === 0 ? (
+            <p class="empty">
+              {showArchived ? 'No waitlist entries yet.' : 'No active waitlist requests.'}
+            </p>
+          ) : (
+            <div>
+              {entries.map((e) => (
+                <article class="entry" data-status={e.status} data-id={e.id}>
+                  <div>
+                    <div class="entry-head">
+                      <h2 class="entry-name">{e.customerName}</h2>
+                      <span class="pill" data-status={e.status}>{e.status}</span>
+                      <span class="entry-when">submitted {tsLabel(e.submittedAt)}</span>
+                    </div>
+                    <dl class="entry-grid">
+                      <dt>Service</dt>
+                      <dd>{e.serviceName}</dd>
+                      <dt>Barber</dt>
+                      <dd>{e.barberName}</dd>
+                      <dt>Phone</dt>
+                      <dd>
+                        {e.customerPhone ? (
+                          <a href={`tel:${e.customerPhone.replace(/[^0-9+]/g, '')}`}>
+                            {fmtPhone(e.customerPhone)}
+                          </a>
+                        ) : '—'}
+                      </dd>
+                      <dt>Email</dt>
+                      <dd>
+                        {e.customerEmail ? (
+                          <a href={`mailto:${e.customerEmail}`}>{e.customerEmail}</a>
+                        ) : '—'}
+                      </dd>
+                      {e.preferredDate && (
+                        <>
+                          <dt>Preferred</dt>
+                          <dd>{e.preferredDate}</dd>
+                        </>
+                      )}
+                    </dl>
+                    {e.note && (
+                      <div class="entry-note">
+                        <span class="lbl">Their note</span>
+                        {e.note}
+                      </div>
+                    )}
+                    {e.adminNote && (
+                      <div class="entry-note">
+                        <span class="lbl">Admin note</span>
+                        {e.adminNote}
+                      </div>
+                    )}
+                  </div>
+                  <div class="actions">
+                    <a class="btn primary" href={bookHrefFor(e)} target="_blank" rel="noopener">
+                      Schedule them →
+                    </a>
+                    {e.status !== 'contacted' && (
+                      <button class="btn ghost" data-action="contacted">Mark contacted</button>
+                    )}
+                    {e.status !== 'booked' && (
+                      <button class="btn ghost" data-action="booked">Mark booked</button>
+                    )}
+                    {e.status !== 'archived' && (
+                      <button class="btn ghost" data-action="archived">Archive</button>
+                    )}
+                    {e.status === 'archived' && (
+                      <button class="btn ghost" data-action="new">Restore</button>
+                    )}
+                    <p class="status-msg" data-status-msg></p>
+                  </div>
+                </article>
+              ))}
+            </div>
+          )}
+        </>
+      )}
+    </div>
+
+    <script is:inline>
+      (function () {
+        const entries = document.querySelectorAll('.entry');
+        entries.forEach((entry) => {
+          const id = entry.dataset.id;
+          const msg = entry.querySelector('[data-status-msg]');
+          const buttons = entry.querySelectorAll('button[data-action]');
+          buttons.forEach((btn) => {
+            btn.addEventListener('click', async () => {
+              const status = btn.dataset.action;
+              buttons.forEach((b) => (b.disabled = true));
+              if (msg) {
+                msg.textContent = 'Saving…';
+                msg.className = 'status-msg';
+              }
+              try {
+                const res = await fetch('/api/admin/waitlist-status', {
+                  method: 'POST',
+                  credentials: 'same-origin',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ id, status }),
+                });
+                const data = await res.json();
+                if (!res.ok || !data.ok) {
+                  if (msg) {
+                    msg.textContent = (data && data.error && data.error.detail) || 'Could not update.';
+                    msg.className = 'status-msg error';
+                  }
+                  buttons.forEach((b) => (b.disabled = false));
+                  return;
+                }
+                // Reload to keep counts + filters consistent.
+                window.location.reload();
+              } catch (err) {
+                if (msg) {
+                  msg.textContent = 'Network error. Try again.';
+                  msg.className = 'status-msg error';
+                }
+                buttons.forEach((b) => (b.disabled = false));
+              }
+            });
+          });
+        });
+      })();
+    </script>
+  </body>
+</html>
