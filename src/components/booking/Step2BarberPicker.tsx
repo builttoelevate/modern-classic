@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { AvailabilitySlot, Barber, Service, ServiceVariation } from '../../lib/square/types';
-import { formatRelativeSlot, isWithinDays } from '../../lib/availability/timing';
+import { formatRelativeSlot } from '../../lib/availability/timing';
 
 interface Props {
   service: Service;
@@ -21,7 +21,6 @@ function initials(name: string): string {
 }
 
 const AVAIL_WINDOW_DAYS = 14;
-const AVAIL_VISIBLE_DAYS = 7;
 
 export function Step2BarberPicker({
   service,
@@ -257,12 +256,18 @@ function BarberCard({
 /**
  * Inline 'Next available: {when}' line under each barber card.
  *
+ * On Step 2 we deliberately do NOT apply the site-wide 7-day visibility
+ * threshold. By the time the user hits this screen they've committed to
+ * booking and need to know real lead times so they can pick a barber.
+ * Whatever the 14-day search returned is what we show.
+ *
  *   slot === undefined  → still loading (renders subtle "Checking…" so the
  *                          card doesn't visibly resize when data arrives)
- *   slot === null       → no slot found within the search window — render
- *                          nothing
- *   slot far-future     → hidden if outside the 7-day visibility window
- *                          (matches the rest of the site's threshold)
+ *   slot === null       → no slot found in the next 14 days — render nothing
+ *   otherwise           → render the slot via formatRelativeSlot, which
+ *                          gives "Today X:XX PM" / "Tomorrow X:XX AM" /
+ *                          "Friday 10:00 AM" within a week, or
+ *                          "Mon, May 12 9:00 AM" for further-out dates.
  */
 function NextAvailable({ slot }: { slot: AvailabilitySlot | null | undefined }) {
   if (slot === undefined) {
@@ -273,7 +278,6 @@ function NextAvailable({ slot }: { slot: AvailabilitySlot | null | undefined }) 
     );
   }
   if (!slot) return null;
-  if (!isWithinDays(slot.startAtUtc, AVAIL_VISIBLE_DAYS)) return null;
   const label = formatRelativeSlot(slot.startAtUtc);
   return (
     <span className="bw-avail-line" aria-label={`Next available: ${label}`}>
