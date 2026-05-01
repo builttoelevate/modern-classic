@@ -126,7 +126,7 @@ const COPY: MarketingCopy[] = [
  * service name. Anything we don't recognize falls into the "style" group
  * with a default order so it still renders.
  */
-function slugForService(service: Service): MarketingCopy {
+export function slugForService(service: Service): MarketingCopy {
   const norm = service.name.toLowerCase().replace(/[‘’]/g, "'").trim();
   if (norm.includes("men's haircut")) return COPY.find((c) => c.slug === 'mens-haircut')!;
   if (norm.includes('haircut & beard')) return COPY.find((c) => c.slug === 'haircut-beard')!;

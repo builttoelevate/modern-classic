@@ -100,7 +100,7 @@ type AvailLookup = { slot: AvailabilitySlot | null; withinSevenDays: boolean };
 const availResults = await Promise.all(
   barbers.map(async (b) => {
     try {
-      return await getNextAvailability(b.id);
+      return await getNextAvailability(b.id, { kind: 'haircut' });
     } catch {
       return { slot: null, withinSevenDays: false } as AvailLookup;
     }
@@ -170,7 +170,7 @@ const BOOK_URL = isGhPages ? BOOK_URL_FALLBACK : `${base}/book`;
                 <p class="brbr__role">{b.role}</p>
                 <h2 class="brbr__name">{b.name}</h2>
                 <p class="brbr__years">{b.yearsLine}</p>
-                <NextAvailableLine slot={avail.slot} withinSevenDays={avail.withinSevenDays} size="sm" />
+                <NextAvailableLine slot={avail.slot} size="sm" />
                 <p class="brbr__bio">{b.bio}</p>
 
                 <ul class="brbr__specs" aria-label={`${b.name}'s specialties`}>

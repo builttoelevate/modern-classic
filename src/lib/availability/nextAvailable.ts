@@ -11,6 +11,7 @@ import { getBarbers } from '../square/team';
 import { getServices } from '../square/catalog';
 import type { AvailabilitySlot, Barber, Service, ServiceVariation } from '../square/types';
 import { isWithinDays } from './timing';
+import { slugForService } from '../catalog/liveServices';
 
 const CACHE_TTL_SECONDS = 600;
 const SEARCH_WINDOW_DAYS = 14;
@@ -27,14 +28,50 @@ function searchStart(): Date {
 }
 
 /**
+ * Slugs whose variations count as a "haircut" opening for the purposes of
+ * the homepage and /barbers barber cards. Excludes pure beard work,
+ * shaves, and shampoos so a 15-min Beard Trim or Shampoo+Style block
+ * doesn't surface as the barber's "Next available".
+ *
+ * Includes haircut-beard because that service still produces a fresh
+ * cut — the point is to advertise an opening for someone who wants their
+ * hair cut, with or without a beard pass.
+ */
+const HAIRCUT_SLUGS = new Set([
+  'mens-haircut',
+  'kids-haircut',
+  'haircut-design',
+  'new-customer',
+  'haircut-beard',
+]);
+
+/**
  * Pick the variations for a given barber that we should query. We prefer
  * Men's Haircut variations first (most common), then any other variation
  * the barber serves. Returns at most 2 variations to avoid hammering
  * Square with parallel calls per barber.
+ *
+ * When `kind === 'haircut'`, only variations whose parent service is a
+ * haircut-style service are considered (see HAIRCUT_SLUGS above).
  */
-function variationsForBarber(services: Service[], barberId: string): ServiceVariation[] {
+function variationsForBarber(
+  services: Service[],
+  barberId: string,
+  kind: 'haircut' | 'any' = 'any',
+): ServiceVariation[] {
+  // Build a set of service IDs whose slug is in the haircut allowlist.
+  // Done once up front so we can filter the variation loop below.
+  const haircutServiceIds = new Set<string>();
+  if (kind === 'haircut') {
+    for (const s of services) {
+      const copy = slugForService(s);
+      if (HAIRCUT_SLUGS.has(copy.slug)) haircutServiceIds.add(s.id);
+    }
+  }
+
   const candidates: ServiceVariation[] = [];
   for (const s of services) {
+    if (kind === 'haircut' && !haircutServiceIds.has(s.id)) continue;
     for (const v of s.variations) {
       if (!v.availableForBooking) continue;
       if (v.eligibleTeamMemberIds.includes(barberId)) {
@@ -56,8 +93,9 @@ function variationsForBarber(services: Service[], barberId: string): ServiceVari
 async function computeNextForBarber(
   barberId: string,
   services: Service[],
+  kind: 'haircut' | 'any' = 'any',
 ): Promise<AvailabilitySlot | null> {
-  const variations = variationsForBarber(services, barberId);
+  const variations = variationsForBarber(services, barberId, kind);
   if (variations.length === 0) return null;
   const start = searchStart();
   const end = searchEnd();
@@ -90,10 +128,19 @@ export interface NextAvailability {
   withinSevenDays: boolean;
 }
 
-export async function getNextAvailability(barberId: string): Promise<NextAvailability> {
-  return cached(`next-avail:${barberId}`, CACHE_TTL_SECONDS, async () => {
+export interface NextAvailabilityOpts {
+  /** Restrict the variation search to haircut-style services only. */
+  kind?: 'haircut' | 'any';
+}
+
+export async function getNextAvailability(
+  barberId: string,
+  opts: NextAvailabilityOpts = {},
+): Promise<NextAvailability> {
+  const kind = opts.kind ?? 'any';
+  return cached(`next-avail:${barberId}:${kind}`, CACHE_TTL_SECONDS, async () => {
     const services = await getServices();
-    const slot = await computeNextForBarber(barberId, services);
+    const slot = await computeNextForBarber(barberId, services, kind);
     return {
       slot,
       withinSevenDays: slot ? isWithinDays(slot.startAtUtc, WITHIN_DAYS_THRESHOLD) : false,

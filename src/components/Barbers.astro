@@ -62,7 +62,7 @@ const NO_AVAIL: NextAvailability = { slot: null, withinSevenDays: false };
 const availLookups = await Promise.all(
   barbers.map(async (b) => {
     try {
-      return await getNextAvailability(b.id);
+      return await getNextAvailability(b.id, { kind: 'haircut' });
     } catch {
       return NO_AVAIL;
     }
@@ -113,7 +113,6 @@ function barberBookUrl(id: string): string {
           <p class="barber__rate">Cuts from <span>{b.from}</span></p>
           <NextAvailableLine
             slot={availLookups[i].slot}
-            withinSevenDays={availLookups[i].withinSevenDays}
             size="sm"
           />
           <a class="barber__cta" href={barberBookUrl(b.id)} target={bookTarget} rel={bookRel}>

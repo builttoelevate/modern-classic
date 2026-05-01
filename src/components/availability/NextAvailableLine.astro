@@ -1,21 +1,21 @@
 ---
 // Phase 6 Part C — small inline "Next available" pill, server-rendered.
 //
-// Renders nothing if the slot is null OR not within the 7-day window —
-// per the doc, we don't display far-future slots as a specific time.
+// Renders nothing if the slot is null. We render whatever the soonest
+// slot is, even if it's weeks out — better to show a real "next" date
+// than leave the line blank when a barber is booked solid.
 
 import { formatRelativeSlot } from '../../lib/availability/timing';
 import type { AvailabilitySlot } from '../../lib/square/types';
 
 interface Props {
   slot: AvailabilitySlot | null;
-  withinSevenDays: boolean;
   size?: 'sm' | 'md';
 }
 
-const { slot, withinSevenDays, size = 'md' } = Astro.props as Props;
+const { slot, size = 'md' } = Astro.props as Props;
 
-const shouldRender = slot !== null && withinSevenDays;
+const shouldRender = slot !== null;
 const label = shouldRender && slot ? formatRelativeSlot(slot.startAtUtc) : '';
 ---
 {shouldRender && (
