@@ -37,7 +37,7 @@ function searchStart(): Date {
  * cut — the point is to advertise an opening for someone who wants their
  * hair cut, with or without a beard pass.
  */
-const HAIRCUT_SLUGS = new Set([
+export const HAIRCUT_SLUGS = new Set([
   'mens-haircut',
   'kids-haircut',
   'haircut-design',

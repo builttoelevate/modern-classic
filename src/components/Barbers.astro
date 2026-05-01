@@ -2,9 +2,9 @@
 // Barber roster sourced from Square. The "from" price comes from the live
 // catalog (Men's Haircut variation per barber); falls back to $30 if the
 // catalog fetch fails so the homepage still renders.
-import { getServicesCached } from '../lib/catalog/liveServices';
+import { getServicesCached, slugForService } from '../lib/catalog/liveServices';
 import NextAvailableLine from './availability/NextAvailableLine.astro';
-import { getNextAvailability, type NextAvailability } from '../lib/availability/nextAvailable';
+import { getNextAvailability, HAIRCUT_SLUGS, type NextAvailability } from '../lib/availability/nextAvailable';
 
 const SQUARE_BARBER_IDS = {
   Michael: '523GMGEC1FY0Z',
@@ -26,9 +26,13 @@ const bookRel = isGhPages ? 'noopener' : '';
 const FALLBACK_BOOK = 'https://modern-classic.square.site';
 
 function priceFor(services: Awaited<ReturnType<typeof getServicesCached>>, barberId: string): string {
-  // Find the cheapest fixed-price variation that includes this barber.
+  // Find the cheapest fixed-price variation that includes this barber, but
+  // only across haircut-style services — otherwise a $15 Shampoo + Style
+  // surfaces as "Cuts from $15", which is misleading. Same allowlist used
+  // by the homepage hero + barber-card "Next available" filter.
   let best: number | null = null;
   for (const s of services) {
+    if (!HAIRCUT_SLUGS.has(slugForService(s).slug)) continue;
     for (const v of s.variations) {
       if (v.priceCents === null) continue;
       if (!v.eligibleTeamMemberIds.includes(barberId)) continue;
