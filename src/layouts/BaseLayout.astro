@@ -15,7 +15,7 @@ interface Props {
 const {
   title = 'Modern Classic Barbershop & Shave Parlor — Zanesville, OH',
   description = "Modern Classic is a Zanesville barbershop and grooming brand. Premium men's haircuts, fades, beard trims, and straight razor shaves — plus MDRN Classic grooming products built by barbers.",
-  ogImage = '/og-image.png',
+  ogImage = '/og-image-v4.png',
   canonical,
   includeBusinessSchema = false,
   extraSchema,
@@ -26,7 +26,9 @@ const canonicalUrl = canonical ?? new URL(Astro.url.pathname, siteUrl).toString(
 // Cache-busting suffix for the OG image. iMessage / Slack / Discord cache
 // preview images by URL forever — bump this version when the artwork
 // changes so chat clients refetch instead of showing the old preview.
-const OG_IMAGE_VERSION = '3';
+// We also rename the file (og-image-vN.png) when bumping, since some
+// clients (notably iMessage) ignore query strings when caching.
+const OG_IMAGE_VERSION = '4';
 const ogImageUrl = (() => {
   const url = new URL(ogImage, siteUrl);
   url.searchParams.set('v', OG_IMAGE_VERSION);
