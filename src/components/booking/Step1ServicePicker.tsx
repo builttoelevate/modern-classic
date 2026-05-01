@@ -14,7 +14,8 @@ const HIDDEN_ITEM_IDS = new Set<string>(['REEU27HVQBIP27KEI47RI73V']);
 // time customers should see it immediately, since the rest of the menu
 // assumes you already know what you want.
 function isFirstVisit(service: Service): boolean {
-  return service.name.toLowerCase().includes('new customer');
+  const n = service.name.toLowerCase();
+  return n.includes('new customer') || n.includes('first visit') || n.includes('first-time');
 }
 
 function priceLabel(service: Service): string {

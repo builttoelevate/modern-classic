@@ -128,6 +128,13 @@ const COPY: MarketingCopy[] = [
  */
 export function slugForService(service: Service): MarketingCopy {
   const norm = service.name.toLowerCase().replace(/[‘’]/g, "'").trim();
+  // Match the most-specific names first. A Square service named anything
+  // like 'Men's Haircut - New Customer' would otherwise resolve to the
+  // generic Men's Haircut bucket and the First Visit deep-link couldn't
+  // find it.
+  if (norm.includes('new customer') || norm.includes('first visit') || norm.includes('first-time')) {
+    return COPY.find((c) => c.slug === 'new-customer')!;
+  }
   if (norm.includes("men's haircut")) return COPY.find((c) => c.slug === 'mens-haircut')!;
   if (norm.includes('haircut & beard')) return COPY.find((c) => c.slug === 'haircut-beard')!;
   if (norm.includes('beard trim')) return COPY.find((c) => c.slug === 'beard-trim-edge')!;
@@ -138,7 +145,6 @@ export function slugForService(service: Service): MarketingCopy {
   if (norm.includes('straight razor') || norm.includes('shave')) {
     return COPY.find((c) => c.slug === 'straight-razor-shave')!;
   }
-  if (norm.includes('new customer')) return COPY.find((c) => c.slug === 'new-customer')!;
   if (norm.includes('shampoo')) return COPY.find((c) => c.slug === 'shampoo-style')!;
   // Fallback — unknown service, drop into Style with a high order so it
   // sorts last.
