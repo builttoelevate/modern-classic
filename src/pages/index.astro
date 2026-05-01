@@ -60,7 +60,7 @@ try {
         activeBarberIds,
       );
       if (usual) {
-        const next = await getNextAvailability(usual.teamMemberId);
+        const next = await getNextAvailability(usual.teamMemberId, { kind: 'haircut' });
         if (next.slot) {
           availability = {
             mode: 'personalized',
@@ -75,7 +75,7 @@ try {
     }
   } else {
     // Guest path: earliest opening across all barbers.
-    const soonest = await getSoonestAcrossBarbers();
+    const soonest = await getSoonestAcrossBarbers({ kind: 'haircut' });
     if (soonest && soonest.slot) {
       availability = {
         mode: 'soonest',

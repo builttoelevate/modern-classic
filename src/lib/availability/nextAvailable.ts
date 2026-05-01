@@ -174,13 +174,21 @@ export interface SoonestAcrossBarbers {
   slot: AvailabilitySlot;
 }
 
-export async function getSoonestAcrossBarbers(): Promise<SoonestAcrossBarbers | null> {
-  return cached('soonest-across-barbers', CACHE_TTL_SECONDS, async () => {
+export interface SoonestAcrossBarbersOpts {
+  /** Restrict the variation search to haircut-style services only. */
+  kind?: 'haircut' | 'any';
+}
+
+export async function getSoonestAcrossBarbers(
+  opts: SoonestAcrossBarbersOpts = {},
+): Promise<SoonestAcrossBarbers | null> {
+  const kind = opts.kind ?? 'any';
+  return cached(`soonest-across-barbers:${kind}`, CACHE_TTL_SECONDS, async () => {
     const [barbers, services] = await Promise.all([getBarbers(), getServices()]);
     const perBarber = await Promise.all(
       barbers.map(async (b) => ({
         barber: b,
-        slot: await computeNextForBarber(b.id, services),
+        slot: await computeNextForBarber(b.id, services, kind),
       })),
     );
     let best: SoonestAcrossBarbers | null = null;
