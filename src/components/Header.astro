@@ -20,6 +20,12 @@ const isGhPages = import.meta.env.BASE_URL && import.meta.env.BASE_URL !== '/';
 const bookUrl = isGhPages ? 'https://modern-classic.square.site' : `${base}/book`;
 const bookTarget = isGhPages ? '_blank' : '_self';
 const bookRel = isGhPages ? 'noopener' : '';
+
+// Phase 5 — "My Bookings" lives behind SSR + auth, so on gh-pages we
+// don't render it. On the Vercel deploy it's always visible; if the
+// user isn't signed in, /my-bookings redirects to /sign-in.
+const showMyBookings = !isGhPages;
+const myBookingsUrl = `${base}/my-bookings`;
 ---
 <header class="site-header" data-elevated="false">
   <div class="container header-inner">
@@ -34,6 +40,9 @@ const bookRel = isGhPages ? 'noopener' : '';
         {nav.map(({ href, label }) => (
           <li><a href={href}>{label}</a></li>
         ))}
+        {showMyBookings && (
+          <li><a href={myBookingsUrl}>My Bookings</a></li>
+        )}
       </ul>
     </nav>
 
@@ -63,6 +72,9 @@ const bookRel = isGhPages ? 'noopener' : '';
         {nav.map(({ href, label }) => (
           <li><a href={href} data-drawer-link>{label}</a></li>
         ))}
+        {showMyBookings && (
+          <li><a href={myBookingsUrl} data-drawer-link>My Bookings</a></li>
+        )}
       </ul>
     </nav>
     <a class="btn drawer__cta" href={bookUrl} target={bookTarget} rel={bookRel} data-drawer-link>

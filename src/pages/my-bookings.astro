@@ -1,0 +1,118 @@
+---
+export const prerender = false;
+
+import BaseLayout from '../layouts/BaseLayout.astro';
+import Header from '../components/Header.astro';
+import Footer from '../components/Footer.astro';
+import MyBookingsList from '../components/bookings/MyBookingsList.tsx';
+import { ProductRecommendations } from '../components/bookings/ProductRecommendations.tsx';
+import { getSession, refreshSessionCookie } from '../lib/auth/middleware';
+import { isAuthConfigured } from '../lib/auth/session';
+import { getCustomerBookings } from '../lib/square/customerBookings';
+import { getRetailProducts } from '../lib/square/products';
+import { recommendForBooking, generalRecommendations } from '../lib/recommendations/forBooking';
+import type { CustomerBookings } from '../lib/square/customerBookings';
+import type { Product } from '../lib/square/products';
+
+import '../styles/booking.css';
+import '../styles/portal.css';
+
+const base = import.meta.env.BASE_URL.replace(/\/$/, '');
+
+if (!isAuthConfigured()) {
+  return new Response(
+    'Customer portal is temporarily unavailable. Please try again shortly.',
+    { status: 503, headers: { 'Content-Type': 'text/plain' } },
+  );
+}
+
+const session = getSession(Astro.request);
+if (!session) {
+  return new Response(null, {
+    status: 302,
+    headers: {
+      Location: `${base}/sign-in?redirect=${encodeURIComponent(`${base}/my-bookings`)}`,
+    },
+  });
+}
+
+let bookings: CustomerBookings = { upcoming: [], past: [] };
+let products: Product[] = [];
+let loadError: string | null = null;
+
+try {
+  const [b, p] = await Promise.all([
+    getCustomerBookings(session.customerId),
+    getRetailProducts(),
+  ]);
+  bookings = b;
+  products = p;
+} catch (err) {
+  loadError = err instanceof Error ? err.message : 'Failed to load.';
+  // eslint-disable-next-line no-console
+  console.log(
+    `[BOOK] ${JSON.stringify({ ts: new Date().toISOString(), phase: 'my-bookings-load-failed', detail: loadError })}`,
+  );
+}
+
+const seedBooking = bookings.upcoming[0] ?? bookings.past[0];
+const recs = seedBooking
+  ? recommendForBooking({
+      barberId: seedBooking.barberId,
+      serviceVariationId: seedBooking.serviceVariationId,
+      allProducts: products,
+    })
+  : generalRecommendations(products);
+
+const customerLabel = session.email;
+
+// Sliding cookie refresh — every authenticated page render extends the
+// 90-day window.
+Astro.response.headers.append('Set-Cookie', refreshSessionCookie(session));
+---
+<BaseLayout
+  title="My Bookings — Modern Classic Barbershop"
+  description="View, reschedule, or cancel your Modern Classic appointments."
+>
+  <Header />
+  <main id="main" class="mb-page">
+    <div class="mb-head">
+      <div class="mb-head__id">
+        <span class="mb-head__eyebrow">Welcome back</span>
+        <h1>Your bookings</h1>
+        <p class="mb-head__email">{customerLabel}</p>
+      </div>
+      <button type="button" class="mb-head__signout" id="signout-btn">Sign out</button>
+    </div>
+
+    {loadError ? (
+      <div class="mb-empty">
+        <p>We couldn't load your bookings right now. Please try again in a moment, or call us at <a class="link-gold" href="tel:+17402974462">740-297-4462</a>.</p>
+      </div>
+    ) : (
+      <MyBookingsList client:load initial={bookings} basePath={base} />
+    )}
+
+    {recs.length > 0 && <ProductRecommendations products={recs} />}
+  </main>
+  <Footer />
+</BaseLayout>
+
+<script is:inline>
+  (function () {
+    const btn = document.getElementById('signout-btn');
+    if (!btn) return;
+    btn.addEventListener('click', async () => {
+      btn.disabled = true;
+      try {
+        await fetch('/api/auth/logout', {
+          method: 'POST',
+          credentials: 'same-origin',
+        });
+      } catch {
+        // best-effort — fall through to redirect
+      }
+      window.location.href = '/';
+    });
+  })();
+</script>

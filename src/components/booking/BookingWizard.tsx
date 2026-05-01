@@ -1,4 +1,4 @@
-import { useEffect, useReducer, useRef, useState } from 'react';
+import { useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import type { Barber, Location, Service, ServiceVariation, AvailabilitySlot } from '../../lib/square/types';
 import { Step1ServicePicker } from './Step1ServicePicker';
 import { Step2BarberPicker } from './Step2BarberPicker';
@@ -6,21 +6,36 @@ import { Step3DateTimePicker } from './Step3DateTimePicker';
 import { Step4CustomerInfo } from './Step4CustomerInfo';
 import { Step5Confirm } from './Step5Confirm';
 import {
-  initialState,
+  initialState as defaultInitialState,
   reducer,
   isStepReachable,
   digits,
+  type WizardState,
   type WizardStep,
 } from './wizardState';
 import type { CreateBookingResponse } from '../../lib/booking/types';
+
+export interface RescheduleContext {
+  oldBookingId: string;
+  oldBookingVersion: number;
+  oldStartAtUtc: string;
+  oldStartAtLocal: string;
+  serviceVariationId: string;
+  teamMemberId: string;
+  customerEmail: string;
+  customerGivenName?: string;
+  customerFamilyName?: string;
+}
 
 interface Props {
   services: Service[];
   barbers: Barber[];
   location: Location | null;
+  reschedule?: RescheduleContext;
 }
 
 const STEP_LABELS = ['Service', 'Barber', 'Time', 'Details', 'Confirm'];
+const RESCHEDULE_STEP_LABELS = ['Time', 'Confirm'];
 
 function estimatedTimeRemaining(step: WizardStep): string {
   const map: Record<WizardStep, string> = {
@@ -33,9 +48,51 @@ function estimatedTimeRemaining(step: WizardStep): string {
   return map[step];
 }
 
-export default function BookingWizard({ services, barbers, location }: Props) {
+function buildRescheduleInitialState(
+  ctx: RescheduleContext,
+  services: Service[],
+  barbers: Barber[],
+): WizardState | null {
+  let foundService: Service | null = null;
+  let foundVariation: ServiceVariation | null = null;
+  for (const s of services) {
+    const v = s.variations.find((vv) => vv.id === ctx.serviceVariationId);
+    if (v) {
+      foundService = s;
+      foundVariation = v;
+      break;
+    }
+  }
+  if (!foundService || !foundVariation) return null;
+  const foundBarber = barbers.find((b) => b.id === ctx.teamMemberId) ?? null;
+
+  return {
+    ...defaultInitialState,
+    step: 3,
+    selectedService: foundService,
+    selectedVariation: foundVariation,
+    candidateVariations: [foundVariation],
+    selectedBarber: foundBarber,
+    anyBarber: false,
+    selectedSlot: null,
+    blockedSlots: [],
+    customer: {
+      ...defaultInitialState.customer,
+      email: ctx.customerEmail,
+      givenName: ctx.customerGivenName ?? '',
+      familyName: ctx.customerFamilyName ?? '',
+    },
+  };
+}
+
+export default function BookingWizard({ services, barbers, location, reschedule }: Props) {
+  const initialState = useMemo<WizardState>(() => {
+    if (!reschedule) return defaultInitialState;
+    return buildRescheduleInitialState(reschedule, services, barbers) ?? defaultInitialState;
+  }, [reschedule, services, barbers]);
   const [state, dispatch] = useReducer(reducer, initialState);
   const [toast, setToast] = useState<string | null>(null);
+  const rescheduleMode = !!reschedule;
 
   // Toast auto-dismiss
   useEffect(() => {
@@ -78,6 +135,20 @@ export default function BookingWizard({ services, barbers, location }: Props) {
     return () => window.removeEventListener('keydown', onKey);
   }, [state.step, state.status]);
 
+  // Reschedule mode skips step 4 (Customer info) — auto-advance to 5
+  // whenever the reducer lands on 4. Going BACK from step 5 lands here
+  // too, so we redirect again to step 3.
+  useEffect(() => {
+    if (!rescheduleMode) return;
+    if (state.step !== 4) return;
+    if (state.status.kind === 'submitting') return;
+    if (state.selectedSlot && state.selectedVariation) {
+      dispatch({ type: 'GO_TO', step: 5 });
+    } else {
+      dispatch({ type: 'GO_TO', step: 3 });
+    }
+  }, [state.step, rescheduleMode, state.selectedSlot, state.selectedVariation, state.status.kind]);
+
   const submit = async () => {
     if (!state.selectedService || !state.selectedVariation || !state.selectedSlot) return;
     const teamMemberId = state.anyBarber
@@ -87,44 +158,93 @@ export default function BookingWizard({ services, barbers, location }: Props) {
 
     dispatch({ type: 'STATUS', status: { kind: 'submitting' } });
 
-    const payload = {
-      service: {
-        variationId: state.selectedVariation.id,
-        version: state.selectedVariation.version,
-        durationMinutes: state.selectedVariation.durationMinutes,
-        name: state.selectedService.name,
-        priceDisplay: priceFormat(state.selectedService, state.selectedVariation),
-      },
-      barber: {
-        id: teamMemberId,
-        name: state.selectedBarber?.displayName ?? 'First available',
-      },
-      slot: { startAtUtc: state.selectedSlot.startAtUtc },
-      customer: {
-        givenName: state.customer.givenName.trim(),
-        familyName: state.customer.familyName.trim(),
-        email: state.customer.email.trim(),
-        phone: digits(state.customer.phone),
-        note: state.customer.note.trim() || undefined,
-        updateContact: state.customer.updateContact,
-      },
-    };
-
     let body: CreateBookingResponse;
     let networkError = false;
-    try {
-      const res = await fetch('/api/square/bookings', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-      body = (await res.json()) as CreateBookingResponse;
-    } catch {
-      networkError = true;
-      body = {
-        ok: false,
-        error: { code: 'NETWORK_ERROR', detail: 'Network request failed' },
+
+    if (rescheduleMode && reschedule) {
+      const reschedulePayload = {
+        oldBookingId: reschedule.oldBookingId,
+        newSlot: { startAtUtc: state.selectedSlot.startAtUtc },
+        service: {
+          variationId: state.selectedVariation.id,
+          version: state.selectedVariation.version,
+          durationMinutes: state.selectedVariation.durationMinutes,
+        },
+        barber: { id: teamMemberId },
+        customerNote: state.customer.note.trim() || undefined,
       };
+      try {
+        const res = await fetch('/api/square/bookings/reschedule', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'same-origin',
+          body: JSON.stringify(reschedulePayload),
+        });
+        const data = (await res.json()) as
+          | { ok: true; newBookingId: string; oldBookingId: string; warning?: string }
+          | { ok: false; error: { code: string; detail: string; slotTaken?: boolean } };
+        if ('ok' in data && data.ok) {
+          body = {
+            ok: true,
+            bookingId: data.newBookingId,
+            customerId: '',
+            startAtUtc: state.selectedSlot.startAtUtc,
+          };
+        } else {
+          body = {
+            ok: false,
+            error: {
+              code: data.error.code,
+              detail: data.error.detail,
+              slotTaken: data.error.slotTaken,
+            },
+          };
+        }
+      } catch {
+        networkError = true;
+        body = {
+          ok: false,
+          error: { code: 'NETWORK_ERROR', detail: 'Network request failed' },
+        };
+      }
+    } else {
+      const payload = {
+        service: {
+          variationId: state.selectedVariation.id,
+          version: state.selectedVariation.version,
+          durationMinutes: state.selectedVariation.durationMinutes,
+          name: state.selectedService.name,
+          priceDisplay: priceFormat(state.selectedService, state.selectedVariation),
+        },
+        barber: {
+          id: teamMemberId,
+          name: state.selectedBarber?.displayName ?? 'First available',
+        },
+        slot: { startAtUtc: state.selectedSlot.startAtUtc },
+        customer: {
+          givenName: state.customer.givenName.trim(),
+          familyName: state.customer.familyName.trim(),
+          email: state.customer.email.trim(),
+          phone: digits(state.customer.phone),
+          note: state.customer.note.trim() || undefined,
+          updateContact: state.customer.updateContact,
+        },
+      };
+
+      try {
+        const res = await fetch('/api/square/bookings', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        body = (await res.json()) as CreateBookingResponse;
+      } catch {
+        networkError = true;
+        body = {
+          ok: false,
+          error: { code: 'NETWORK_ERROR', detail: 'Network request failed' },
+        };
+      }
     }
 
     if (networkError) {
@@ -186,10 +306,29 @@ export default function BookingWizard({ services, barbers, location }: Props) {
   };
 
   const reset = () => {
+    if (rescheduleMode) {
+      // In reschedule mode "Book another" doesn't apply — send the user
+      // back to their bookings page. The success screen also offers a
+      // direct link, but we honor the existing onBookAnother callback.
+      window.location.href = '/my-bookings';
+      return;
+    }
     dispatch({ type: 'RESET' });
   };
 
   const teamMemberId = state.anyBarber ? undefined : state.selectedBarber?.id;
+
+  const rescheduleStepIndex = (() => {
+    // For the progress bar: in reschedule mode we only show steps 3 and 5.
+    if (state.step === 3) return 1;
+    if (state.step === 5) return 2;
+    return 1;
+  })();
+  const totalSteps = rescheduleMode ? 2 : 5;
+  const currentStep = rescheduleMode ? rescheduleStepIndex : state.step;
+  const stepLabel = rescheduleMode
+    ? RESCHEDULE_STEP_LABELS[rescheduleStepIndex - 1]
+    : STEP_LABELS[state.step - 1];
 
   return (
     <div className="bw" ref={wizardRootRef}>
@@ -200,21 +339,54 @@ export default function BookingWizard({ services, barbers, location }: Props) {
       )}
 
       <div className="bw-head">
-        <h1>Book your appointment</h1>
-        <p>Five quick steps. Real-time availability from Square.</p>
+        {rescheduleMode ? (
+          <>
+            <h1>Reschedule your appointment</h1>
+            <p>
+              Pick a new time — your service and barber are already selected. We'll cancel the
+              old slot once the new one is locked in.
+            </p>
+          </>
+        ) : (
+          <>
+            <h1>Book your appointment</h1>
+            <p>Five quick steps. Real-time availability from Square.</p>
+          </>
+        )}
       </div>
 
-      <div className="bw-progress" aria-label={`Step ${state.step} of 5`}>
+      {rescheduleMode && reschedule && state.step === 5 && state.selectedSlot && (
+        <div className="bw-reschedule-banner" role="region" aria-label="Reschedule summary">
+          <div className="bw-reschedule-banner__row">
+            <span className="bw-reschedule-banner__label">From</span>
+            <span className="bw-reschedule-banner__value">{reschedule.oldStartAtLocal}</span>
+          </div>
+          <div className="bw-reschedule-banner__arrow" aria-hidden="true">→</div>
+          <div className="bw-reschedule-banner__row">
+            <span className="bw-reschedule-banner__label">To</span>
+            <span className="bw-reschedule-banner__value">
+              {formatLocalEt(state.selectedSlot.startAtUtc)}
+            </span>
+          </div>
+        </div>
+      )}
+
+      <div className="bw-progress" aria-label={`Step ${currentStep} of ${totalSteps}`}>
         <span className="bw-progress-label">
-          Step {state.step} of 5 · {STEP_LABELS[state.step - 1]}
+          Step {currentStep} of {totalSteps} · {stepLabel}
         </span>
         <div className="bw-progress-bar" aria-hidden="true">
-          <div className="bw-progress-fill" style={{ width: `${(state.step / 5) * 100}%` }} />
+          <div
+            className="bw-progress-fill"
+            style={{ width: `${(currentStep / totalSteps) * 100}%` }}
+          />
         </div>
-        <span className="bw-progress-time">{estimatedTimeRemaining(state.step)}</span>
+        {!rescheduleMode && (
+          <span className="bw-progress-time">{estimatedTimeRemaining(state.step)}</span>
+        )}
       </div>
 
-      {state.step === 1 && (
+      {!rescheduleMode && state.step === 1 && (
         <Step1ServicePicker
           services={services}
           selected={state.selectedService}
@@ -228,7 +400,7 @@ export default function BookingWizard({ services, barbers, location }: Props) {
         />
       )}
 
-      {state.step === 2 && state.selectedService && (
+      {!rescheduleMode && state.step === 2 && state.selectedService && (
         <Step2BarberPicker
           service={state.selectedService}
           barbers={barbers}
@@ -251,7 +423,7 @@ export default function BookingWizard({ services, barbers, location }: Props) {
         />
       )}
 
-      {state.step === 4 && (
+      {!rescheduleMode && state.step === 4 && (
         <Step4CustomerInfo
           customer={state.customer}
           onChange={(patch) => dispatch({ type: 'UPDATE_CUSTOMER', patch })}
@@ -272,6 +444,7 @@ export default function BookingWizard({ services, barbers, location }: Props) {
           onEditSlot={() => dispatch({ type: 'GO_TO', step: 3 })}
           onEditCustomer={() => dispatch({ type: 'GO_TO', step: 4 })}
           onBookAnother={reset}
+          rescheduleMode={rescheduleMode}
           onUpdateContactToggle={(value) =>
             dispatch({ type: 'UPDATE_CUSTOMER', patch: { updateContact: value } })
           }
@@ -283,13 +456,19 @@ export default function BookingWizard({ services, barbers, location }: Props) {
           <button
             type="button"
             className="bw-btn bw-btn--ghost"
-            disabled={state.status.kind === 'submitting'}
-            onClick={() => dispatch({ type: 'BACK' })}
+            disabled={state.status.kind === 'submitting' || (rescheduleMode && state.step <= 3)}
+            onClick={() => {
+              if (rescheduleMode && state.step === 5) {
+                dispatch({ type: 'GO_TO', step: 3 });
+              } else {
+                dispatch({ type: 'BACK' });
+              }
+            }}
           >
-            ← Back
+            {rescheduleMode && state.step === 5 ? '← Pick a different time' : '← Back'}
           </button>
           <span className="bw-nav-spacer" />
-          {state.step === 4 && (
+          {!rescheduleMode && state.step === 4 && (
             <button
               type="button"
               className="bw-btn"
@@ -311,6 +490,19 @@ function priceFormat(service: Service, variation: ServiceVariation): string {
     return `$${(service.minPriceCents / 100).toFixed(0)}–$${(service.maxPriceCents / 100).toFixed(0)}`;
   }
   return 'Variable';
+}
+
+function formatLocalEt(utc: string): string {
+  const date = new Date(utc);
+  return new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York',
+    weekday: 'long',
+    month: 'long',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  }).format(date);
 }
 
 function friendlyError(code: string, detail: string): string {

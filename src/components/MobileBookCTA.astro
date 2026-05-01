@@ -4,22 +4,30 @@ const isGhPages = import.meta.env.BASE_URL && import.meta.env.BASE_URL !== '/';
 const bookUrl = isGhPages ? 'https://modern-classic.square.site' : `${base}/book`;
 const bookTarget = isGhPages ? '_blank' : '_self';
 const bookRel = isGhPages ? 'noopener' : '';
+const showMyBookings = !isGhPages;
+const myBookingsUrl = `${base}/my-bookings`;
 ---
-<a class="mob-cta"
-   href={bookUrl}
-   target={bookTarget}
-   rel={bookRel}
-   aria-label="Book an appointment"
-   data-visible="false">
-  Book Now
-  <span class="arrow" aria-hidden="true">→</span>
-</a>
+<div class="mob-cta-wrap" data-visible="false">
+  {showMyBookings && (
+    <a class="mob-cta-secondary" href={myBookingsUrl} aria-label="My Bookings">
+      My Bookings
+    </a>
+  )}
+  <a class="mob-cta"
+     href={bookUrl}
+     target={bookTarget}
+     rel={bookRel}
+     aria-label="Book an appointment">
+    Book Now
+    <span class="arrow" aria-hidden="true">→</span>
+  </a>
+</div>
 
 <script is:inline>
   (function () {
-    const cta = document.querySelector('.mob-cta');
+    const wrap = document.querySelector('.mob-cta-wrap');
     const hero = document.querySelector('.hero');
-    if (!cta || !hero) return;
+    if (!wrap || !hero) return;
 
     // Visible only once the hero has scrolled past. IntersectionObserver
     // toggles a data attribute that controls opacity + pointer-events.
@@ -27,7 +35,7 @@ const bookRel = isGhPages ? 'noopener' : '';
       for (const entry of entries) {
         // entry.isIntersecting is true while ANY part of the hero is in
         // the viewport. We want the CTA hidden during that window.
-        cta.dataset.visible = entry.isIntersecting ? 'false' : 'true';
+        wrap.dataset.visible = entry.isIntersecting ? 'false' : 'true';
       }
     }, { rootMargin: '0px', threshold: 0 });
     io.observe(hero);
@@ -35,13 +43,29 @@ const bookRel = isGhPages ? 'noopener' : '';
 </script>
 
 <style>
-  .mob-cta {
+  .mob-cta-wrap {
     display: none;
     position: fixed;
     bottom: 10px;
     left: 12px;
     right: 12px;
     z-index: 60;
+    align-items: stretch;
+    gap: 8px;
+    /* Fade in / out controlled by data-visible. Hidden by default. */
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(8px);
+    transition:
+      opacity 240ms var(--ease),
+      transform 240ms var(--ease);
+  }
+  .mob-cta-wrap[data-visible='true'] {
+    opacity: 1;
+    pointer-events: auto;
+    transform: translateY(0);
+  }
+  .mob-cta {
     /* Slimmed: ~48px tall instead of ~64px. Tighter padding,
        smaller font, slightly less aggressive tracking. */
     padding: 0.62rem 1rem;
@@ -56,37 +80,53 @@ const bookRel = isGhPages ? 'noopener' : '';
     border-radius: 2px;
     box-shadow: 0 8px 24px -6px rgba(0,0,0,0.55),
                 0 0 0 1px var(--color-gold-dark);
+    display: inline-flex;
     align-items: center;
     justify-content: center;
     gap: 0.45rem;
-    /* Fade in / out controlled by data-visible. Hidden by default. */
-    opacity: 0;
-    pointer-events: none;
-    transform: translateY(8px);
-    transition:
-      opacity 240ms var(--ease),
-      transform 240ms var(--ease);
-  }
-  .mob-cta[data-visible='true'] {
-    opacity: 1;
-    pointer-events: auto;
-    transform: translateY(0);
+    flex: 2;
+    min-height: 44px;
   }
   .mob-cta:hover { background: var(--color-gold-light); }
   .mob-cta .arrow { transition: transform var(--dur) var(--ease); }
   .mob-cta:hover .arrow { transform: translateX(3px); }
 
+  .mob-cta-secondary {
+    flex: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.5rem 0.75rem;
+    border: 1px solid var(--color-border);
+    border-radius: 2px;
+    background: rgba(11, 10, 8, 0.85);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    color: var(--color-text);
+    font-family: var(--font-body);
+    font-size: 0.74rem;
+    font-weight: 600;
+    letter-spacing: 0.10em;
+    text-transform: uppercase;
+    min-height: 44px;
+    box-shadow: 0 8px 24px -6px rgba(0,0,0,0.55);
+  }
+  .mob-cta-secondary:hover {
+    border-color: var(--color-gold);
+    color: var(--color-gold-light);
+  }
+
   /* Mount only on narrow viewports. */
   @media (max-width: 720px) {
-    .mob-cta { display: inline-flex; }
+    .mob-cta-wrap { display: flex; }
   }
 
   /* prefers-reduced-motion: skip the slide/fade, just toggle. */
   @media (prefers-reduced-motion: reduce) {
-    .mob-cta {
+    .mob-cta-wrap {
       transition: none;
       transform: none;
     }
-    .mob-cta[data-visible='true'] { transform: none; }
+    .mob-cta-wrap[data-visible='true'] { transform: none; }
   }
 </style>

@@ -5,17 +5,27 @@ import BaseLayout from '../layouts/BaseLayout.astro';
 import Header from '../components/Header.astro';
 import Footer from '../components/Footer.astro';
 import BookingWizard from '../components/booking/BookingWizard.tsx';
+import type { RescheduleContext } from '../components/booking/BookingWizard.tsx';
 import { getServices } from '../lib/square/catalog';
 import { getBarbers } from '../lib/square/team';
 import { getLocation } from '../lib/square/locations';
+import { getBooking } from '../lib/square/bookings';
+import { findCustomerByEmail } from '../lib/square/customers';
+import { getSession } from '../lib/auth/middleware';
 import type { Barber, Location, Service } from '../lib/square/types';
 
 import '../styles/booking.css';
+
+const base = import.meta.env.BASE_URL.replace(/\/$/, '');
+const url = new URL(Astro.request.url);
+const rescheduleId = url.searchParams.get('reschedule');
 
 let services: Service[] = [];
 let barbers: Barber[] = [];
 let location: Location | null = null;
 let loadError: string | null = null;
+let reschedule: RescheduleContext | undefined;
+let rescheduleError: string | null = null;
 
 try {
   const [s, b, l] = await Promise.all([getServices(), getBarbers(), getLocation()]);
@@ -27,10 +37,84 @@ try {
   // eslint-disable-next-line no-console
   console.error('[book] failed to load services/barbers/location', err);
 }
+
+if (rescheduleId && !loadError) {
+  const session = getSession(Astro.request);
+  if (!session) {
+    return new Response(null, {
+      status: 302,
+      headers: {
+        Location: `${base}/sign-in?redirect=${encodeURIComponent(`${base}/book?reschedule=${rescheduleId}`)}`,
+      },
+    });
+  }
+
+  try {
+    const booking = await getBooking(rescheduleId);
+    if (!booking.customer_id || booking.customer_id !== session.customerId) {
+      rescheduleError = 'This booking does not belong to your account.';
+    } else {
+      const startMs = new Date(booking.start_at).getTime();
+      if (startMs - Date.now() < 24 * 60 * 60 * 1000) {
+        rescheduleError =
+          'This booking is within 24 hours — please call the shop at 740-297-4462 to reschedule.';
+      } else {
+        const segment = booking.appointment_segments?.[0];
+        if (!segment) {
+          rescheduleError = "This booking can't be rescheduled.";
+        } else {
+          // Try to look up the customer for a personalized greeting on the
+          // confirm step; not strictly required.
+          let givenName: string | undefined;
+          let familyName: string | undefined;
+          try {
+            const customer = await findCustomerByEmail(session.email);
+            givenName = customer?.given_name?.trim() || undefined;
+            familyName = customer?.family_name?.trim() || undefined;
+          } catch {
+            // Best-effort.
+          }
+
+          const dtf = new Intl.DateTimeFormat('en-US', {
+            timeZone: 'America/New_York',
+            weekday: 'long',
+            month: 'long',
+            day: 'numeric',
+            year: 'numeric',
+            hour: 'numeric',
+            minute: '2-digit',
+            hour12: true,
+          });
+
+          reschedule = {
+            oldBookingId: booking.id,
+            oldBookingVersion: booking.version,
+            oldStartAtUtc: booking.start_at,
+            oldStartAtLocal: dtf.format(new Date(booking.start_at)),
+            serviceVariationId: segment.service_variation_id,
+            teamMemberId: segment.team_member_id,
+            customerEmail: session.email,
+            customerGivenName: givenName,
+            customerFamilyName: familyName,
+          };
+        }
+      }
+    }
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
+    // eslint-disable-next-line no-console
+    console.log(
+      `[BOOK] ${JSON.stringify({ ts: new Date().toISOString(), phase: 'reschedule-init-failed', detail })}`,
+    );
+    rescheduleError = "We couldn't load the appointment to reschedule.";
+  }
+}
 ---
 
 <BaseLayout
-  title="Book an Appointment — Modern Classic Barbershop"
+  title={reschedule
+    ? 'Reschedule your appointment — Modern Classic Barbershop'
+    : 'Book an Appointment — Modern Classic Barbershop'}
   description="Book online with Modern Classic Barbershop in Zanesville. Pick your service, your barber, and a time that works for you."
 >
   <Header />
@@ -42,12 +126,21 @@ try {
           <span>Please try again in a moment, or call us at <a class="link-gold" href="tel:+17402974462">740-297-4462</a>.</span>
         </div>
       </div>
+    ) : rescheduleError ? (
+      <div class="bw">
+        <div class="bw-empty">
+          <strong>Can't reschedule that one.</strong>
+          <span>{rescheduleError}</span>
+          <a class="link-gold" href={`${base}/my-bookings`}>← Back to my bookings</a>
+        </div>
+      </div>
     ) : (
       <BookingWizard
         client:load
         services={services}
         barbers={barbers}
         location={location}
+        reschedule={reschedule}
       />
     )}
   </main>

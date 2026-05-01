@@ -16,6 +16,7 @@ interface Props {
   onEditCustomer: () => void;
   onBookAnother: () => void;
   onUpdateContactToggle: (value: boolean) => void;
+  rescheduleMode?: boolean;
 }
 
 interface CustomerLookupResponse {
@@ -53,11 +54,16 @@ export function Step5Confirm({
   onConfirm,
   onBookAnother,
   onUpdateContactToggle,
+  rescheduleMode = false,
 }: Props) {
   const [existingContact, setExistingContact] = useState<{ phone?: string; givenName?: string; familyName?: string } | null>(null);
   const [calendarSheetOpen, setCalendarSheetOpen] = useState(false);
 
   useEffect(() => {
+    if (rescheduleMode) {
+      setExistingContact(null);
+      return;
+    }
     const email = customer.email.trim().toLowerCase();
     if (!email || !/^\S+@\S+\.\S+$/.test(email)) {
       setExistingContact(null);
@@ -114,10 +120,19 @@ export function Step5Confirm({
       <div className="bw-step">
         <div className="bw-success">
           <div className="bw-success-icon" aria-hidden="true">✓</div>
-          <h2>You're booked.</h2>
+          <h2>{rescheduleMode ? "You're rescheduled." : "You're booked."}</h2>
           <p>
-            We've sent a confirmation to <strong>{status.emailDestination}</strong>. See you on{' '}
-            <strong>{formatLocal(slot.startAtUtc)}</strong>.
+            {rescheduleMode ? (
+              <>
+                Your appointment is now <strong>{formatLocal(slot.startAtUtc)}</strong>. We'll
+                email a fresh confirmation shortly.
+              </>
+            ) : (
+              <>
+                We've sent a confirmation to <strong>{status.emailDestination}</strong>. See you on{' '}
+                <strong>{formatLocal(slot.startAtUtc)}</strong>.
+              </>
+            )}
           </p>
           <p>819 Linden Avenue, Zanesville, OH 43701</p>
           <div className="bw-success-id">Booking ref: {status.bookingId}</div>
@@ -143,13 +158,23 @@ export function Step5Confirm({
             >
               Save shop number
             </a>
-            <button
-              type="button"
-              className="bw-btn"
-              onClick={onBookAnother}
-            >
-              Book another
-            </button>
+            <a className="bw-btn bw-btn--ghost" href="/my-bookings">
+              View My Bookings
+            </a>
+            {!rescheduleMode && (
+              <button
+                type="button"
+                className="bw-btn"
+                onClick={onBookAnother}
+              >
+                Book another
+              </button>
+            )}
+            {rescheduleMode && (
+              <a className="bw-btn" href="/my-bookings">
+                Done
+              </a>
+            )}
           </div>
         </div>
 
@@ -171,8 +196,12 @@ export function Step5Confirm({
   return (
     <div className="bw-step">
       <div className="bw-step-head">
-        <h2>Confirm your booking</h2>
-        <p>Review the details. We'll send you a confirmation by email.</p>
+        <h2>{rescheduleMode ? 'Confirm your reschedule' : 'Confirm your booking'}</h2>
+        <p>
+          {rescheduleMode
+            ? "Review the new time. We'll cancel the old slot once this one is locked in."
+            : "Review the details. We'll send you a confirmation by email."}
+        </p>
       </div>
 
       <div className="bw-summary">
@@ -185,7 +214,7 @@ export function Step5Confirm({
           <span className="bw-summary-value">{anyBarber ? 'First available' : barber?.displayName ?? '—'}</span>
         </div>
         <div className="bw-summary-row">
-          <span className="bw-summary-label">When</span>
+          <span className="bw-summary-label">{rescheduleMode ? 'New time' : 'When'}</span>
           <span className="bw-summary-value">{formatLocal(slot.startAtUtc)}</span>
         </div>
         <div className="bw-summary-row">
@@ -206,18 +235,28 @@ export function Step5Confirm({
             )}
           </span>
         </div>
-        <div className="bw-summary-row">
-          <span className="bw-summary-label">Name</span>
-          <span className="bw-summary-value">{customer.givenName} {customer.familyName}</span>
-        </div>
-        <div className="bw-summary-row">
-          <span className="bw-summary-label">Email</span>
-          <span className="bw-summary-value">{customer.email}</span>
-        </div>
-        <div className="bw-summary-row">
-          <span className="bw-summary-label">Phone</span>
-          <span className="bw-summary-value">{customer.phone}</span>
-        </div>
+        {!rescheduleMode && (
+          <>
+            <div className="bw-summary-row">
+              <span className="bw-summary-label">Name</span>
+              <span className="bw-summary-value">{customer.givenName} {customer.familyName}</span>
+            </div>
+            <div className="bw-summary-row">
+              <span className="bw-summary-label">Email</span>
+              <span className="bw-summary-value">{customer.email}</span>
+            </div>
+            <div className="bw-summary-row">
+              <span className="bw-summary-label">Phone</span>
+              <span className="bw-summary-value">{customer.phone}</span>
+            </div>
+          </>
+        )}
+        {rescheduleMode && customer.email && (
+          <div className="bw-summary-row">
+            <span className="bw-summary-label">Account</span>
+            <span className="bw-summary-value">{customer.email}</span>
+          </div>
+        )}
         {customer.note && (
           <div className="bw-summary-row">
             <span className="bw-summary-label">Note</span>
@@ -226,7 +265,7 @@ export function Step5Confirm({
         )}
       </div>
 
-      {existingContact && (
+      {!rescheduleMode && existingContact && (
         <div className="bw-note-update">
           <label>
             <input
@@ -261,7 +300,11 @@ export function Step5Confirm({
           disabled={submitting}
           onClick={onConfirm}
         >
-          {submitting ? 'Booking…' : 'Confirm booking'}
+          {submitting
+            ? (rescheduleMode ? 'Rescheduling…' : 'Booking…')
+            : rescheduleMode
+              ? 'Confirm new time'
+              : 'Confirm booking'}
         </button>
       </div>
     </div>

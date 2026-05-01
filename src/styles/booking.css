@@ -820,3 +820,38 @@
   .bw-cal-sheet__scrim,
   .bw-cal-sheet__panel { animation: none; }
 }
+
+/* Phase 5 — reschedule banner shown above Step 5 in reschedule mode. */
+.bw-reschedule-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.85rem 1rem;
+  margin-bottom: 1rem;
+  border: 1px solid var(--color-rule);
+  border-radius: var(--radius);
+  background: var(--color-bg-soft);
+}
+.bw-reschedule-banner__row {
+  display: grid;
+  gap: 0.15rem;
+  flex: 1 1 auto;
+  min-width: 9rem;
+}
+.bw-reschedule-banner__label {
+  font-size: 0.7rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+.bw-reschedule-banner__value {
+  color: var(--color-text);
+  font-size: 0.96rem;
+  font-weight: 500;
+}
+.bw-reschedule-banner__arrow {
+  color: var(--color-gold);
+  font-size: 1.4rem;
+  flex: none;
+}

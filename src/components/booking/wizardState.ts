@@ -173,12 +173,18 @@ export function reducer(state: WizardState, action: WizardAction): WizardState {
   }
 }
 
-export function isStepReachable(state: WizardState, step: WizardStep): boolean {
+export function isStepReachable(state: WizardState, step: WizardStep, options?: { rescheduleMode?: boolean }): boolean {
   if (step <= 1) return true;
   if (step === 2) return state.selectedService !== null;
   if (step === 3) return state.selectedService !== null && state.candidateVariations.length > 0;
   if (step === 4) return state.selectedSlot !== null && state.selectedVariation !== null;
-  if (step === 5) return state.selectedSlot !== null && state.selectedVariation !== null && customerInfoValid(state.customer);
+  if (step === 5) {
+    if (state.selectedSlot === null || state.selectedVariation === null) return false;
+    // In reschedule mode the customer record already exists — we only need
+    // a valid slot + variation. Step 4 is skipped entirely.
+    if (options?.rescheduleMode) return true;
+    return customerInfoValid(state.customer);
+  }
   return false;
 }
 

@@ -67,3 +67,24 @@ export async function getBooking(id: string): Promise<Booking> {
   if (!res.booking) throw new Error(`Booking ${id} not found`);
   return res.booking;
 }
+
+export interface CancelBookingInput {
+  bookingId: string;
+  bookingVersion: number;
+  idempotencyKey: string;
+}
+
+export async function cancelBooking(input: CancelBookingInput): Promise<Booking> {
+  const res = await squareFetch<CreateBookingResponse>(
+    `/v2/bookings/${input.bookingId}/cancel`,
+    {
+      method: 'POST',
+      body: {
+        booking_version: input.bookingVersion,
+        idempotency_key: input.idempotencyKey,
+      },
+    },
+  );
+  if (!res.booking) throw new Error(`Square cancel /v2/bookings/${input.bookingId}/cancel returned no booking`);
+  return res.booking;
+}

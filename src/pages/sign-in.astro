@@ -1,0 +1,258 @@
+---
+export const prerender = false;
+
+import BaseLayout from '../layouts/BaseLayout.astro';
+import Header from '../components/Header.astro';
+import Footer from '../components/Footer.astro';
+import { getSession } from '../lib/auth/middleware';
+
+const base = import.meta.env.BASE_URL.replace(/\/$/, '');
+const session = getSession(Astro.request);
+const url = new URL(Astro.request.url);
+const redirectTarget = url.searchParams.get('redirect') ?? `${base}/my-bookings`;
+
+if (session) {
+  return new Response(null, {
+    status: 302,
+    headers: { Location: redirectTarget },
+  });
+}
+---
+<BaseLayout
+  title="Sign in — Modern Classic Barbershop"
+  description="Sign in to manage your Modern Classic bookings."
+>
+  <Header />
+  <main id="main" class="auth-page">
+    <div class="auth-card" data-state="form">
+      <div class="auth-eyebrow">Customer sign in</div>
+      <h1>Manage your bookings</h1>
+      <p class="auth-body">
+        Enter the email you used to book. We'll send you a one-tap sign-in link.
+      </p>
+
+      <form id="signin-form" class="signin-form" novalidate>
+        <label for="email">Email</label>
+        <input
+          id="email"
+          name="email"
+          type="email"
+          inputmode="email"
+          autocomplete="email"
+          autocapitalize="none"
+          spellcheck="false"
+          required
+          placeholder="you@example.com"
+        />
+        <button type="submit" class="auth-btn" data-submit-label="Send me a sign-in link">
+          Send me a sign-in link
+        </button>
+        <p class="signin-error" id="signin-error" role="alert" hidden></p>
+      </form>
+
+      <div class="signin-success" hidden>
+        <p>
+          <strong>Check your email.</strong> If <span data-success-email></span>{' '}
+          matches a customer on file, we just sent a sign-in link. It expires in
+          15&nbsp;minutes.
+        </p>
+        <button type="button" class="auth-btn auth-btn--ghost" data-resend>
+          Use a different email
+        </button>
+      </div>
+
+      <p class="auth-fineprint">
+        New to Modern Classic? <a class="link-gold" href={`${base}/book`}>Book a visit</a> first
+        — your account is created automatically when you book.
+      </p>
+    </div>
+  </main>
+  <Footer />
+</BaseLayout>
+
+<script is:inline>
+  (function () {
+    const card = document.querySelector('.auth-card[data-state="form"]');
+    const form = document.getElementById('signin-form');
+    const error = document.getElementById('signin-error');
+    if (!card || !form || !error) return;
+
+    const successPanel = card.querySelector('.signin-success');
+    const successEmail = card.querySelector('[data-success-email]');
+    const resendBtn = card.querySelector('[data-resend]');
+    const submit = form.querySelector('button[type="submit"]');
+
+    const showError = (msg) => {
+      error.textContent = msg;
+      error.hidden = false;
+    };
+    const clearError = () => {
+      error.textContent = '';
+      error.hidden = true;
+    };
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      clearError();
+      const email = form.email.value.trim();
+      if (!/^\S+@\S+\.\S+$/.test(email)) {
+        showError('Please enter a valid email address.');
+        return;
+      }
+      submit.disabled = true;
+      submit.textContent = 'Sending…';
+      try {
+        const res = await fetch('/api/auth/request', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email }),
+        });
+        const data = await res.json();
+        if (res.status === 429) {
+          showError(data?.error?.detail || 'Please wait a moment before requesting another link.');
+          submit.disabled = false;
+          submit.textContent = submit.dataset.submitLabel;
+          return;
+        }
+        if (!res.ok) {
+          showError(data?.error?.detail || 'Something went wrong. Please try again.');
+          submit.disabled = false;
+          submit.textContent = submit.dataset.submitLabel;
+          return;
+        }
+        if (successEmail) successEmail.textContent = email;
+        if (form) form.hidden = true;
+        if (successPanel) successPanel.hidden = false;
+      } catch {
+        showError('Network error. Please try again.');
+        submit.disabled = false;
+        submit.textContent = submit.dataset.submitLabel;
+      }
+    });
+
+    if (resendBtn) {
+      resendBtn.addEventListener('click', () => {
+        if (form) {
+          form.hidden = false;
+          form.email.value = '';
+          submit.disabled = false;
+          submit.textContent = submit.dataset.submitLabel;
+          form.email.focus();
+        }
+        if (successPanel) successPanel.hidden = true;
+        clearError();
+      });
+    }
+  })();
+</script>
+
+<style>
+  .auth-page {
+    min-height: 60vh;
+    display: grid;
+    place-items: center;
+    padding: 4rem 1.25rem;
+  }
+  .auth-card {
+    width: min(28rem, 100%);
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    padding: clamp(1.5rem, 4vw, 2.5rem);
+    box-shadow: var(--shadow-md);
+  }
+  .auth-eyebrow {
+    font-size: 0.78rem;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--color-gold);
+    margin-bottom: 0.75rem;
+  }
+  .auth-card h1 {
+    font-family: var(--font-display);
+    font-size: clamp(1.75rem, 1.4rem + 1.4vw, 2.25rem);
+    margin: 0 0 0.75rem;
+    line-height: 1.15;
+    color: var(--color-text);
+    font-variation-settings: 'opsz' 144, 'SOFT' 50;
+  }
+  .auth-body {
+    color: var(--color-text-muted);
+    line-height: 1.6;
+    margin: 0 0 1.5rem;
+  }
+  .signin-form {
+    display: grid;
+    gap: 0.5rem;
+    margin-bottom: 1rem;
+  }
+  .signin-form label {
+    font-size: 0.78rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--color-text-muted);
+  }
+  .signin-form input[type='email'] {
+    width: 100%;
+    padding: 0.85rem 1rem;
+    background: var(--color-surface-2);
+    color: var(--color-text);
+    border: 1px solid var(--color-border);
+    border-radius: 4px;
+    font-size: 1rem;
+    font-family: inherit;
+    transition: border-color var(--dur) var(--ease);
+  }
+  .signin-form input[type='email']:focus {
+    outline: none;
+    border-color: var(--color-gold);
+  }
+  .auth-btn {
+    margin-top: 0.5rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.85rem 1.1rem;
+    background: var(--color-gold);
+    color: var(--color-text-on-gold);
+    font-family: inherit;
+    font-size: 0.82rem;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    border-radius: 2px;
+    border: 1px solid var(--color-gold-dark);
+    cursor: pointer;
+    transition: background var(--dur) var(--ease);
+  }
+  .auth-btn:hover { background: var(--color-gold-light); }
+  .auth-btn[disabled] { opacity: 0.7; cursor: not-allowed; }
+  .auth-btn--ghost {
+    margin-top: 0.75rem;
+    background: transparent;
+    color: var(--color-text);
+    border-color: var(--color-border);
+  }
+  .auth-btn--ghost:hover {
+    border-color: var(--color-gold);
+    color: var(--color-gold-light);
+  }
+  .signin-error {
+    margin: 0.5rem 0 0;
+    color: #f5a682;
+    font-size: 0.92rem;
+    line-height: 1.4;
+  }
+  .signin-success {
+    color: var(--color-text);
+    line-height: 1.6;
+  }
+  .signin-success p { margin: 0 0 1rem; }
+  .auth-fineprint {
+    margin-top: 1rem;
+    font-size: 0.85rem;
+    color: var(--color-text-dim);
+  }
+  .link-gold { color: var(--color-gold); }
+  .link-gold:hover { color: var(--color-gold-light); }
+</style>

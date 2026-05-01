@@ -1,0 +1,173 @@
+---
+export const prerender = false;
+
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import Header from '../../components/Header.astro';
+import Footer from '../../components/Footer.astro';
+import { verifyMagicToken } from '../../lib/auth/magicLink';
+import { isAuthConfigured, signSession, buildSessionCookie } from '../../lib/auth/session';
+import { findCustomerByEmail } from '../../lib/square/customers';
+import { redactEmail } from '../../lib/booking/log';
+
+const base = import.meta.env.BASE_URL.replace(/\/$/, '');
+const url = new URL(Astro.request.url);
+const token = url.searchParams.get('token');
+
+let errorReason: 'config' | 'invalid' | 'no-customer' | 'lookup' | null = null;
+
+if (!isAuthConfigured()) {
+  errorReason = 'config';
+} else if (!token) {
+  errorReason = 'invalid';
+} else {
+  const verified = verifyMagicToken(token);
+  if (!verified) {
+    errorReason = 'invalid';
+  } else {
+    try {
+      const customer = await findCustomerByEmail(verified.email);
+      if (!customer) {
+        // The Square record may have been deleted between request and
+        // click — treat as invalid rather than leaking.
+        // eslint-disable-next-line no-console
+        console.log(
+          `[AUTH] ${JSON.stringify({ ts: new Date().toISOString(), phase: 'verify-no-customer', email: redactEmail(verified.email) })}`,
+        );
+        errorReason = 'no-customer';
+      } else {
+        const sessionToken = signSession({
+          customerId: customer.id,
+          email: customer.email_address ?? verified.email,
+        });
+        // eslint-disable-next-line no-console
+        console.log(
+          `[AUTH] ${JSON.stringify({ ts: new Date().toISOString(), phase: 'verify-success', email: redactEmail(verified.email), customerId: customer.id })}`,
+        );
+        return new Response(null, {
+          status: 302,
+          headers: {
+            Location: `${base}/my-bookings`,
+            'Set-Cookie': buildSessionCookie(sessionToken),
+          },
+        });
+      }
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.log(
+        `[AUTH] ${JSON.stringify({ ts: new Date().toISOString(), phase: 'verify-failed', detail: err instanceof Error ? err.message : String(err) })}`,
+      );
+      errorReason = 'lookup';
+    }
+  }
+}
+
+const messages: Record<NonNullable<typeof errorReason>, { title: string; body: string }> = {
+  config: {
+    title: 'Sign-in temporarily unavailable',
+    body:
+      "We can't verify sign-in links right now. Please try again later, or call the shop at 740-297-4462.",
+  },
+  invalid: {
+    title: 'Invalid or expired link',
+    body:
+      "This sign-in link doesn't work — it may have expired or already been used. Magic links last 15 minutes and can only be used once.",
+  },
+  'no-customer': {
+    title: "We couldn't find that account",
+    body:
+      "We didn't find a customer record matching this link. If you've booked before, the email on file may differ from the one you used.",
+  },
+  lookup: {
+    title: 'Sign-in temporarily unavailable',
+    body:
+      "We hit a snag verifying your sign-in. Please try again in a moment, or call the shop at 740-297-4462.",
+  },
+};
+
+const display = errorReason ? messages[errorReason] : null;
+---
+<BaseLayout
+  title="Sign in — Modern Classic Barbershop"
+  description="Sign in to view your bookings at Modern Classic."
+>
+  <Header />
+  <main id="main" class="auth-page">
+    <div class="auth-card">
+      <div class="auth-eyebrow">Sign in</div>
+      <h1>{display?.title ?? 'Verifying…'}</h1>
+      <p class="auth-body">{display?.body ?? 'One moment.'}</p>
+      <div class="auth-actions">
+        <a class="auth-btn" href={`${base}/sign-in`}>Request a new link</a>
+        <a class="auth-btn auth-btn--ghost" href={`${base}/`}>Back to the site</a>
+      </div>
+    </div>
+  </main>
+  <Footer />
+</BaseLayout>
+
+<style>
+  .auth-page {
+    min-height: 60vh;
+    display: grid;
+    place-items: center;
+    padding: 4rem 1.25rem;
+  }
+  .auth-card {
+    width: min(28rem, 100%);
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    padding: clamp(1.5rem, 4vw, 2.5rem);
+    box-shadow: var(--shadow-md);
+  }
+  .auth-eyebrow {
+    font-size: 0.78rem;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--color-gold);
+    margin-bottom: 0.75rem;
+  }
+  .auth-card h1 {
+    font-family: var(--font-display);
+    font-size: clamp(1.75rem, 1.4rem + 1.4vw, 2.25rem);
+    margin: 0 0 0.75rem;
+    line-height: 1.15;
+    color: var(--color-text);
+    font-variation-settings: 'opsz' 144, 'SOFT' 50;
+  }
+  .auth-body {
+    color: var(--color-text-muted);
+    line-height: 1.6;
+    margin: 0 0 1.5rem;
+  }
+  .auth-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.65rem;
+  }
+  .auth-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.7rem 1.1rem;
+    background: var(--color-gold);
+    color: var(--color-text-on-gold);
+    font-size: 0.82rem;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    border-radius: 2px;
+    border: 1px solid var(--color-gold-dark);
+    transition: background var(--dur) var(--ease);
+  }
+  .auth-btn:hover { background: var(--color-gold-light); }
+  .auth-btn--ghost {
+    background: transparent;
+    color: var(--color-text);
+    border-color: var(--color-border);
+  }
+  .auth-btn--ghost:hover {
+    border-color: var(--color-gold);
+    color: var(--color-gold-light);
+  }
+</style>
