@@ -19,6 +19,18 @@ const base = import.meta.env.BASE_URL.replace(/\/$/, '');
 const isGhPages = import.meta.env.BASE_URL && import.meta.env.BASE_URL !== '/';
 const bookUrl = isGhPages ? 'https://modern-classic.square.site' : `${base}/book`;
 
+/**
+ * Build the per-service booking link. On Vercel we attach
+ * ?service=<variationId> so the wizard skips Step 1 and lands on Step 2
+ * with this service preselected. On the gh-pages preview (Square
+ * fallback) and on content-collection-fallback rows (no live ID), we
+ * emit the bare bookUrl.
+ */
+function bookHrefFor(variationId: string | null | undefined): string {
+  if (isGhPages || !variationId) return bookUrl;
+  return `${bookUrl}?service=${encodeURIComponent(variationId)}`;
+}
+
 let cards: LiveServiceCard[] = [];
 let usedFallback = false;
 try {
@@ -55,6 +67,9 @@ try {
           ? 'shave'
           : 'style',
     order: s.order ?? i,
+    // Content-collection rows have no Square variation ID — bookHrefFor()
+    // sees the null and falls back to the bare /book URL.
+    primaryVariationId: null,
   }));
 }
 
@@ -182,7 +197,7 @@ const itemListSchema = {
                 duration={s.durationLabel}
                 audience={s.audience}
                 description={s.description}
-                bookingUrl={bookUrl}
+                bookingUrl={bookHrefFor(s.primaryVariationId)}
               />
             ))}
           </div>

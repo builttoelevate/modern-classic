@@ -16,6 +16,14 @@ interface FeaturedCard {
   duration: string;
   audience: string | null;
   description: string;
+  /**
+   * Square variation ID used to deep-link this card straight into the
+   * /book wizard's Step 2 (Choose your barber). Null when we're on the
+   * content-collection fallback path — those entries have no variation
+   * IDs, so the card falls through to the bare /book URL and the user
+   * picks the service in Step 1.
+   */
+  variationId: string | null;
 }
 
 // The homepage carries 3 headline services. The slug list mirrors what's
@@ -35,6 +43,7 @@ try {
       duration: c.durationLabel,
       audience: c.audience,
       description: c.description,
+      variationId: c.primaryVariationId,
     }));
   if (cards.length === 0) throw new Error('no featured services in live catalog');
 } catch (err) {
@@ -53,7 +62,13 @@ try {
     duration: s.duration,
     audience: s.audience,
     description: s.description,
+    variationId: null,
   }));
+}
+
+function bookHrefFor(variationId: string | null): string {
+  if (isGhPages) return bookUrl;
+  return variationId ? `${bookUrl}?service=${encodeURIComponent(variationId)}` : bookUrl;
 }
 ---
 <section id="services" class="services" aria-labelledby="services-heading">
@@ -77,7 +92,7 @@ try {
           duration={s.duration}
           audience={s.audience}
           description={s.description}
-          bookingUrl={bookUrl}
+          bookingUrl={bookHrefFor(s.variationId)}
         />
       ))}
     </div>

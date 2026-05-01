@@ -35,6 +35,14 @@ export interface LiveServiceCard {
   group: 'haircuts' | 'beard' | 'shave' | 'style';
   /** Display order — lower = earlier. */
   order: number;
+  /**
+   * First bookable variation ID. Used to pre-select this service in the
+   * /book wizard via `?service=<id>` so callers (homepage service tiles,
+   * /services page rows) can deep-link directly to Step 2 (Choose your
+   * barber). Null if the service has no bookable variations — caller
+   * should fall back to a generic /book link in that case.
+   */
+  primaryVariationId: string | null;
 }
 
 /** Description + audience copy keyed by slug. Editable without touching code. */
@@ -173,6 +181,13 @@ export function toLiveServiceCards(services: Service[]): LiveServiceCard[] {
   const cards: LiveServiceCard[] = [];
   for (const service of services) {
     const copy = slugForService(service);
+    // Prefer a bookable variation, fall back to first variation, fall
+    // back to null (service has no variations at all — should be
+    // unreachable but keeps types honest).
+    const primaryVariation =
+      service.variations.find((v) => v.availableForBooking) ??
+      service.variations[0] ??
+      null;
     cards.push({
       slug: copy.slug,
       name: service.name,
@@ -182,6 +197,7 @@ export function toLiveServiceCards(services: Service[]): LiveServiceCard[] {
       description: copy.description,
       group: copy.group,
       order: copy.order,
+      primaryVariationId: primaryVariation?.id ?? null,
     });
   }
   cards.sort((a, b) => a.order - b.order);
