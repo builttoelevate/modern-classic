@@ -55,6 +55,7 @@ export function Step5Confirm({
   onUpdateContactToggle,
 }: Props) {
   const [existingContact, setExistingContact] = useState<{ phone?: string; givenName?: string; familyName?: string } | null>(null);
+  const [calendarSheetOpen, setCalendarSheetOpen] = useState(false);
 
   useEffect(() => {
     const email = customer.email.trim().toLowerCase();
@@ -102,6 +103,13 @@ export function Step5Confirm({
   }, [customer.email, customer.phone, customer.givenName, customer.familyName]);
 
   if (status.kind === 'success') {
+    const calParams = {
+      startAtUtc: slot.startAtUtc,
+      durationMinutes: variation.durationMinutes,
+      title: `${service.name} — Modern Classic`,
+      description: `Booking ref: ${status.bookingId}`,
+      location: '819 Linden Avenue, Zanesville, OH 43701',
+    };
     return (
       <div className="bw-step">
         <div className="bw-success">
@@ -114,19 +122,13 @@ export function Step5Confirm({
           <p>819 Linden Avenue, Zanesville, OH 43701</p>
           <div className="bw-success-id">Booking ref: {status.bookingId}</div>
           <div className="bw-success-actions">
-            <a
+            <button
+              type="button"
               className="bw-btn bw-btn--ghost"
-              href={googleCalendarLink({
-                startAtUtc: slot.startAtUtc,
-                durationMinutes: variation.durationMinutes,
-                title: `${service.name} — Modern Classic`,
-                description: `Booking ref: ${status.bookingId}`,
-              })}
-              target="_blank"
-              rel="noopener"
+              onClick={() => setCalendarSheetOpen(true)}
             >
-              Add to Google Calendar
-            </a>
+              Add to calendar
+            </button>
             <a
               className="bw-btn bw-btn--ghost"
               href="https://maps.google.com/?q=819+Linden+Avenue+Zanesville+OH+43701"
@@ -150,6 +152,13 @@ export function Step5Confirm({
             </button>
           </div>
         </div>
+
+        {calendarSheetOpen && (
+          <CalendarSheet
+            params={calParams}
+            onClose={() => setCalendarSheetOpen(false)}
+          />
+        )}
       </div>
     );
   }
@@ -268,21 +277,201 @@ function describeDiff(diff: { phone?: string; givenName?: string; familyName?: s
   return parts.join(' and a ');
 }
 
-function googleCalendarLink(params: {
+// ---------- Calendar link helpers ----------
+
+interface CalendarParams {
   startAtUtc: string;
   durationMinutes: number;
   title: string;
   description: string;
-}): string {
-  const start = new Date(params.startAtUtc);
-  const end = new Date(start.getTime() + params.durationMinutes * 60_000);
-  const fmt = (d: Date): string =>
-    d.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z');
+  location: string;
+}
+
+function utcStamp(d: Date): string {
+  return d.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z');
+}
+
+function googleCalendarLink(p: CalendarParams): string {
+  const start = new Date(p.startAtUtc);
+  const end = new Date(start.getTime() + p.durationMinutes * 60_000);
   const u = new URL('https://www.google.com/calendar/render');
   u.searchParams.set('action', 'TEMPLATE');
-  u.searchParams.set('text', params.title);
-  u.searchParams.set('dates', `${fmt(start)}/${fmt(end)}`);
-  u.searchParams.set('location', '819 Linden Avenue, Zanesville, OH 43701');
-  u.searchParams.set('details', params.description);
+  u.searchParams.set('text', p.title);
+  u.searchParams.set('dates', `${utcStamp(start)}/${utcStamp(end)}`);
+  u.searchParams.set('location', p.location);
+  u.searchParams.set('details', p.description);
   return u.toString();
+}
+
+function outlookCalendarLink(p: CalendarParams): string {
+  const start = new Date(p.startAtUtc);
+  const end = new Date(start.getTime() + p.durationMinutes * 60_000);
+  const u = new URL('https://outlook.live.com/calendar/0/deeplink/compose');
+  u.searchParams.set('path', '/calendar/action/compose');
+  u.searchParams.set('rru', 'addevent');
+  u.searchParams.set('subject', p.title);
+  u.searchParams.set('startdt', start.toISOString());
+  u.searchParams.set('enddt', end.toISOString());
+  u.searchParams.set('body', p.description);
+  u.searchParams.set('location', p.location);
+  return u.toString();
+}
+
+function yahooCalendarLink(p: CalendarParams): string {
+  const start = new Date(p.startAtUtc);
+  const end = new Date(start.getTime() + p.durationMinutes * 60_000);
+  const u = new URL('https://calendar.yahoo.com/');
+  u.searchParams.set('v', '60');
+  u.searchParams.set('title', p.title);
+  u.searchParams.set('st', utcStamp(start));
+  u.searchParams.set('et', utcStamp(end));
+  u.searchParams.set('desc', p.description);
+  u.searchParams.set('in_loc', p.location);
+  return u.toString();
+}
+
+// Apple / iOS Calendar: a data: URL containing a minimal ICS file. Tapping
+// this on iOS Safari opens the native 'Add Event' sheet directly into
+// Apple Calendar; on macOS Safari it opens Calendar.app the same way.
+// We escape commas, semicolons, backslashes and newlines per RFC 5545.
+function appleCalendarLink(p: CalendarParams): string {
+  const start = new Date(p.startAtUtc);
+  const end = new Date(start.getTime() + p.durationMinutes * 60_000);
+  const esc = (s: string) =>
+    s
+      .replace(/\\/g, '\\\\')
+      .replace(/;/g, '\\;')
+      .replace(/,/g, '\\,')
+      .replace(/\r?\n/g, '\\n');
+  const host =
+    typeof window !== 'undefined' && window.location?.host ? window.location.host : 'mdrnclassic.com';
+  const ics = [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'PRODID:-//Modern Classic//Booking//EN',
+    'CALSCALE:GREGORIAN',
+    'METHOD:PUBLISH',
+    'BEGIN:VEVENT',
+    `UID:${utcStamp(start)}-${Math.random().toString(36).slice(2, 10)}@${host}`,
+    `DTSTAMP:${utcStamp(new Date())}`,
+    `DTSTART:${utcStamp(start)}`,
+    `DTEND:${utcStamp(end)}`,
+    `SUMMARY:${esc(p.title)}`,
+    `DESCRIPTION:${esc(p.description)}`,
+    `LOCATION:${esc(p.location)}`,
+    'END:VEVENT',
+    'END:VCALENDAR',
+  ].join('\r\n');
+  return `data:text/calendar;charset=utf-8,${encodeURIComponent(ics)}`;
+}
+
+// ---------- Calendar chooser sheet ----------
+
+function CalendarSheet({ params, onClose }: { params: CalendarParams; onClose: () => void }) {
+  // Close on Escape, lock body scroll while the sheet is open.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', onKey);
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [onClose]);
+
+  const options = [
+    {
+      key: 'apple',
+      label: 'Apple',
+      href: appleCalendarLink(params),
+      external: false,
+      // .ics download triggers Apple Calendar on iOS / macOS.
+      download: 'modern-classic-booking.ics',
+      icon: (
+        <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor" aria-hidden="true">
+          <path d="M16.4 12.7c0-2.4 2-3.5 2.1-3.5-1.1-1.7-2.9-1.9-3.5-1.9-1.5-.2-2.9.9-3.6.9s-1.9-.9-3.1-.8c-1.6 0-3.1.9-3.9 2.4-1.7 2.9-.4 7.2 1.2 9.5.8 1.1 1.8 2.4 3 2.4 1.2 0 1.7-.8 3.1-.8s1.8.8 3.1.8c1.3 0 2.1-1.2 2.9-2.3.9-1.3 1.3-2.6 1.3-2.7-.1 0-2.6-1-2.6-4zm-2.4-7.3c.7-.8 1.1-1.9 1-3-.9 0-2.1.6-2.7 1.4-.6.7-1.2 1.8-1 2.9 1 .1 2-.5 2.7-1.3z"/>
+        </svg>
+      ),
+    },
+    {
+      key: 'google',
+      label: 'Google',
+      href: googleCalendarLink(params),
+      external: true,
+      icon: (
+        <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
+          <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
+          <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+          <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
+          <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
+        </svg>
+      ),
+    },
+    {
+      key: 'outlook',
+      label: 'Outlook',
+      href: outlookCalendarLink(params),
+      external: true,
+      icon: (
+        <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
+          <rect x="2" y="5" width="14" height="14" rx="1.5" fill="#0078D4"/>
+          <path d="M9 8.5c-1.66 0-3 1.57-3 3.5s1.34 3.5 3 3.5 3-1.57 3-3.5-1.34-3.5-3-3.5zm0 5.5c-.83 0-1.5-.9-1.5-2s.67-2 1.5-2 1.5.9 1.5 2-.67 2-1.5 2z" fill="#fff"/>
+          <path d="M16 9v6l5 1.5V7.5L16 9z" fill="#0078D4"/>
+        </svg>
+      ),
+    },
+    {
+      key: 'yahoo',
+      label: 'Yahoo',
+      href: yahooCalendarLink(params),
+      external: true,
+      icon: (
+        <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
+          <path d="M3 5h3.4l3.1 6 3.2-6h3.3l-5 9v6h-3v-6L3 5z" fill="#6001D2"/>
+          <circle cx="18.5" cy="13" r="1.4" fill="#6001D2"/>
+          <path d="M19 5h2.5l-1.6 6h-2.5L19 5z" fill="#6001D2"/>
+        </svg>
+      ),
+    },
+  ];
+
+  return (
+    <div className="bw-cal-sheet" role="dialog" aria-modal="true" aria-label="Add to calendar">
+      <button
+        type="button"
+        className="bw-cal-sheet__scrim"
+        aria-label="Close"
+        onClick={onClose}
+      />
+      <div className="bw-cal-sheet__panel">
+        <h3 className="bw-cal-sheet__title">Add to calendar</h3>
+        <ul className="bw-cal-sheet__list">
+          {options.map((o) => (
+            <li key={o.key}>
+              <a
+                className="bw-cal-option"
+                href={o.href}
+                {...(o.external ? { target: '_blank', rel: 'noopener' } : {})}
+                {...(o.download ? { download: o.download } : {})}
+                onClick={() => {
+                  // Small delay so iOS picks up the ICS download / external
+                  // tab open before we unmount the sheet.
+                  setTimeout(onClose, 250);
+                }}
+              >
+                <span className="bw-cal-option__icon">{o.icon}</span>
+                <span className="bw-cal-option__label">{o.label}</span>
+              </a>
+            </li>
+          ))}
+        </ul>
+        <button type="button" className="bw-cal-sheet__close" onClick={onClose}>
+          Cancel
+        </button>
+      </div>
+    </div>
+  );
 }

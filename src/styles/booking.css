@@ -694,3 +694,129 @@
   animation: bw-spin 720ms linear infinite;
 }
 @keyframes bw-spin { to { transform: rotate(360deg); } }
+
+/* ---------- Add-to-calendar chooser ----------
+   Bottom sheet on mobile, centred modal on desktop. Matches the Square
+   booking page UX shown in the source screenshots: one 'Add to calendar'
+   button on the success screen opens this chooser, user picks Apple /
+   Google / Outlook / Yahoo. */
+.bw-cal-sheet {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+.bw-cal-sheet__scrim {
+  position: absolute;
+  inset: 0;
+  background: rgba(11, 10, 8, 0.7);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  border: 0;
+  cursor: pointer;
+  animation: bw-cal-fade 200ms ease;
+}
+.bw-cal-sheet__panel {
+  position: relative;
+  width: 100%;
+  max-width: 26rem;
+  background: linear-gradient(180deg, var(--color-surface), var(--color-bg-soft));
+  border: 1px solid var(--color-border);
+  border-bottom: 0;
+  border-radius: 14px 14px 0 0;
+  padding: 1.5rem 1.25rem calc(1.5rem + env(safe-area-inset-bottom));
+  box-shadow: 0 -10px 40px -10px rgba(0, 0, 0, 0.6);
+  animation: bw-cal-slide 280ms cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+@media (min-width: 600px) {
+  .bw-cal-sheet { align-items: center; }
+  .bw-cal-sheet__panel {
+    border-radius: 8px;
+    border-bottom: 1px solid var(--color-border);
+    margin: 1rem;
+    padding: 1.75rem 1.5rem;
+    animation-name: bw-cal-pop;
+  }
+}
+@keyframes bw-cal-fade {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+@keyframes bw-cal-slide {
+  from { transform: translateY(100%); }
+  to   { transform: translateY(0); }
+}
+@keyframes bw-cal-pop {
+  from { transform: translateY(8px); opacity: 0; }
+  to   { transform: translateY(0); opacity: 1; }
+}
+.bw-cal-sheet__title {
+  font-family: var(--font-display);
+  font-size: 1.4rem;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  margin: 0 0 1rem;
+  text-align: center;
+  color: var(--color-text);
+}
+.bw-cal-sheet__list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 0.5rem;
+}
+.bw-cal-option {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  padding: 0.85rem 1rem;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: var(--color-bg-soft);
+  color: var(--color-text);
+  text-decoration: none;
+  font-family: var(--font-body);
+  font-size: 1rem;
+  font-weight: 500;
+  letter-spacing: 0.005em;
+  transition: border-color 200ms ease, background 200ms ease;
+}
+.bw-cal-option:hover,
+.bw-cal-option:focus-visible {
+  border-color: var(--color-gold);
+  background: rgba(201, 163, 92, 0.06);
+}
+.bw-cal-option__icon {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  flex: none;
+}
+.bw-cal-option__label { flex: 1; }
+.bw-cal-sheet__close {
+  display: block;
+  width: 100%;
+  padding: 0.85rem;
+  margin-top: 0.85rem;
+  background: transparent;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  color: var(--color-text-muted);
+  font-family: var(--font-body);
+  font-size: 0.9rem;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  transition: color 200ms ease, border-color 200ms ease;
+}
+.bw-cal-sheet__close:hover {
+  color: var(--color-text);
+  border-color: var(--color-gold-deep);
+}
+@media (prefers-reduced-motion: reduce) {
+  .bw-cal-sheet__scrim,
+  .bw-cal-sheet__panel { animation: none; }
+}
