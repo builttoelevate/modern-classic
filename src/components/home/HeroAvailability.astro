@@ -1,17 +1,14 @@
 ---
 // Phase 6 Part C — homepage hero availability widget.
 //
-// Four modes:
-//   • personalized — signed-in customer with a usual barber
-//   • soonest      — guest, soonest slot across all barbers
-//   • fallback     — no slot inside the 7-day window
-//   • disabled     — Square errored or anyone signed-in but no usual yet
-//                    AND we couldn't find soonest. Render the warm CTA.
+// Two modes:
+//   • soonest  — render the soonest open slot across all barbers
+//   • fallback — Square errored or no slot found at all; render warm CTA
 
 import { formatRelativeSlot } from '../../lib/availability/timing';
 import type { AvailabilitySlot } from '../../lib/square/types';
 
-type Mode = 'personalized' | 'soonest' | 'fallback';
+type Mode = 'soonest' | 'fallback';
 
 interface Props {
   mode: Mode;
@@ -38,22 +35,15 @@ const bookHref = (() => {
 const target = isGhPages ? '_blank' : '_self';
 const rel = isGhPages ? 'noopener' : '';
 
-const showSlot = (mode === 'personalized' || mode === 'soonest') && slot !== null && slot !== undefined;
+const showSlot = mode === 'soonest' && slot !== null && slot !== undefined;
 const slotLabel = showSlot && slot ? formatRelativeSlot(slot.startAtUtc) : '';
 ---
 <a class={`hero-avail hero-avail--${mode}`} href={bookHref} target={target} rel={rel}>
   <span class="hero-avail__dot" aria-hidden="true"></span>
-  {mode === 'personalized' && showSlot && barberName && (
-    <span class="hero-avail__text">
-      <span class="hero-avail__lead">{barberName}'s next opening:</span>
-      <span class="hero-avail__when">{slotLabel}</span>
-    </span>
-  )}
   {mode === 'soonest' && showSlot && barberName && (
     <span class="hero-avail__text">
-      <span class="hero-avail__lead">Next available:</span>
-      <span class="hero-avail__when">{slotLabel}</span>
-      <span class="hero-avail__with">with {barberName}</span>
+      <span class="hero-avail__lead">Next available barber:</span>
+      <span class="hero-avail__when">{barberName} · {slotLabel}</span>
     </span>
   )}
   {mode === 'fallback' && (
