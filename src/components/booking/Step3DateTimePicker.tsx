@@ -498,6 +498,23 @@ export function Step3DateTimePicker({
           </div>
         </div>
       )}
+
+      {/*
+        Persistent waitlist offer. Stays out of the way unless the customer
+        actually scrolled past the calendar and didn't click anything — at
+        which point a quiet line is more useful than a louder CTA.
+      */}
+      <p className="bw-waitlist-hint">
+        Don't see a time that works?{' '}
+        <button
+          type="button"
+          className="bw-waitlist-hint__btn"
+          onClick={() => setWaitlistOpen(true)}
+        >
+          Join the waitlist
+        </button>
+        .
+      </p>
     </div>
   );
 }
