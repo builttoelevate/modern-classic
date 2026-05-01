@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 
 interface Props {
   open: boolean;
@@ -59,7 +60,21 @@ export function WaitlistSheet({
     return () => window.removeEventListener('keydown', onKey);
   }, [open, onClose]);
 
+  // Lock body scroll while the sheet is open so the page behind doesn't
+  // tug-of-war with the form on iOS Safari, which is what made the sheet
+  // appear off-screen before — the page kept its scroll position and the
+  // sheet (rendered via portal) lived above it.
+  useEffect(() => {
+    if (!open) return;
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = previous;
+    };
+  }, [open]);
+
   if (!open) return null;
+  if (typeof document === 'undefined') return null;
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -94,7 +109,7 @@ export function WaitlistSheet({
     }
   };
 
-  return (
+  return createPortal(
     <div className="bw-waitlist" role="dialog" aria-modal="true" aria-labelledby="bw-waitlist-title">
       <button
         type="button"
@@ -228,6 +243,7 @@ export function WaitlistSheet({
           </form>
         )}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
