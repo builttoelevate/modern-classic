@@ -145,6 +145,8 @@ export const POST: APIRoute = async ({ request }) => {
       email: payload.customer.email.trim().toLowerCase(),
       phone: payload.customer.phone,
       updateContact: payload.customer.updateContact ?? false,
+      marketingConsent: payload.customer.marketingConsent === true,
+      marketingConsentSource: 'booking_flow_step_4',
     });
 
     logBooking({
@@ -153,6 +155,8 @@ export const POST: APIRoute = async ({ request }) => {
       customerEmail: redactEmail(payload.customer.email),
       customerInitials: initials,
       customerId: findOrCreate.customer.id,
+      marketingConsent: payload.customer.marketingConsent === true,
+      marketingDecision: findOrCreate.marketingDecision.kind,
     });
 
     const booking = await createBooking({

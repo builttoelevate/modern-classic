@@ -106,6 +106,27 @@ const sortedBookings = [...bookings].sort((a, b) => (b.start_at ?? '').localeCom
         background: var(--surface);
       }
       tr:hover td { background: var(--surface-2); }
+      .topnav {
+        display: flex;
+        gap: 1.5rem;
+        align-items: center;
+        padding-bottom: 18px;
+        margin-bottom: 24px;
+        border-bottom: 1px solid var(--border);
+        font-size: 0.78rem;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+      }
+      .topnav a {
+        color: var(--muted);
+        text-decoration: none;
+        padding-bottom: 4px;
+      }
+      .topnav a.active {
+        color: var(--gold);
+        border-bottom: 2px solid var(--gold);
+      }
+      .topnav a:hover { color: var(--gold); }
       .pill {
         display: inline-block;
         padding: 2px 8px;
@@ -125,6 +146,10 @@ const sortedBookings = [...bookings].sort((a, b) => (b.start_at ?? '').localeCom
   </head>
   <body>
     <div class="wrap">
+      <nav class="topnav">
+        <a href="/admin/bookings" class="active">Bookings</a>
+        <a href="/admin/reviews">Reviews</a>
+      </nav>
       <h1>Recent bookings</h1>
       <p class="sub">Last 50 bookings via Square API. Times shown in shop time (Eastern).</p>
 

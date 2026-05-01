@@ -301,6 +301,7 @@ export default function BookingWizard({ services, barbers, location, reschedule,
           phone: digits(state.customer.phone),
           note: state.customer.note.trim() || undefined,
           updateContact: state.customer.updateContact,
+          marketingConsent: state.customer.marketingConsent,
         },
       };
 

@@ -203,6 +203,12 @@ export interface Customer {
   email_address?: string;
   phone_number?: string;
   created_at?: string;
+  /**
+   * Square's read-only marketing preferences. We can READ
+   * `email_unsubscribed` (true when the customer unsubscribed via Square's
+   * own marketing) but we CANNOT write to it. Respect it as a hard gate.
+   */
+  preferences?: { email_unsubscribed?: boolean };
 }
 
 export interface SearchCustomersResponse {

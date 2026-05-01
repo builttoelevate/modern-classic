@@ -39,6 +39,12 @@ interface SendEmailInput {
   text: string;
   replyTo?: string;
   fromDisplay?: string;
+  /**
+   * Custom RFC 5322 headers. We use this for List-Unsubscribe /
+   * List-Unsubscribe-Post (Gmail bulk-sender requirements + RFC 8058
+   * one-click unsubscribe).
+   */
+  headers?: Record<string, string>;
 }
 
 interface ResendResponse {
@@ -48,7 +54,7 @@ interface ResendResponse {
 async function sendEmail(input: SendEmailInput): Promise<{ id: string }> {
   const key = getApiKey();
   const fromDisplay = input.fromDisplay ?? FROM_DISPLAY;
-  const body = {
+  const body: Record<string, unknown> = {
     from: `${fromDisplay} <${FROM_ADDRESS}>`,
     to: [input.to],
     subject: input.subject,
@@ -56,6 +62,9 @@ async function sendEmail(input: SendEmailInput): Promise<{ id: string }> {
     text: input.text,
     reply_to: input.replyTo ?? REPLY_TO,
   };
+  if (input.headers && Object.keys(input.headers).length > 0) {
+    body.headers = input.headers;
+  }
 
   const res = await fetch(RESEND_ENDPOINT, {
     method: 'POST',
@@ -129,5 +138,49 @@ export async function sendWaitlistRequest(input: SendWaitlistInput): Promise<{ i
     html,
     text,
     replyTo: input.customerEmail,
+  });
+}
+
+export interface SendReviewRequestInput {
+  to: string;
+  customerName: string;
+  barberName: string;
+  serviceName: string;
+  appointmentDate: string;
+  googleReviewUrl: string;
+  unsubscribeUrl: string;
+  shopAddress: string;
+  shopPhone: string;
+}
+
+/**
+ * Phase 7 — automated review-request email.
+ *
+ * Adds the bulk-sender headers required by Gmail (RFC 8058 one-click):
+ *   - List-Unsubscribe: <mailto:>, <https://...>
+ *   - List-Unsubscribe-Post: List-Unsubscribe=One-Click
+ *
+ * The mailto: + https: pair is the recommended format. Gmail and Apple
+ * Mail render a "Unsubscribe" button next to the sender name in the
+ * inbox UI when these are present and the URL responds 200 to a POST.
+ */
+export async function sendReviewRequest(
+  input: SendReviewRequestInput,
+): Promise<{ id: string }> {
+  const { reviewRequestHtml, reviewRequestText, reviewRequestSubject } = await import(
+    './templates/reviewRequest'
+  );
+  const html = reviewRequestHtml(input);
+  const text = reviewRequestText(input);
+  return sendEmail({
+    to: input.to,
+    subject: reviewRequestSubject({ customerName: input.customerName }),
+    html,
+    text,
+    replyTo: REPLY_TO,
+    headers: {
+      'List-Unsubscribe': `<mailto:${REPLY_TO}?subject=unsubscribe>, <${input.unsubscribeUrl}>`,
+      'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
+    },
   });
 }

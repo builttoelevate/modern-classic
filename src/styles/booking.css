@@ -604,6 +604,30 @@
   text-align: right;
 }
 
+/* Marketing consent checkbox (Phase 7). Subtle, optional-feeling. */
+.bw-consent {
+  display: flex;
+  gap: 0.6rem;
+  align-items: flex-start;
+  padding: 0.4rem 0 0.2rem;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  user-select: none;
+}
+.bw-consent input[type='checkbox'] {
+  flex: 0 0 auto;
+  margin-top: 0.18rem;
+  width: 1rem;
+  height: 1rem;
+  accent-color: var(--color-gold);
+  cursor: pointer;
+}
+.bw-consent span {
+  flex: 1;
+}
+
 /* ---------- Confirm summary ---------- */
 .bw-summary {
   background: var(--color-surface);

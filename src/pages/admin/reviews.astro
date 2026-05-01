@@ -1,0 +1,239 @@
+---
+export const prerender = false;
+
+import { checkBasicAuth } from '../../lib/admin/auth';
+import { getReviewStats } from '../../lib/marketing/reviewLog';
+
+const auth = checkBasicAuth(Astro.request);
+if (!auth.ok) {
+  return auth.challenge;
+}
+
+let last30: Awaited<ReturnType<typeof getReviewStats>> | null = null;
+let last90: Awaited<ReturnType<typeof getReviewStats>> | null = null;
+let loadError: string | null = null;
+
+try {
+  [last30, last90] = await Promise.all([
+    getReviewStats({ daysBack: 30, recentLimit: 50 }),
+    getReviewStats({ daysBack: 90, recentLimit: 50 }),
+  ]);
+} catch (err) {
+  loadError = err instanceof Error ? err.message : String(err);
+}
+
+function fmtPct(rate: number): string {
+  if (!isFinite(rate) || rate < 0) return '0%';
+  return `${(rate * 100).toFixed(1)}%`;
+}
+
+function fmtDate(iso: string | null | undefined): string {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return iso ?? '—';
+  return new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York',
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  }).format(d);
+}
+
+const recent = last30?.recent ?? [];
+---
+
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>Reviews — Modern Classic Admin</title>
+    <style>
+      :root {
+        --bg: #0b0a08;
+        --surface: #161311;
+        --surface-2: #1d1916;
+        --border: #2a2520;
+        --text: #f3ece0;
+        --muted: #b0a695;
+        --dim: #80776a;
+        --gold: #c9a35c;
+      }
+      *, *::before, *::after { box-sizing: border-box; }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font: 16px/1.5 ui-sans-serif, system-ui, sans-serif;
+      }
+      .wrap { max-width: 72rem; margin: 0 auto; padding: 32px 24px; }
+      .topnav {
+        display: flex;
+        gap: 1.5rem;
+        align-items: center;
+        padding-bottom: 18px;
+        margin-bottom: 24px;
+        border-bottom: 1px solid var(--border);
+        font-size: 0.78rem;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+      }
+      .topnav a {
+        color: var(--muted);
+        text-decoration: none;
+        padding-bottom: 4px;
+      }
+      .topnav a.active {
+        color: var(--gold);
+        border-bottom: 2px solid var(--gold);
+      }
+      .topnav a:hover { color: var(--gold); }
+      h1 { font-family: Georgia, serif; font-weight: 400; font-size: 1.8rem; margin: 0 0 6px; }
+      .sub { color: var(--muted); font-size: 0.95rem; margin-bottom: 28px; }
+      .err {
+        background: rgba(220, 80, 60, 0.08);
+        border: 1px solid rgba(220, 80, 60, 0.4);
+        color: #f0a37a;
+        padding: 12px 16px;
+        border-radius: 6px;
+      }
+      .stat-grid {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 16px;
+        margin-bottom: 32px;
+      }
+      @media (max-width: 600px) { .stat-grid { grid-template-columns: 1fr; } }
+      .stat-card {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 20px 22px;
+      }
+      .stat-eyebrow {
+        font-size: 0.72rem;
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+        color: var(--gold);
+        margin-bottom: 8px;
+      }
+      .stat-headline {
+        font-family: Georgia, serif;
+        font-size: 1.4rem;
+        margin: 0 0 4px;
+      }
+      .stat-detail {
+        color: var(--muted);
+        font-size: 0.92rem;
+      }
+      .stat-detail strong {
+        color: var(--text);
+      }
+      h2 {
+        font-family: Georgia, serif;
+        font-weight: 400;
+        font-size: 1.25rem;
+        margin: 0 0 12px;
+      }
+      table { width: 100%; border-collapse: collapse; font-size: 0.92rem; }
+      th, td { padding: 10px 12px; text-align: left; border-bottom: 1px solid var(--border); vertical-align: top; }
+      th {
+        font-size: 0.7rem;
+        font-weight: 700;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: var(--muted);
+        background: var(--surface);
+      }
+      tr:hover td { background: var(--surface-2); }
+      .pill {
+        display: inline-block;
+        padding: 2px 8px;
+        border-radius: 999px;
+        font-size: 0.72rem;
+        font-weight: 600;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+      }
+      .pill.clicked { background: rgba(122, 184, 110, 0.15); color: #a4d091; }
+      .pill.unclicked { background: rgba(128, 119, 106, 0.15); color: var(--dim); }
+      .meta { color: var(--dim); font-family: ui-monospace, Menlo, monospace; font-size: 0.8rem; }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <nav class="topnav">
+        <a href="/admin/bookings">Bookings</a>
+        <a href="/admin/reviews" class="active">Reviews</a>
+      </nav>
+      <h1>Review request stats</h1>
+      <p class="sub">Automated review-request emails sent by the daily cron at 10 AM ET.</p>
+
+      {loadError && (
+        <p class="err">Failed to load stats: {loadError}</p>
+      )}
+
+      {!loadError && (
+        <>
+          <div class="stat-grid">
+            <div class="stat-card">
+              <div class="stat-eyebrow">Last 30 days</div>
+              <p class="stat-headline">
+                {last30?.sent ?? 0} sent · {last30?.clicked ?? 0} clicked
+              </p>
+              <p class="stat-detail">
+                <strong>{fmtPct(last30?.clickRate ?? 0)}</strong> click-through rate
+              </p>
+            </div>
+            <div class="stat-card">
+              <div class="stat-eyebrow">Last 90 days</div>
+              <p class="stat-headline">
+                {last90?.sent ?? 0} sent · {last90?.clicked ?? 0} clicked
+              </p>
+              <p class="stat-detail">
+                <strong>{fmtPct(last90?.clickRate ?? 0)}</strong> click-through rate
+              </p>
+            </div>
+          </div>
+
+          <h2>Recent review requests</h2>
+          {recent.length === 0 && <p class="sub">No review requests sent yet.</p>}
+          {recent.length > 0 && (
+            <table>
+              <thead>
+                <tr>
+                  <th>Sent</th>
+                  <th>Customer</th>
+                  <th>Service</th>
+                  <th>Barber</th>
+                  <th>Click</th>
+                  <th>Booking</th>
+                </tr>
+              </thead>
+              <tbody>
+                {recent.map((r) => (
+                  <tr>
+                    <td>{fmtDate(r.sentAt)}</td>
+                    <td class="meta">{r.customerEmailRedacted || '—'}</td>
+                    <td>{r.serviceName || '—'}</td>
+                    <td>{r.barberName || '—'}</td>
+                    <td>
+                      {r.clickedAt ? (
+                        <span class="pill clicked">Clicked {fmtDate(r.clickedAt)}</span>
+                      ) : (
+                        <span class="pill unclicked">No click</span>
+                      )}
+                    </td>
+                    <td class="meta">{r.bookingId}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </>
+      )}
+    </div>
+  </body>
+</html>

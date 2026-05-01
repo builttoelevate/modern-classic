@@ -121,6 +121,19 @@ export function Step4CustomerInfo({ customer, onChange, onNext }: Props) {
           <span className="bw-field-counter">{customer.note.length}/500</span>
         </div>
 
+        <label className="bw-consent">
+          <input
+            type="checkbox"
+            checked={customer.marketingConsent}
+            onChange={(e) => onChange({ marketingConsent: e.target.checked })}
+          />
+          <span>
+            Send me appointment reminders, review requests, occasional offers, and
+            product recommendations from Modern Classic Barbershop. I can unsubscribe
+            anytime.
+          </span>
+        </label>
+
         <button type="submit" className="bw-btn" disabled={!valid}>
           Review booking →
         </button>

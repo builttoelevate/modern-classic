@@ -22,6 +22,8 @@ interface LogPayload {
   errorDetail?: string;
   durationMs?: number;
   attemptId?: string;
+  marketingConsent?: boolean;
+  marketingDecision?: string;
 }
 
 export function redactEmail(email: string | undefined): string {

@@ -16,6 +16,12 @@ export interface CustomerInfo {
   note: string;
   /** When updating an existing customer record, whether to overwrite. */
   updateContact: boolean;
+  /**
+   * Phase 7 — true when the customer ticked the marketing-consent
+   * checkbox on Step 4. Default false. Pre-checked defaults are forbidden
+   * under GDPR/CAN-SPAM best practice.
+   */
+  marketingConsent: boolean;
 }
 
 export interface WizardState {
@@ -53,6 +59,7 @@ export const initialCustomer: CustomerInfo = {
   phone: '',
   note: '',
   updateContact: false,
+  marketingConsent: false,
 };
 
 export const initialState: WizardState = {

@@ -1,0 +1,200 @@
+---
+// Phase 7 — branded unsubscribe landing page.
+//
+// This is the URL we put in the email's footer Unsubscribe link. It shares
+// logic with /api/marketing/unsubscribe (which Gmail/Apple Mail call via
+// the List-Unsubscribe-Post one-click POST flow). Both endpoints set the
+// same Square Custom Attribute and render the same confirmation copy.
+
+export const prerender = false;
+
+import { verifyUnsubscribeToken } from '../lib/marketing/unsubscribeToken';
+import {
+  MARKETING_UNSUBSCRIBED_AT_KEY,
+  setCustomAttribute,
+} from '../lib/square/customAttributes';
+import { SquareApiError } from '../lib/square/client';
+
+const url = new URL(Astro.request.url);
+const token = url.searchParams.get('token') ?? '';
+const action = (url.searchParams.get('action') ?? 'unsubscribe').toLowerCase() === 'resubscribe'
+  ? 'resubscribe'
+  : 'unsubscribe';
+
+let state: 'unsubscribed' | 'resubscribed' | 'error' = 'error';
+let errorMessage = "This unsubscribe link isn't valid. It may have been mistyped or tampered with.";
+
+if (!import.meta.env.UNSUBSCRIBE_SECRET) {
+  errorMessage =
+    'Our unsubscribe system is temporarily misconfigured. Please email us at modernclassicbarbershop@protonmail.com.';
+} else if (!token) {
+  errorMessage = 'No unsubscribe token was supplied.';
+} else {
+  const verified = verifyUnsubscribeToken(token);
+  if (!verified) {
+    errorMessage =
+      "This unsubscribe link isn't valid. It may have been mistyped or tampered with.";
+  } else {
+    try {
+      if (action === 'unsubscribe') {
+        await setCustomAttribute(
+          verified.customerId,
+          MARKETING_UNSUBSCRIBED_AT_KEY,
+          new Date().toISOString(),
+        );
+        state = 'unsubscribed';
+      } else {
+        await setCustomAttribute(verified.customerId, MARKETING_UNSUBSCRIBED_AT_KEY, null);
+        state = 'resubscribed';
+      }
+    } catch (err) {
+      const detail =
+        err instanceof SquareApiError
+          ? `${err.code}: ${err.detail}`
+          : err instanceof Error
+            ? err.message
+            : 'Unknown error';
+      // eslint-disable-next-line no-console
+      console.log(
+        `[UNSUB] ${JSON.stringify({ ts: new Date().toISOString(), phase: 'astro-error', customerId: verified.customerId, errorDetail: detail })}`,
+      );
+      errorMessage =
+        "Something went wrong saving your preference. Please reply to any Modern Classic email and we'll handle it manually.";
+    }
+  }
+}
+
+const resubscribeUrl = `/unsubscribe?token=${encodeURIComponent(token)}&action=resubscribe`;
+---
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>
+      {state === 'unsubscribed' && "You've been unsubscribed"}
+      {state === 'resubscribed' && "You're back on the list"}
+      {state === 'error' && 'Unsubscribe link is invalid'}
+      {' '}— Modern Classic Barbershop
+    </title>
+    <style>
+      * , *::before, *::after { box-sizing: border-box; }
+      body {
+        margin: 0;
+        background: #0b0a08;
+        color: #f3ece0;
+        font-family: 'Helvetica Neue', Arial, sans-serif;
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        padding: 2rem 1rem;
+      }
+      .card {
+        width: min(32rem, 100%);
+        background: #161311;
+        border: 1px solid #2a2520;
+        border-radius: 8px;
+        padding: clamp(1.5rem, 5vw, 2.5rem);
+        text-align: center;
+      }
+      .eyebrow {
+        font-size: 0.75rem;
+        letter-spacing: 0.2em;
+        text-transform: uppercase;
+        color: #c9a35c;
+        margin-bottom: 0.75rem;
+      }
+      h1 {
+        font-family: Georgia, 'Times New Roman', serif;
+        font-size: clamp(1.5rem, 4.5vw, 2rem);
+        font-weight: 400;
+        margin: 0 0 1rem;
+      }
+      p {
+        color: #b0a695;
+        line-height: 1.6;
+        margin: 0 0 1rem;
+      }
+      .actions { margin-top: 1.5rem; }
+      a.btn {
+        display: inline-block;
+        padding: 0.85rem 1.4rem;
+        background: #c9a35c;
+        color: #161311;
+        text-decoration: none;
+        font-size: 0.78rem;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+        font-weight: 700;
+        border-radius: 3px;
+      }
+      a.btn:hover { background: #e6c785; }
+      a.link {
+        color: #e6c785;
+        text-decoration: underline;
+        font-size: 0.95rem;
+      }
+      footer {
+        margin-top: 1.75rem;
+        font-size: 0.78rem;
+        color: #b0a695;
+        line-height: 1.55;
+      }
+    </style>
+  </head>
+  <body>
+    <main class="card">
+      <div class="eyebrow">Modern Classic</div>
+
+      {state === 'unsubscribed' && (
+        <>
+          <h1>You've been unsubscribed</h1>
+          <p>
+            You won't receive any more marketing emails from Modern Classic Barbershop. Sorry to
+            see you go — thanks for stopping by the shop.
+          </p>
+          <p>
+            You'll still get transactional emails (booking confirmations, sign-in links, anything
+            you actively requested).
+          </p>
+          <div class="actions">
+            <a class="link" href={resubscribeUrl}>I changed my mind — resubscribe me</a>
+          </div>
+        </>
+      )}
+
+      {state === 'resubscribed' && (
+        <>
+          <h1>Welcome back</h1>
+          <p>
+            You're resubscribed to Modern Classic emails — appointment reminders, the occasional
+            review request, and a heads-up when we launch something new in the shop.
+          </p>
+          <div class="actions">
+            <a class="btn" href="https://mdrnclassic.com/">Back to Modern Classic</a>
+          </div>
+        </>
+      )}
+
+      {state === 'error' && (
+        <>
+          <h1>This link isn't valid</h1>
+          <p>{errorMessage}</p>
+          <p>
+            If you'd like to unsubscribe but the link won't load, please reply to one of our
+            emails and we'll handle it manually within a day.
+          </p>
+          <div class="actions">
+            <a class="btn" href="https://mdrnclassic.com/">Back to Modern Classic</a>
+          </div>
+        </>
+      )}
+
+      <footer>
+        Modern Classic Barbershop &amp; Shave Parlor<br />
+        819 Linden Avenue · Zanesville, OH 43701 · 740-297-4462
+      </footer>
+    </main>
+  </body>
+</html>

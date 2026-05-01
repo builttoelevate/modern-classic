@@ -30,6 +30,12 @@ export interface WizardCustomerPayload {
    * overwrite). Only relevant for returning customers.
    */
   updateContact?: boolean;
+  /**
+   * Phase 7 — true when the customer ticked the marketing-consent
+   * checkbox. The API will only ever flip false → true; it cannot revoke
+   * consent. Unsubscribe is its own flow.
+   */
+  marketingConsent?: boolean;
 }
 
 export interface CreateBookingRequest {
