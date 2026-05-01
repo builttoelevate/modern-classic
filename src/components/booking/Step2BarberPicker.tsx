@@ -1,4 +1,6 @@
-import type { Barber, Service, ServiceVariation } from '../../lib/square/types';
+import { useEffect, useMemo, useState } from 'react';
+import type { AvailabilitySlot, Barber, Service, ServiceVariation } from '../../lib/square/types';
+import { formatRelativeSlot, isWithinDays } from '../../lib/availability/timing';
 
 interface Props {
   service: Service;
@@ -18,6 +20,9 @@ function initials(name: string): string {
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 }
 
+const AVAIL_WINDOW_DAYS = 14;
+const AVAIL_VISIBLE_DAYS = 7;
+
 export function Step2BarberPicker({
   service,
   barbers,
@@ -27,6 +32,81 @@ export function Step2BarberPicker({
   onPickAny,
   onPickAnyMulti,
 }: Props) {
+  // (barberId, variationId) pairs we need availability for. Memo keyed on
+  // service id so picking a different service in step 1 retriggers the
+  // fetch. Per-barber-variation services use one (barber, variation) pair
+  // per variation; shared-variation services use the single variation
+  // against every eligible barber.
+  const lookups = useMemo<Array<{ barberId: string; variationId: string }>>(() => {
+    if (service.hasPerBarberVariations) {
+      const out: Array<{ barberId: string; variationId: string }> = [];
+      for (const v of service.variations) {
+        const id = v.eligibleTeamMemberIds[0];
+        if (id) out.push({ barberId: id, variationId: v.id });
+      }
+      return out;
+    }
+    const variation = service.variations[0];
+    if (!variation) return [];
+    const eligibleIds =
+      variation.eligibleTeamMemberIds.length > 0
+        ? variation.eligibleTeamMemberIds
+        : barbers.map((b) => b.id);
+    return eligibleIds.map((barberId) => ({ barberId, variationId: variation.id }));
+  }, [service.id, service.hasPerBarberVariations, service.variations, barbers]);
+
+  // Per-barber soonest slot (null = no slot found in window; undefined = still loading).
+  const [availMap, setAvailMap] = useState<Record<string, AvailabilitySlot | null | undefined>>({});
+
+  useEffect(() => {
+    if (lookups.length === 0) return;
+    let cancelled = false;
+    // Reset to "loading" for every visible barber when service changes.
+    setAvailMap(Object.fromEntries(lookups.map((l) => [l.barberId, undefined])));
+
+    const startAt = new Date();
+    const endAt = new Date(Date.now() + AVAIL_WINDOW_DAYS * 24 * 60 * 60 * 1000);
+
+    Promise.all(
+      lookups.map(async ({ barberId, variationId }): Promise<[string, AvailabilitySlot | null]> => {
+        try {
+          const url = new URL('/api/square/availability', window.location.origin);
+          url.searchParams.set('serviceVariationId', variationId);
+          url.searchParams.set('teamMemberId', barberId);
+          url.searchParams.set('startAt', startAt.toISOString());
+          url.searchParams.set('endAt', endAt.toISOString());
+          const res = await fetch(url.toString());
+          if (!res.ok) return [barberId, null];
+          const data = (await res.json()) as { ok: boolean; slots?: AvailabilitySlot[] };
+          if (!data.ok || !data.slots || data.slots.length === 0) return [barberId, null];
+          // searchAvailability returns slots sorted by startAt; take the first.
+          return [barberId, data.slots[0]!];
+        } catch {
+          return [barberId, null];
+        }
+      }),
+    ).then((entries) => {
+      if (cancelled) return;
+      setAvailMap(Object.fromEntries(entries));
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [lookups]);
+
+  // Soonest slot across all the lookups — for the "Any barber" tile.
+  const anySoonest = useMemo<AvailabilitySlot | null | undefined>(() => {
+    const values = Object.values(availMap);
+    if (values.length === 0) return undefined;
+    if (values.some((v) => v === undefined)) return undefined;
+    let best: AvailabilitySlot | null = null;
+    for (const v of values) {
+      if (v && (!best || v.startAtUtc < best.startAtUtc)) best = v;
+    }
+    return best;
+  }, [availMap]);
+
   // Per-barber variation services: each variation has exactly one team
   // member id. Picking a barber resolves which variation to use.
   if (service.hasPerBarberVariations) {
@@ -67,6 +147,7 @@ export function Step2BarberPicker({
             <span className="bw-barber-text">
               <span className="bw-card-name">Any barber</span>
               <span className="bw-card-meta">First available · {priceNote}</span>
+              <NextAvailable slot={anySoonest} />
             </span>
           </button>
           {pairs.map(({ barber, variation }) => {
@@ -77,6 +158,7 @@ export function Step2BarberPicker({
                 barber={barber}
                 priceNote={variation.priceCents !== null ? `$${(variation.priceCents / 100).toFixed(0)} · ${variation.durationMinutes} min` : 'Variable pricing'}
                 active={active}
+                nextSlot={availMap[barber.id]}
                 onClick={() => onPickBarber(barber, variation)}
               />
             );
@@ -109,6 +191,7 @@ export function Step2BarberPicker({
           <span className="bw-barber-text">
             <span className="bw-card-name">Any barber</span>
             <span className="bw-card-meta">First available</span>
+            <NextAvailable slot={anySoonest} />
           </span>
         </button>
         {eligible.map((barber) => {
@@ -119,6 +202,7 @@ export function Step2BarberPicker({
               barber={barber}
               priceNote={variation.priceCents !== null ? `$${(variation.priceCents / 100).toFixed(0)} · ${variation.durationMinutes} min` : 'Variable pricing'}
               active={active}
+              nextSlot={availMap[barber.id]}
               onClick={() => onPickBarber(barber, variation)}
             />
           );
@@ -143,11 +227,13 @@ function BarberCard({
   barber,
   priceNote,
   active,
+  nextSlot,
   onClick,
 }: {
   barber: Barber;
   priceNote: string;
   active: boolean;
+  nextSlot: AvailabilitySlot | null | undefined;
   onClick: () => void;
 }) {
   return (
@@ -162,7 +248,38 @@ function BarberCard({
       <span className="bw-barber-text">
         <span className="bw-card-name">{barber.displayName}</span>
         <span className="bw-card-meta">{barber.role} · {priceNote}</span>
+        <NextAvailable slot={nextSlot} />
       </span>
     </button>
+  );
+}
+
+/**
+ * Inline 'Next available: {when}' line under each barber card.
+ *
+ *   slot === undefined  → still loading (renders subtle "Checking…" so the
+ *                          card doesn't visibly resize when data arrives)
+ *   slot === null       → no slot found within the search window — render
+ *                          nothing
+ *   slot far-future     → hidden if outside the 7-day visibility window
+ *                          (matches the rest of the site's threshold)
+ */
+function NextAvailable({ slot }: { slot: AvailabilitySlot | null | undefined }) {
+  if (slot === undefined) {
+    return (
+      <span className="bw-avail-line bw-avail-line--loading" aria-hidden="true">
+        Checking availability…
+      </span>
+    );
+  }
+  if (!slot) return null;
+  if (!isWithinDays(slot.startAtUtc, AVAIL_VISIBLE_DAYS)) return null;
+  const label = formatRelativeSlot(slot.startAtUtc);
+  return (
+    <span className="bw-avail-line" aria-label={`Next available: ${label}`}>
+      <span className="bw-avail-line__dot" aria-hidden="true" />
+      <span className="bw-avail-line__label">Next available:</span>{' '}
+      <span className="bw-avail-line__when">{label}</span>
+    </span>
   );
 }
