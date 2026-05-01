@@ -493,6 +493,14 @@ export default function BookingWizard({ services, barbers, location, reschedule,
           blockedSlots={state.blockedSlots}
           location={location}
           onPick={(slot: AvailabilitySlot) => dispatch({ type: 'SET_SLOT', slot })}
+          serviceName={state.selectedService?.name ?? 'a haircut'}
+          barberName={state.selectedBarber?.displayName ?? 'any barber'}
+          prefillName={[state.customer.givenName, state.customer.familyName]
+            .filter(Boolean)
+            .join(' ')
+            .trim()}
+          prefillEmail={state.customer.email}
+          prefillPhone={state.customer.phone}
         />
       )}
 

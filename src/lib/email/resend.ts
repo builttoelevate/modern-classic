@@ -106,3 +106,28 @@ export async function sendMagicLink(input: SendMagicLinkInput): Promise<{ id: st
     text,
   });
 }
+
+export interface SendWaitlistInput {
+  to: string;
+  customerName: string;
+  customerEmail: string;
+  customerPhone: string;
+  serviceName: string;
+  barberName: string;
+  preferredDate?: string;
+  note?: string;
+  submittedAt: string;
+}
+
+export async function sendWaitlistRequest(input: SendWaitlistInput): Promise<{ id: string }> {
+  const { waitlistRequestHtml, waitlistRequestText } = await import('./templates');
+  const html = waitlistRequestHtml(input);
+  const text = waitlistRequestText(input);
+  return sendEmail({
+    to: input.to,
+    subject: `Waitlist request — ${input.customerName} (${input.serviceName} with ${input.barberName})`,
+    html,
+    text,
+    replyTo: input.customerEmail,
+  });
+}

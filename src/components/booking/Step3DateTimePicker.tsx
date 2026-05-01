@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { AvailabilitySlot, DayOfWeek, Location, ServiceVariation } from '../../lib/square/types';
+import { WaitlistSheet } from './WaitlistSheet';
 
 interface Props {
   /**
@@ -15,6 +16,14 @@ interface Props {
   blockedSlots: string[];
   location: Location | null;
   onPick: (slot: AvailabilitySlot) => void;
+  /** Service name for the waitlist email subject + body. */
+  serviceName: string;
+  /** Barber name (or "any barber") for the waitlist email body. */
+  barberName: string;
+  /** Optional prefill from earlier wizard steps so the waitlist form is faster. */
+  prefillName?: string;
+  prefillEmail?: string;
+  prefillPhone?: string;
 }
 
 const SHOP_TZ = 'America/New_York';
@@ -181,6 +190,11 @@ export function Step3DateTimePicker({
   blockedSlots,
   location,
   onPick,
+  serviceName,
+  barberName,
+  prefillName,
+  prefillEmail,
+  prefillPhone,
 }: Props) {
   const variationKey = variations.map((v) => v.id).join(',');
   const today = useMemo(() => todayInShopTz(), []);
@@ -195,6 +209,9 @@ export function Step3DateTimePicker({
   const [monthState, setMonthState] = useState<MonthState>({ status: 'idle', slots: [] });
   const [activeDateKey, setActiveDateKey] = useState<string | null>(null);
   const requestSeq = useRef(0);
+  const [searchingNext, setSearchingNext] = useState(false);
+  const [nextSearchError, setNextSearchError] = useState<string | null>(null);
+  const [waitlistOpen, setWaitlistOpen] = useState(false);
 
   const monthDays = useMemo(() => buildMonthDays(view.year, view.month, location), [view, location]);
 
@@ -271,6 +288,41 @@ export function Step3DateTimePicker({
 
   const canPrev = !(view.year === minMonth.year && view.month === minMonth.month);
   const canNext = !(view.year === maxMonth.year && view.month === maxMonth.month);
+
+  // "Go to next available" — server hits Square across rolling 30-day windows
+  // up to 60 days out and returns the soonest slot. We then jump the calendar
+  // view to that month and let the existing default-pick effect highlight the
+  // first day with openings.
+  const goToNextAvailable = async () => {
+    if (variations.length === 0) return;
+    setSearchingNext(true);
+    setNextSearchError(null);
+    try {
+      const params = new URLSearchParams();
+      params.set('serviceVariationId', variations.map((v) => v.id).join(','));
+      if (teamMemberId) params.set('teamMemberId', teamMemberId);
+      const res = await fetch(`/api/square/next-available?${params.toString()}`);
+      const data = (await res.json()) as { ok: boolean; slot?: AvailabilitySlot | null; error?: { detail: string } };
+      if (!data.ok) {
+        setNextSearchError(data.error?.detail || "Couldn't reach the calendar. Try again in a moment.");
+        return;
+      }
+      if (!data.slot) {
+        setNextSearchError(
+          "No openings in the next 60 days for this combo. Join the waitlist and we'll text or email when one frees up.",
+        );
+        return;
+      }
+      const slotUtc = new Date(data.slot.startAtUtc);
+      const parts = getLocalParts(slotUtc);
+      setView({ year: parts.year, month: parts.month });
+      setActiveDateKey(`${parts.year}-${pad(parts.month)}-${pad(parts.day)}`);
+    } catch (err) {
+      setNextSearchError(err instanceof Error ? err.message : 'Network error. Please try again.');
+    } finally {
+      setSearchingNext(false);
+    }
+  };
 
   const activeSlots = activeDateKey ? slotsByDate.get(activeDateKey) ?? [] : [];
   const monthHasSlots = monthState.slots.length > 0;
@@ -376,21 +428,48 @@ export function Step3DateTimePicker({
         {monthIsEmpty && (
           <div className="bw-empty" style={{ marginTop: 'var(--space-4)' }}>
             <strong>No openings in {MONTH_LABELS[view.month - 1]}.</strong>
-            {canNext ? (
-              <>
-                <span>Try the next month, or call <a className="link-gold" href="tel:+17402974462">740-297-4462</a>.</span>
-                <div className="bw-empty-suggestions">
-                  <button type="button" onClick={() => setView((v) => nextMonth(v))}>
-                    See {MONTH_LABELS[nextMonth(view).month - 1]} {nextMonth(view).year} →
-                  </button>
-                </div>
-              </>
-            ) : (
-              <span>Please call <a className="link-gold" href="tel:+17402974462">740-297-4462</a> to check further out.</span>
+            <span>
+              Jump to the next open date, or join the waitlist and we'll reach
+              out the moment something frees up.
+            </span>
+            {nextSearchError && (
+              <span className="bw-empty__error" role="alert">
+                {nextSearchError}
+              </span>
             )}
+            <div className="bw-empty-actions">
+              <button
+                type="button"
+                className="bw-btn"
+                disabled={searchingNext}
+                onClick={goToNextAvailable}
+              >
+                {searchingNext ? 'Searching…' : 'Go to next available →'}
+              </button>
+              <button
+                type="button"
+                className="bw-btn bw-btn--ghost"
+                onClick={() => setWaitlistOpen(true)}
+              >
+                Join the waitlist
+              </button>
+            </div>
+            <span className="bw-empty__or">
+              or call <a className="link-gold" href="tel:+17402974462">740-297-4462</a>
+            </span>
           </div>
         )}
       </div>
+
+      <WaitlistSheet
+        open={waitlistOpen}
+        onClose={() => setWaitlistOpen(false)}
+        serviceName={serviceName}
+        barberName={barberName}
+        prefillName={prefillName}
+        prefillEmail={prefillEmail}
+        prefillPhone={prefillPhone}
+      />
 
       {activeDateKey && monthState.status === 'loaded' && activeSlots.length > 0 && (
         <div className="bw-cal-slots">

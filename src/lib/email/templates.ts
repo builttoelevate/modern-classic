@@ -116,3 +116,83 @@ Modern Classic Barbershop & Shave Parlor
 819 Linden Avenue · Zanesville, OH 43701
 740-297-4462`;
 }
+
+export interface WaitlistRequestProps {
+  customerName: string;
+  customerEmail: string;
+  customerPhone: string;
+  serviceName: string;
+  barberName: string;
+  preferredDate?: string;
+  note?: string;
+  submittedAt: string;
+}
+
+export function waitlistRequestHtml(p: WaitlistRequestProps): string {
+  const row = (label: string, value: string) => `
+    <tr>
+      <td style="padding:8px 12px;border-bottom:1px solid ${COLORS.border};color:${COLORS.textMuted};font-size:12px;letter-spacing:0.16em;text-transform:uppercase;width:140px;">${escapeHtml(label)}</td>
+      <td style="padding:8px 12px;border-bottom:1px solid ${COLORS.border};color:${COLORS.text};font-size:15px;">${escapeHtml(value)}</td>
+    </tr>`;
+  const optionalNote = p.note?.trim()
+    ? `<tr><td colspan="2" style="padding:14px 12px;color:${COLORS.text};font-size:14px;line-height:1.55;background:${COLORS.bg};">${escapeHtml(p.note.trim())}</td></tr>`
+    : '';
+  return `<!doctype html>
+<html lang="en">
+  <head><meta charset="utf-8" /><title>Waitlist request — Modern Classic</title></head>
+  <body style="margin:0;padding:0;background:${COLORS.bg};color:${COLORS.text};font-family:'Helvetica Neue',Arial,sans-serif;">
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background:${COLORS.bg};padding:32px 16px;">
+      <tr><td align="center">
+        <table role="presentation" width="560" cellspacing="0" cellpadding="0" border="0" style="max-width:560px;background:${COLORS.card};border:1px solid ${COLORS.border};border-radius:8px;overflow:hidden;">
+          <tr><td style="padding:24px 28px 12px;border-bottom:1px solid ${COLORS.border};">
+            <div style="font-family:Georgia,'Times New Roman',serif;font-size:20px;color:${COLORS.text};">New waitlist request</div>
+            <div style="margin-top:4px;font-size:12px;letter-spacing:0.18em;text-transform:uppercase;color:${COLORS.gold};">Modern Classic</div>
+          </td></tr>
+          <tr><td style="padding:18px 28px 4px;color:${COLORS.text};font-size:15px;line-height:1.55;">
+            <p style="margin:0 0 14px;">${escapeHtml(p.customerName)} couldn't find a time on the booking calendar and asked to be added to the waitlist. Reach out when an opening appears.</p>
+          </td></tr>
+          <tr><td style="padding:0 28px 18px;">
+            <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="border:1px solid ${COLORS.border};border-radius:6px;overflow:hidden;">
+              ${row('Customer', p.customerName)}
+              ${row('Email', p.customerEmail)}
+              ${row('Phone', p.customerPhone)}
+              ${row('Service', p.serviceName)}
+              ${row('Barber', p.barberName)}
+              ${p.preferredDate ? row('Preferred date', p.preferredDate) : ''}
+              ${row('Submitted', p.submittedAt)}
+              ${optionalNote}
+            </table>
+          </td></tr>
+          <tr><td style="padding:18px 28px 24px;border-top:1px solid ${COLORS.border};text-align:center;">
+            <p style="margin:0;font-size:12px;line-height:1.6;color:${COLORS.textMuted};">
+              Reply directly to this email to reach ${escapeHtml(p.customerName)}.<br />
+              Modern Classic Barbershop &amp; Shave Parlor · 740-297-4462
+            </p>
+          </td></tr>
+        </table>
+      </td></tr>
+    </table>
+  </body>
+</html>`;
+}
+
+export function waitlistRequestText(p: WaitlistRequestProps): string {
+  const lines = [
+    `New waitlist request — Modern Classic`,
+    ``,
+    `${p.customerName} couldn't find a time on the booking calendar and asked to be added to the waitlist.`,
+    ``,
+    `Customer: ${p.customerName}`,
+    `Email:    ${p.customerEmail}`,
+    `Phone:    ${p.customerPhone}`,
+    `Service:  ${p.serviceName}`,
+    `Barber:   ${p.barberName}`,
+  ];
+  if (p.preferredDate) lines.push(`Preferred date: ${p.preferredDate}`);
+  lines.push(`Submitted: ${p.submittedAt}`);
+  if (p.note?.trim()) {
+    lines.push('', `Note: ${p.note.trim()}`);
+  }
+  lines.push('', `Reply to this email to reach ${p.customerName} directly.`);
+  return lines.join('\n');
+}
