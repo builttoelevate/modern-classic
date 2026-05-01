@@ -49,9 +49,12 @@ export default function MyBookingsList({ initial, basePath }: Props) {
   const handleCancel = async (booking: BookingDetail) => {
     setBusyId(booking.id);
     try {
+      // Content-Type: application/json keeps Astro's CSRF protection from
+      // treating this bodyless POST as a cross-site form submission.
       const res = await fetch(`/api/square/bookings/${encodeURIComponent(booking.id)}/cancel`, {
         method: 'POST',
         credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
       });
       const data = (await res.json()) as CancelApiResponse;
       if (data.ok) {

@@ -108,6 +108,7 @@ Astro.response.headers.append('Set-Cookie', refreshSessionCookie(session));
         await fetch('/api/auth/logout', {
           method: 'POST',
           credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' },
         });
       } catch {
         // best-effort — fall through to redirect
