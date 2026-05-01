@@ -2,7 +2,10 @@ import type { APIRoute } from 'astro';
 import { signMagicToken } from '../../../lib/auth/magicLink';
 import { isAuthConfigured } from '../../../lib/auth/session';
 import { sendMagicLink } from '../../../lib/email/resend';
-import { findCustomerByEmail } from '../../../lib/square/customers';
+import {
+  findCustomerByEmail,
+  findCustomerByPhone,
+} from '../../../lib/square/customers';
 import { redactEmail } from '../../../lib/booking/log';
 
 export const prerender = false;
@@ -17,14 +20,20 @@ const lastRequestedAt = new Map<string, number>();
 
 function pruneRateLimitMap(now: number): void {
   if (lastRequestedAt.size < 1024) return;
-  for (const [email, ts] of lastRequestedAt) {
-    if (now - ts > RATE_LIMIT_SECONDS * 1000) lastRequestedAt.delete(email);
+  for (const [k, ts] of lastRequestedAt) {
+    if (now - ts > RATE_LIMIT_SECONDS * 1000) lastRequestedAt.delete(k);
   }
 }
 
-function isValidEmail(s: unknown): s is string {
-  if (typeof s !== 'string') return false;
+function looksLikeEmail(s: string): boolean {
   return /^\S+@\S+\.\S+$/.test(s.trim());
+}
+
+function looksLikePhone(s: string): boolean {
+  // 7+ digits is enough to call something a phone number — most US shop
+  // numbers are 10. Accept formatted variants like "(740) 297-4462".
+  const digits = s.replace(/[^0-9]/g, '');
+  return digits.length >= 7 && digits.length <= 16;
 }
 
 function siteOriginFromRequest(request: Request): string {
@@ -32,11 +41,9 @@ function siteOriginFromRequest(request: Request): string {
   if (typeof env === 'string' && /^https?:\/\//i.test(env)) {
     return env.replace(/\/$/, '');
   }
-  // Vercel passes the deployment host; honor x-forwarded headers.
   const proto = request.headers.get('x-forwarded-proto') ?? 'https';
   const host = request.headers.get('x-forwarded-host') ?? request.headers.get('host');
   if (host) return `${proto}://${host}`.replace(/\/$/, '');
-  // Fallback to URL parsed from the request.
   try {
     const url = new URL(request.url);
     return `${url.protocol}//${url.host}`.replace(/\/$/, '');
@@ -48,6 +55,12 @@ function siteOriginFromRequest(request: Request): string {
 function logAuth(payload: Record<string, unknown>): void {
   // eslint-disable-next-line no-console
   console.log(`[AUTH] ${JSON.stringify({ ts: new Date().toISOString(), ...payload })}`);
+}
+
+function redactPhone(phone: string): string {
+  const digits = phone.replace(/[^0-9]/g, '');
+  if (digits.length < 4) return '***';
+  return `***${digits.slice(-4)}`;
 }
 
 export const POST: APIRoute = async ({ request }) => {
@@ -67,20 +80,52 @@ export const POST: APIRoute = async ({ request }) => {
       { status: 400 },
     );
   }
-  const email = (body as { email?: unknown })?.email;
-  if (!isValidEmail(email)) {
+
+  // Accept either an explicit `email` / `phone` field OR a generic
+  // `identifier` that we sniff. The form posts `identifier` so customers
+  // can put either one in the same field.
+  const b = (body ?? {}) as Record<string, unknown>;
+  const rawEmail = typeof b.email === 'string' ? b.email : '';
+  const rawPhone = typeof b.phone === 'string' ? b.phone : '';
+  const rawIdentifier = typeof b.identifier === 'string' ? b.identifier : '';
+  const identifier = (rawEmail || rawPhone || rawIdentifier).trim();
+
+  if (!identifier) {
     return Response.json(
-      { ok: false, error: { code: 'BAD_REQUEST', detail: 'A valid email is required.' } },
+      {
+        ok: false,
+        error: {
+          code: 'BAD_REQUEST',
+          detail: 'Enter the email or phone number you used to book.',
+        },
+      },
       { status: 400 },
     );
   }
 
-  const normalized = email.trim().toLowerCase();
+  const isEmail = rawEmail || (!rawPhone && looksLikeEmail(identifier));
+  const isPhone = !isEmail && (rawPhone || looksLikePhone(identifier));
+
+  if (!isEmail && !isPhone) {
+    return Response.json(
+      {
+        ok: false,
+        error: {
+          code: 'BAD_REQUEST',
+          detail: 'That doesn\'t look like an email or a phone number.',
+        },
+      },
+      { status: 400 },
+    );
+  }
+
+  const rateKey = isEmail
+    ? `e:${identifier.toLowerCase()}`
+    : `p:${identifier.replace(/[^0-9]/g, '').slice(-10)}`;
   const now = Date.now();
-  const last = lastRequestedAt.get(normalized);
+  const last = lastRequestedAt.get(rateKey);
   if (last && now - last < RATE_LIMIT_SECONDS * 1000) {
     const retryAfter = Math.ceil((RATE_LIMIT_SECONDS * 1000 - (now - last)) / 1000);
-    logAuth({ phase: 'rate-limited', email: redactEmail(normalized), retryAfter });
     return Response.json(
       {
         ok: false,
@@ -92,49 +137,88 @@ export const POST: APIRoute = async ({ request }) => {
       { status: 429, headers: { 'Retry-After': String(retryAfter) } },
     );
   }
-  lastRequestedAt.set(normalized, now);
+  lastRequestedAt.set(rateKey, now);
   pruneRateLimitMap(now);
 
-  // Always return the same response shape — anti-enumeration. Send the
-  // email asynchronously after we know the customer exists.
+  // Find the customer (by whichever path applies), then send the magic
+  // link to whatever email Square has on file. We DO surface a specific
+  // 'no email on file' response when the user signed in by phone — that's
+  // a real dead-end for them and the generic 'check your email' message
+  // would be cruel. The phone path slightly weakens anti-enumeration but
+  // phone numbers aren't trivially enumerable like emails are.
   try {
-    const customer = await findCustomerByEmail(normalized);
-    if (customer) {
-      const token = signMagicToken({ email: normalized });
-      const origin = siteOriginFromRequest(request);
-      const magicUrl = `${origin}/auth/verify?token=${encodeURIComponent(token)}`;
-      const customerName = customer.given_name?.trim();
-      try {
-        const result = await sendMagicLink({
-          to: normalized,
-          magicUrl,
-          customerName: customerName || undefined,
-        });
-        logAuth({
-          phase: 'magic-link-sent',
-          email: redactEmail(normalized),
-          messageId: result.id,
-        });
-      } catch (err) {
-        // Email failure is the only reason to surface a 5xx, but we
-        // still don't reveal whether the email exists. Log and pretend
-        // it worked — the user will retry if no email arrives. Phase 6
-        // can wire alerting.
-        const detail = err instanceof Error ? err.message : String(err);
-        const body =
-          err && typeof err === 'object' && 'body' in err && typeof (err as { body?: unknown }).body === 'string'
-            ? (err as { body: string }).body
-            : undefined;
-        logAuth({ phase: 'email-failed', email: redactEmail(normalized), detail, body });
-      }
-    } else {
-      logAuth({ phase: 'no-customer-record', email: redactEmail(normalized) });
+    const customer = isEmail
+      ? await findCustomerByEmail(identifier)
+      : await findCustomerByPhone(identifier);
+
+    if (!customer) {
+      logAuth({
+        phase: 'no-customer-record',
+        identifier: isEmail ? redactEmail(identifier) : redactPhone(identifier),
+        method: isEmail ? 'email' : 'phone',
+      });
+      return Response.json(GENERIC_OK, { status: 200 });
+    }
+
+    const customerEmail = (customer.email_address ?? '').trim().toLowerCase();
+    if (!customerEmail) {
+      logAuth({
+        phase: 'no-email-on-file',
+        identifier: isEmail ? redactEmail(identifier) : redactPhone(identifier),
+        method: isEmail ? 'email' : 'phone',
+        customerId: customer.id,
+      });
+      return Response.json(
+        {
+          ok: false,
+          error: {
+            code: 'NO_EMAIL_ON_FILE',
+            detail:
+              "We found your account but there's no email on file — sign-in links go by email. Please call the shop at 740-297-4462 and we'll add one in a minute.",
+          },
+        },
+        { status: 409 },
+      );
+    }
+
+    const token = signMagicToken({ email: customerEmail });
+    const origin = siteOriginFromRequest(request);
+    const magicUrl = `${origin}/auth/verify?token=${encodeURIComponent(token)}`;
+    const customerName = customer.given_name?.trim();
+    try {
+      const result = await sendMagicLink({
+        to: customerEmail,
+        magicUrl,
+        customerName: customerName || undefined,
+      });
+      logAuth({
+        phase: 'magic-link-sent',
+        email: redactEmail(customerEmail),
+        method: isEmail ? 'email' : 'phone',
+        messageId: result.id,
+      });
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : String(err);
+      const failBody =
+        err && typeof err === 'object' && 'body' in err && typeof (err as { body?: unknown }).body === 'string'
+          ? (err as { body: string }).body
+          : undefined;
+      logAuth({
+        phase: 'email-failed',
+        email: redactEmail(customerEmail),
+        method: isEmail ? 'email' : 'phone',
+        detail,
+        body: failBody,
+      });
     }
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err);
-    logAuth({ phase: 'lookup-failed', email: redactEmail(normalized), detail });
-    // Fall through to the generic-ok response. We don't want lookup
-    // errors to leak whether the address is registered.
+    logAuth({
+      phase: 'lookup-failed',
+      identifier: isEmail ? redactEmail(identifier) : redactPhone(identifier),
+      method: isEmail ? 'email' : 'phone',
+      detail,
+    });
   }
 
   return Response.json(GENERIC_OK, { status: 200 });

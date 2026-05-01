@@ -45,14 +45,75 @@ export type MarketingConsentDecision =
   | { kind: 'failed'; reason: string };
 
 export async function findCustomerByEmail(email: string): Promise<Customer | null> {
-  const res = await squareFetch<SearchCustomersResponse>('/v2/customers/search', {
+  const normalized = email.trim().toLowerCase();
+  if (!normalized) return null;
+
+  // Try exact first — fastest, deterministic when Square's stored email
+  // matches byte-for-byte.
+  const exact = await squareFetch<SearchCustomersResponse>('/v2/customers/search', {
     method: 'POST',
     body: {
-      query: { filter: { email_address: { exact: email } } },
+      query: { filter: { email_address: { exact: normalized } } },
       limit: 1,
     },
   });
-  return res.customers?.[0] ?? null;
+  if (exact.customers && exact.customers.length > 0) return exact.customers[0];
+
+  // Fuzzy fallback for case/whitespace quirks Square's exact filter
+  // sometimes misses. We still post-filter by case-insensitive equality so
+  // we don't accidentally match a different customer whose email
+  // shares a substring.
+  const fuzzy = await squareFetch<SearchCustomersResponse>('/v2/customers/search', {
+    method: 'POST',
+    body: {
+      query: { filter: { email_address: { fuzzy: normalized } } },
+      limit: 20,
+    },
+  });
+  for (const c of fuzzy.customers ?? []) {
+    if ((c.email_address ?? '').trim().toLowerCase() === normalized) return c;
+  }
+  return null;
+}
+
+/**
+ * Lookup by phone — used by the customer portal sign-in flow as a
+ * fallback when an existing client doesn't remember which email they
+ * used to book (or if they were booked phone-only and have no email
+ * on file at all). Tries Square's exact filter first, then fuzzy.
+ *
+ * Returns the customer; the caller decides what to do if there's no
+ * email on file. We don't send SMS — that needs a separate provider.
+ */
+export async function findCustomerByPhone(phone: string): Promise<Customer | null> {
+  const e164 = normalizePhone(phone);
+  if (!e164) return null;
+
+  // Square's phone exact filter expects E.164 format. We compare against
+  // the trailing 10 digits below for the fuzzy pass since shop staff
+  // may have entered the number any-which-way over the years.
+  const exact = await squareFetch<SearchCustomersResponse>('/v2/customers/search', {
+    method: 'POST',
+    body: {
+      query: { filter: { phone_number: { exact: e164 } } },
+      limit: 1,
+    },
+  });
+  if (exact.customers && exact.customers.length > 0) return exact.customers[0];
+
+  const fuzzy = await squareFetch<SearchCustomersResponse>('/v2/customers/search', {
+    method: 'POST',
+    body: {
+      query: { filter: { phone_number: { fuzzy: e164 } } },
+      limit: 20,
+    },
+  });
+  const targetTail = e164.replace(/\D/g, '').slice(-10);
+  for (const c of fuzzy.customers ?? []) {
+    const candidateTail = (c.phone_number ?? '').replace(/\D/g, '').slice(-10);
+    if (candidateTail && candidateTail === targetTail) return c;
+  }
+  return null;
 }
 
 interface RetrieveCustomerResponse {

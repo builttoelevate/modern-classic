@@ -28,21 +28,22 @@ if (session) {
       <div class="auth-eyebrow">Customer sign in</div>
       <h1>Manage your bookings</h1>
       <p class="auth-body">
-        Enter the email you used to book. We'll send you a one-tap sign-in link.
+        Enter the email <em>or</em> phone number you used to book. We'll send a
+        one-tap sign-in link to the email on your account.
       </p>
 
       <form id="signin-form" class="signin-form" novalidate>
-        <label for="email">Email</label>
+        <label for="identifier">Email or phone</label>
         <input
-          id="email"
-          name="email"
-          type="email"
+          id="identifier"
+          name="identifier"
+          type="text"
           inputmode="email"
           autocomplete="email"
           autocapitalize="none"
           spellcheck="false"
           required
-          placeholder="you@example.com"
+          placeholder="you@example.com  or  (740) 555‑0123"
         />
         <button type="submit" class="auth-btn" data-submit-label="Send me a sign-in link">
           Send me a sign-in link
@@ -52,14 +53,24 @@ if (session) {
 
       <div class="signin-success" hidden>
         <p>
-          <strong>Check your email.</strong> If <span data-success-email></span>{' '}
+          <strong>Check your email.</strong> If <span data-success-id></span>{' '}
           matches a customer on file, we just sent a sign-in link. It expires in
           15&nbsp;minutes.
         </p>
+        <p class="signin-success__hint">
+          Don't see it? Check your spam folder — it'll come from
+          <strong>bookings@designedtoelevate.co</strong>.
+        </p>
         <button type="button" class="auth-btn auth-btn--ghost" data-resend>
-          Use a different email
+          Try a different email or phone
         </button>
       </div>
+
+      <p class="auth-help">
+        Trouble signing in? Call the shop at{' '}
+        <a class="link-gold" href="tel:+17402974462">740-297-4462</a>{' '}
+        and we'll get your account sorted in a minute.
+      </p>
 
       <p class="auth-fineprint">
         New to Modern Classic? <a class="link-gold" href={`${base}/book`}>Book a visit</a> first
@@ -78,7 +89,7 @@ if (session) {
     if (!card || !form || !error) return;
 
     const successPanel = card.querySelector('.signin-success');
-    const successEmail = card.querySelector('[data-success-email]');
+    const successId = card.querySelector('[data-success-id]');
     const resendBtn = card.querySelector('[data-resend]');
     const submit = form.querySelector('button[type="submit"]');
 
@@ -90,13 +101,22 @@ if (session) {
       error.textContent = '';
       error.hidden = true;
     };
+    const looksLikeEmail = (s) => /^\S+@\S+\.\S+$/.test(s);
+    const looksLikePhone = (s) => {
+      const d = s.replace(/[^0-9]/g, '');
+      return d.length >= 7 && d.length <= 16;
+    };
 
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
       clearError();
-      const email = form.email.value.trim();
-      if (!/^\S+@\S+\.\S+$/.test(email)) {
-        showError('Please enter a valid email address.');
+      const raw = form.identifier.value.trim();
+      if (!raw) {
+        showError('Enter the email or phone you used to book.');
+        return;
+      }
+      if (!looksLikeEmail(raw) && !looksLikePhone(raw)) {
+        showError("That doesn't look like an email or a phone number.");
         return;
       }
       submit.disabled = true;
@@ -105,11 +125,19 @@ if (session) {
         const res = await fetch('/api/auth/request', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email }),
+          body: JSON.stringify({ identifier: raw }),
         });
         const data = await res.json();
         if (res.status === 429) {
           showError(data?.error?.detail || 'Please wait a moment before requesting another link.');
+          submit.disabled = false;
+          submit.textContent = submit.dataset.submitLabel;
+          return;
+        }
+        // Phone-path dead end: customer found but no email on file.
+        // Surface the message verbatim so they know to call the shop.
+        if (data?.error?.code === 'NO_EMAIL_ON_FILE') {
+          showError(data.error.detail);
           submit.disabled = false;
           submit.textContent = submit.dataset.submitLabel;
           return;
@@ -120,7 +148,7 @@ if (session) {
           submit.textContent = submit.dataset.submitLabel;
           return;
         }
-        if (successEmail) successEmail.textContent = email;
+        if (successId) successId.textContent = raw;
         if (form) form.hidden = true;
         if (successPanel) successPanel.hidden = false;
       } catch {
@@ -134,10 +162,10 @@ if (session) {
       resendBtn.addEventListener('click', () => {
         if (form) {
           form.hidden = false;
-          form.email.value = '';
+          form.identifier.value = '';
           submit.disabled = false;
           submit.textContent = submit.dataset.submitLabel;
-          form.email.focus();
+          form.identifier.focus();
         }
         if (successPanel) successPanel.hidden = true;
         clearError();
@@ -192,7 +220,7 @@ if (session) {
     text-transform: uppercase;
     color: var(--color-text-muted);
   }
-  .signin-form input[type='email'] {
+  .signin-form input {
     width: 100%;
     padding: 0.85rem 1rem;
     background: var(--color-surface-2);
@@ -203,9 +231,31 @@ if (session) {
     font-family: inherit;
     transition: border-color var(--dur) var(--ease);
   }
-  .signin-form input[type='email']:focus {
+  .signin-form input:focus {
     outline: none;
     border-color: var(--color-gold);
+  }
+  .auth-body em {
+    color: var(--color-gold);
+    font-style: normal;
+    font-weight: 600;
+  }
+  .signin-success__hint {
+    font-size: 0.86rem;
+    color: var(--color-text-muted);
+    line-height: 1.5;
+  }
+  .signin-success__hint strong {
+    color: var(--color-gold-light);
+    font-weight: 600;
+  }
+  .auth-help {
+    margin-top: 1.25rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--color-border);
+    font-size: 0.86rem;
+    color: var(--color-text-muted);
+    line-height: 1.5;
   }
   .auth-btn {
     margin-top: 0.5rem;
