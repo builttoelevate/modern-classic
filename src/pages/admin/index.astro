@@ -1,0 +1,160 @@
+---
+export const prerender = false;
+
+import { checkBasicAuth } from '../../lib/admin/auth';
+
+const auth = checkBasicAuth(Astro.request);
+if (!auth.ok) {
+  return auth.challenge;
+}
+---
+
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>Admin — Modern Classic</title>
+    <style>
+      :root {
+        --bg: #0b0a08;
+        --surface: #161311;
+        --surface-2: #1d1916;
+        --border: #2a2520;
+        --text: #f3ece0;
+        --muted: #b0a695;
+        --dim: #80776a;
+        --gold: #c9a35c;
+        --gold-light: #e6c785;
+      }
+      *, *::before, *::after { box-sizing: border-box; }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font: 16px/1.5 ui-sans-serif, system-ui, sans-serif;
+        min-height: 100vh;
+      }
+      .wrap {
+        max-width: 56rem;
+        margin: 0 auto;
+        padding: clamp(32px, 6vw, 64px) 24px;
+      }
+      .eyebrow {
+        font-size: 0.72rem;
+        letter-spacing: 0.22em;
+        text-transform: uppercase;
+        color: var(--gold);
+        margin: 0 0 8px;
+      }
+      h1 {
+        font-family: Georgia, 'Times New Roman', serif;
+        font-weight: 400;
+        font-size: clamp(1.75rem, 3.5vw, 2.4rem);
+        margin: 0 0 12px;
+      }
+      .sub {
+        color: var(--muted);
+        font-size: 1rem;
+        margin: 0 0 36px;
+        max-width: 38rem;
+      }
+      .cards {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+        gap: 18px;
+      }
+      .card {
+        display: block;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 24px 26px;
+        text-decoration: none;
+        color: inherit;
+        transition:
+          border-color 200ms ease,
+          background 200ms ease,
+          transform 200ms ease;
+      }
+      .card:hover, .card:focus-visible {
+        border-color: var(--gold);
+        background: var(--surface-2);
+        transform: translateY(-2px);
+        outline: none;
+      }
+      .card-eyebrow {
+        font-size: 0.68rem;
+        letter-spacing: 0.2em;
+        text-transform: uppercase;
+        color: var(--gold);
+        margin: 0 0 8px;
+      }
+      .card-title {
+        font-family: Georgia, serif;
+        font-size: 1.4rem;
+        font-weight: 400;
+        margin: 0 0 8px;
+        color: var(--text);
+      }
+      .card-body {
+        color: var(--muted);
+        font-size: 0.92rem;
+        line-height: 1.55;
+        margin: 0 0 14px;
+      }
+      .card-cta {
+        font-size: 0.75rem;
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+        color: var(--gold-light);
+        font-weight: 600;
+      }
+      .card:hover .card-cta { color: var(--gold); }
+      .footer {
+        margin-top: 48px;
+        padding-top: 18px;
+        border-top: 1px solid var(--border);
+        color: var(--dim);
+        font-size: 0.82rem;
+      }
+      .footer a { color: var(--gold-light); text-decoration: none; }
+      .footer a:hover { color: var(--gold); }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <p class="eyebrow">Modern Classic</p>
+      <h1>Admin</h1>
+      <p class="sub">
+        Pick a tool. Both areas are private — your sign-in carries across these pages.
+      </p>
+
+      <div class="cards">
+        <a class="card" href="/admin/bookings">
+          <p class="card-eyebrow">Schedule</p>
+          <h2 class="card-title">Bookings</h2>
+          <p class="card-body">
+            Recent appointments pulled live from Square. Status, customer, service,
+            barber, and timing — last 50 at a glance.
+          </p>
+          <span class="card-cta">Open bookings →</span>
+        </a>
+
+        <a class="card" href="/admin/reviews">
+          <p class="card-eyebrow">Marketing</p>
+          <h2 class="card-title">Reviews</h2>
+          <p class="card-body">
+            Automated Google review-request stats. How many went out in the last
+            30 / 90 days, click-through rate, and the recent send list.
+          </p>
+          <span class="card-cta">Open reviews →</span>
+        </a>
+      </div>
+
+      <p class="footer">
+        Back to <a href="/">mdrnclassic.com</a>
+      </p>
+    </div>
+  </body>
+</html>
