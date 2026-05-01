@@ -6,118 +6,200 @@ const isGhPages = import.meta.env.BASE_URL && import.meta.env.BASE_URL !== '/';
 const bookHref = isGhPages ? 'https://modern-classic.square.site' : `${base}/book`;
 const bookExternal = isGhPages;
 
-// Resolve live variation IDs so the QuickActions tiles can deep-link
-// straight into Step 2 (Choose your barber) with the service preselected,
-// matching what the homepage service cards already do. Falls back to the
-// bare /book URL if the live catalog fetch fails — the tiles still work,
-// they just dump the user on Step 1.
-const slugToVariation: Record<string, string | null> = {
+// Resolve live variation IDs so each modal CTA can deep-link straight into
+// Step 2 (Choose your barber) with the service preselected. Falls back to
+// the bare /book URL if the live catalog fetch fails.
+const NEEDED = ['mens-haircut', 'kids-haircut', 'haircut-beard', 'beard-trim-edge', 'new-customer'] as const;
+const slugToVariation: Record<(typeof NEEDED)[number], string | null> = {
   'mens-haircut': null,
+  'kids-haircut': null,
   'haircut-beard': null,
+  'beard-trim-edge': null,
   'new-customer': null,
 };
 try {
   const live = await getServicesCached();
   const cards = toLiveServiceCards(live);
-  for (const slug of Object.keys(slugToVariation)) {
+  for (const slug of NEEDED) {
     const found = cards.find((c) => c.slug === slug);
     if (found?.primaryVariationId) slugToVariation[slug] = found.primaryVariationId;
   }
 } catch {
-  // Silent — slugToVariation stays all-null and the fallback href handles it.
+  // Silent — the fallback href handles missing variations.
 }
 
-function deepLink(slug: string | null): string {
+function deepLink(slug: (typeof NEEDED)[number]): string {
   if (isGhPages) return bookHref;
-  const v = slug ? slugToVariation[slug] : null;
+  const v = slugToVariation[slug];
   return v ? `${bookHref}?service=${encodeURIComponent(v)}` : bookHref;
 }
-
-const actions = [
-  {
-    label: 'Book a Haircut',
-    sub: 'In-and-out, sharp.',
-    href: deepLink('mens-haircut'),
-    icon: 'scissors',
-    external: bookExternal,
-  },
-  {
-    label: 'Cut + Beard',
-    sub: 'The full grooming.',
-    href: deepLink('haircut-beard'),
-    icon: 'diamond',
-    external: bookExternal,
-  },
-  {
-    label: 'Shop Products',
-    sub: 'Built by barbers.',
-    href: '#products',
-    icon: 'fleur',
-    external: false,
-  },
-  {
-    label: 'First Visit',
-    sub: 'Start here.',
-    href: deepLink('new-customer'),
-    icon: 'star',
-    external: bookExternal,
-  },
-];
 ---
 <section class="quick" aria-label="Quick actions">
   <hr class="rule" />
   <div class="container quick__grid">
-    {actions.map((a) => (
-      <a class="quick__card"
-         href={a.href}
-         target={a.external ? '_blank' : undefined}
-         rel={a.external ? 'noopener' : undefined}>
-        <span class="quick__glyph" aria-hidden="true">
-          {a.icon === 'scissors' && (
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                 stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
-              <circle cx="6.5" cy="7" r="2.4"/>
-              <circle cx="6.5" cy="17" r="2.4"/>
-              <path d="M8.6 8.7 L20 18"/>
-              <path d="M8.6 15.3 L20 6"/>
-              <line x1="11.2" y1="12" x2="13.8" y2="12"/>
-            </svg>
-          )}
-          {a.icon === 'diamond' && (
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                 stroke-width="1.4" stroke-linejoin="round">
-              <path d="M12 3 L21 12 L12 21 L3 12 Z"/>
-              <path d="M7.5 12 L12 7.5 L16.5 12 L12 16.5 Z"/>
-            </svg>
-          )}
-          {a.icon === 'fleur' && (
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                 stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M12 3 L12 13"/>
-              <path d="M12 6 C 8 8, 7 11, 7.5 13.5 C 7.8 14.6 8.6 15 9.5 15"/>
-              <path d="M12 6 C 16 8, 17 11, 16.5 13.5 C 16.2 14.6 15.4 15 14.5 15"/>
-              <line x1="8" y1="16" x2="16" y2="16"/>
-              <path d="M12 16 L12 21"/>
-              <circle cx="12" cy="6" r="0.7" fill="currentColor"/>
-            </svg>
-          )}
-          {a.icon === 'star' && (
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                 stroke-width="1.3" stroke-linejoin="round">
-              <polygon points="12,3 14.35,8.76 20.56,9.22 15.8,13.24 17.29,19.28 12,16 6.71,19.28 8.2,13.24 3.44,9.22 9.65,8.76"/>
-            </svg>
-          )}
-        </span>
-        <span class="quick__body">
-          <span class="quick__label">{a.label}</span>
-          <span class="quick__sub">{a.sub}</span>
-        </span>
-        <span class="quick__arrow" aria-hidden="true">→</span>
-      </a>
-    ))}
+    <button type="button" class="quick__card" data-qa-open="haircut" aria-haspopup="dialog">
+      <span class="quick__glyph" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="6.5" cy="7" r="2.4"/>
+          <circle cx="6.5" cy="17" r="2.4"/>
+          <path d="M8.6 8.7 L20 18"/>
+          <path d="M8.6 15.3 L20 6"/>
+          <line x1="11.2" y1="12" x2="13.8" y2="12"/>
+        </svg>
+      </span>
+      <span class="quick__body">
+        <span class="quick__label">Book a Haircut</span>
+        <span class="quick__sub">In-and-out, sharp.</span>
+      </span>
+      <span class="quick__arrow" aria-hidden="true">→</span>
+    </button>
+
+    <button type="button" class="quick__card" data-qa-open="beard" aria-haspopup="dialog">
+      <span class="quick__glyph" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="1.4" stroke-linejoin="round">
+          <path d="M12 3 L21 12 L12 21 L3 12 Z"/>
+          <path d="M7.5 12 L12 7.5 L16.5 12 L12 16.5 Z"/>
+        </svg>
+      </span>
+      <span class="quick__body">
+        <span class="quick__label">Beard Work</span>
+        <span class="quick__sub">The full grooming.</span>
+      </span>
+      <span class="quick__arrow" aria-hidden="true">→</span>
+    </button>
+
+    <a class="quick__card" href="#products">
+      <span class="quick__glyph" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 3 L12 13"/>
+          <path d="M12 6 C 8 8, 7 11, 7.5 13.5 C 7.8 14.6 8.6 15 9.5 15"/>
+          <path d="M12 6 C 16 8, 17 11, 16.5 13.5 C 16.2 14.6 15.4 15 14.5 15"/>
+          <line x1="8" y1="16" x2="16" y2="16"/>
+          <path d="M12 16 L12 21"/>
+          <circle cx="12" cy="6" r="0.7" fill="currentColor"/>
+        </svg>
+      </span>
+      <span class="quick__body">
+        <span class="quick__label">Shop Products</span>
+        <span class="quick__sub">Built by barbers.</span>
+      </span>
+      <span class="quick__arrow" aria-hidden="true">→</span>
+    </a>
+
+    <button type="button" class="quick__card" data-qa-open="first" aria-haspopup="dialog">
+      <span class="quick__glyph" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="1.3" stroke-linejoin="round">
+          <polygon points="12,3 14.35,8.76 20.56,9.22 15.8,13.24 17.29,19.28 12,16 6.71,19.28 8.2,13.24 3.44,9.22 9.65,8.76"/>
+        </svg>
+      </span>
+      <span class="quick__body">
+        <span class="quick__label">First Visit</span>
+        <span class="quick__sub">Start here.</span>
+      </span>
+      <span class="quick__arrow" aria-hidden="true">→</span>
+    </button>
   </div>
   <hr class="rule" />
 </section>
+
+{/* ---------- Modals ---------- */}
+
+<dialog id="qa-modal-haircut" class="qa-modal" aria-labelledby="qa-haircut-title">
+  <div class="qa-modal__panel">
+    <header class="qa-modal__head">
+      <p class="qa-modal__eyebrow">Choose your cut</p>
+      <h3 id="qa-haircut-title">What kind of haircut?</h3>
+      <button type="button" class="qa-modal__close" data-qa-close aria-label="Close">×</button>
+    </header>
+    <ul class="qa-modal__list" role="list">
+      <li>
+        <a class="qa-option" href={deepLink('mens-haircut')}>
+          <span class="qa-option__name">Men's Haircut</span>
+          <span class="qa-option__sub">Standard cut. Clean lines, your style.</span>
+          <span class="qa-option__arrow" aria-hidden="true">→</span>
+        </a>
+      </li>
+      <li>
+        <a class="qa-option" href={deepLink('kids-haircut')}>
+          <span class="qa-option__name">Kids' Haircut</span>
+          <span class="qa-option__sub">Calm chair, patient cut. 10 &amp; under.</span>
+          <span class="qa-option__arrow" aria-hidden="true">→</span>
+        </a>
+      </li>
+      <li>
+        <a class="qa-option" href={deepLink('haircut-beard')}>
+          <span class="qa-option__name">Haircut &amp; Beard</span>
+          <span class="qa-option__sub">Full service — cut, edges, beard sculpt.</span>
+          <span class="qa-option__arrow" aria-hidden="true">→</span>
+        </a>
+      </li>
+    </ul>
+  </div>
+</dialog>
+
+<dialog id="qa-modal-beard" class="qa-modal" aria-labelledby="qa-beard-title">
+  <div class="qa-modal__panel">
+    <header class="qa-modal__head">
+      <p class="qa-modal__eyebrow">Beard work</p>
+      <h3 id="qa-beard-title">Just the beard, or the full set?</h3>
+      <button type="button" class="qa-modal__close" data-qa-close aria-label="Close">×</button>
+    </header>
+    <ul class="qa-modal__list" role="list">
+      <li>
+        <a class="qa-option" href={deepLink('haircut-beard')}>
+          <span class="qa-option__name">Haircut &amp; Beard</span>
+          <span class="qa-option__sub">Cut, edges, and a full beard sculpt — the works.</span>
+          <span class="qa-option__arrow" aria-hidden="true">→</span>
+        </a>
+      </li>
+      <li>
+        <a class="qa-option" href={deepLink('beard-trim-edge')}>
+          <span class="qa-option__name">Beard Trim &amp; Edge</span>
+          <span class="qa-option__sub">Beard only — line, shape, detail.</span>
+          <span class="qa-option__arrow" aria-hidden="true">→</span>
+        </a>
+      </li>
+    </ul>
+  </div>
+</dialog>
+
+<dialog id="qa-modal-first" class="qa-modal" aria-labelledby="qa-first-title">
+  <div class="qa-modal__panel">
+    <header class="qa-modal__head">
+      <p class="qa-modal__eyebrow">First visit at Modern Classic</p>
+      <h3 id="qa-first-title">Welcome — let's get this right.</h3>
+      <button type="button" class="qa-modal__close" data-qa-close aria-label="Close">×</button>
+    </header>
+    <div class="qa-modal__body">
+      <p>
+        Your first appointment includes extra consultation time so we can talk
+        through your hair, your style, and what you're after — no rushed
+        chair time on day one.
+      </p>
+      <ul class="qa-tips">
+        <li>
+          <strong>Bring a picture.</strong> A reference photo of a cut or
+          style you like is the fastest way to land it.
+        </li>
+        <li>
+          <strong>Think about upkeep.</strong> Daily 30 seconds, weekly 2
+          minutes, or once-a-month? We'll match the cut to your routine.
+        </li>
+        <li>
+          <strong>Mention any cowlicks, scars, or tender spots</strong> when
+          you sit down — easier to plan around than to discover halfway in.
+        </li>
+      </ul>
+      <a class="qa-cta" href={deepLink('new-customer')}>
+        Book my first visit <span aria-hidden="true">→</span>
+      </a>
+    </div>
+  </div>
+</dialog>
 
 <style>
   .quick {
@@ -139,9 +221,18 @@ const actions = [
     gap: 0.9rem;
     padding: var(--pad);
     border-right: 1px solid var(--color-border-soft);
+    background: transparent;
+    border-top: 0;
+    border-bottom: 0;
+    border-left: 0;
     color: var(--color-text);
+    text-align: left;
+    cursor: pointer;
+    font: inherit;
     transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
     position: relative;
+    text-decoration: none;
+    width: 100%;
   }
   .quick__card:last-child { border-right: 0; }
   .quick__card::before {
@@ -203,4 +294,203 @@ const actions = [
   @media (max-width: 460px) {
     .quick__sub { display: none; }
   }
+
+  /* ---------- Modal ---------- */
+  .qa-modal {
+    border: 0;
+    padding: 0;
+    background: transparent;
+    color: var(--color-text);
+    max-width: min(520px, 92vw);
+    width: 100%;
+    margin: auto;
+  }
+  .qa-modal::backdrop {
+    background: rgba(0, 0, 0, 0.6);
+    backdrop-filter: blur(2px);
+    -webkit-backdrop-filter: blur(2px);
+  }
+  .qa-modal__panel {
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg, 12px);
+    padding: clamp(1.25rem, 3vw, 1.75rem);
+    box-shadow: 0 30px 80px -30px rgba(0, 0, 0, 0.8);
+    display: grid;
+    gap: 1rem;
+  }
+  .qa-modal__head {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    grid-template-rows: auto auto;
+    column-gap: 0.5rem;
+    align-items: start;
+  }
+  .qa-modal__eyebrow {
+    grid-column: 1 / 2;
+    grid-row: 1 / 2;
+    margin: 0 0 0.25rem;
+    font-size: 0.74rem;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--color-gold);
+  }
+  .qa-modal__head h3 {
+    grid-column: 1 / 2;
+    grid-row: 2 / 3;
+    margin: 0;
+    font-family: var(--font-display);
+    font-size: clamp(1.4rem, 1.1rem + 0.7vw, 1.7rem);
+    color: var(--color-text);
+    font-variation-settings: 'opsz' 144, 'SOFT' 50;
+    line-height: 1.2;
+  }
+  .qa-modal__close {
+    grid-column: 2 / 3;
+    grid-row: 1 / 3;
+    align-self: start;
+    background: transparent;
+    border: 0;
+    color: var(--color-text-muted);
+    font-size: 1.6rem;
+    line-height: 1;
+    cursor: pointer;
+    padding: 0 0.25rem;
+  }
+  .qa-modal__close:hover { color: var(--color-text); }
+  .qa-modal__list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 0.6rem;
+  }
+  .qa-option {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.9rem 1rem;
+    background: var(--color-bg-soft, rgba(255,255,255,0.02));
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+    color: var(--color-text);
+    text-decoration: none;
+    transition: border-color var(--dur) var(--ease), background var(--dur) var(--ease), transform var(--dur) var(--ease);
+  }
+  .qa-option:hover {
+    border-color: var(--color-gold);
+    background: rgba(201, 163, 92, 0.05);
+    transform: translateY(-1px);
+  }
+  .qa-option__name {
+    grid-column: 1 / 2;
+    grid-row: 1 / 2;
+    font-family: var(--font-display);
+    font-size: 1.05rem;
+    color: var(--color-text);
+  }
+  .qa-option__sub {
+    grid-column: 1 / 2;
+    grid-row: 2 / 3;
+    font-size: 0.82rem;
+    color: var(--color-text-muted);
+    letter-spacing: 0.02em;
+  }
+  .qa-option__arrow {
+    grid-column: 2 / 3;
+    grid-row: 1 / 3;
+    color: var(--color-gold);
+    align-self: center;
+    transition: transform var(--dur) var(--ease);
+  }
+  .qa-option:hover .qa-option__arrow { transform: translateX(3px); }
+
+  .qa-modal__body { display: grid; gap: 0.85rem; }
+  .qa-modal__body p {
+    margin: 0;
+    color: var(--color-text-muted);
+    line-height: 1.55;
+    font-size: 0.95rem;
+  }
+  .qa-tips {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 0.55rem;
+  }
+  .qa-tips li {
+    padding-left: 1.25rem;
+    position: relative;
+    color: var(--color-text-muted);
+    font-size: 0.92rem;
+    line-height: 1.5;
+  }
+  .qa-tips li::before {
+    content: '·';
+    position: absolute;
+    left: 0.45rem;
+    top: 0;
+    color: var(--color-gold);
+    font-weight: 700;
+  }
+  .qa-tips strong { color: var(--color-text); font-weight: 600; }
+  .qa-cta {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    margin-top: 0.25rem;
+    padding: 0.85rem 1.2rem;
+    background: var(--color-gold);
+    color: var(--color-bg);
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    border-radius: 6px;
+    text-decoration: none;
+    transition: background var(--dur) var(--ease), transform var(--dur) var(--ease);
+  }
+  .qa-cta:hover {
+    background: var(--color-gold-light);
+    transform: translateY(-1px);
+  }
 </style>
+
+<script is:inline>
+  (function () {
+    const triggers = document.querySelectorAll('[data-qa-open]');
+    triggers.forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const id = `qa-modal-${btn.getAttribute('data-qa-open')}`;
+        const dlg = document.getElementById(id);
+        if (dlg && typeof dlg.showModal === 'function') {
+          dlg.showModal();
+        } else if (dlg) {
+          // Fallback for browsers without <dialog> support — just fall
+          // through to /book on the deep-link the modal would have shown.
+          dlg.setAttribute('open', 'open');
+        }
+      });
+    });
+
+    // Close buttons inside any modal.
+    document.querySelectorAll('[data-qa-close]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const dlg = btn.closest('dialog');
+        if (dlg && typeof dlg.close === 'function') dlg.close();
+        else if (dlg) dlg.removeAttribute('open');
+      });
+    });
+
+    // Click on the backdrop (the dialog itself, outside the panel) closes.
+    document.querySelectorAll('dialog.qa-modal').forEach((dlg) => {
+      dlg.addEventListener('click', (e) => {
+        if (e.target === dlg) {
+          if (typeof dlg.close === 'function') dlg.close();
+          else dlg.removeAttribute('open');
+        }
+      });
+    });
+  })();
+</script>
