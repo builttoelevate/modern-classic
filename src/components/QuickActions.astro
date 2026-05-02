@@ -37,7 +37,7 @@ function deepLink(slug: (typeof NEEDED)[number]): string {
 <section class="quick" aria-label="Quick actions">
   <hr class="rule" />
   <div class="container quick__grid">
-    <button type="button" class="quick__card" data-qa-open="haircut" aria-haspopup="dialog">
+    <button type="button" class="quick__card" data-qa-open="haircut" data-emphasis="primary" aria-haspopup="dialog">
       <span class="quick__glyph" aria-hidden="true">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
              stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
@@ -52,7 +52,10 @@ function deepLink(slug: (typeof NEEDED)[number]): string {
         <span class="quick__label">Book a Haircut</span>
         <span class="quick__sub">In-and-out, sharp.</span>
       </span>
-      <span class="quick__arrow" aria-hidden="true">→</span>
+      <span class="quick__pill" aria-hidden="true">
+        <span class="quick__pill-text">Book</span>
+        <span class="quick__pill-arrow">→</span>
+      </span>
     </button>
 
     <button type="button" class="quick__card" data-qa-open="beard" aria-haspopup="dialog">
@@ -67,7 +70,10 @@ function deepLink(slug: (typeof NEEDED)[number]): string {
         <span class="quick__label">Beard Work</span>
         <span class="quick__sub">The full grooming.</span>
       </span>
-      <span class="quick__arrow" aria-hidden="true">→</span>
+      <span class="quick__pill" aria-hidden="true">
+        <span class="quick__pill-text">Book</span>
+        <span class="quick__pill-arrow">→</span>
+      </span>
     </button>
 
     <a class="quick__card" href={`${base}/shop`}>
@@ -86,7 +92,10 @@ function deepLink(slug: (typeof NEEDED)[number]): string {
         <span class="quick__label">Shop Products</span>
         <span class="quick__sub">Built by barbers.</span>
       </span>
-      <span class="quick__arrow" aria-hidden="true">→</span>
+      <span class="quick__pill" aria-hidden="true">
+        <span class="quick__pill-text">Shop</span>
+        <span class="quick__pill-arrow">→</span>
+      </span>
     </a>
 
     <a class="quick__card" href={deepLink('new-customer')}>
@@ -100,7 +109,10 @@ function deepLink(slug: (typeof NEEDED)[number]): string {
         <span class="quick__label">First Visit</span>
         <span class="quick__sub">Start here.</span>
       </span>
-      <span class="quick__arrow" aria-hidden="true">→</span>
+      <span class="quick__pill" aria-hidden="true">
+        <span class="quick__pill-text">Start Here</span>
+        <span class="quick__pill-arrow">→</span>
+      </span>
     </a>
   </div>
   <hr class="rule" />
@@ -188,44 +200,60 @@ function deepLink(slug: (typeof NEEDED)[number]): string {
     align-items: center;
     gap: 0.9rem;
     padding: var(--pad);
-    /* Card affordance — subtle surface + visible border + soft lift on
-       hover so the tiles read as obviously-tappable buttons rather than
-       four labels floating against the photo above. */
+    /* Visible thin gold border + dark surface so the cards read as
+       proper buttons. The CTA pill on the right is the eye-catcher;
+       the border + lift give the whole card click-affordance. */
     background: linear-gradient(180deg, var(--color-surface), var(--color-bg-soft));
     color: var(--color-text);
-    border: 1px solid var(--color-border);
-    border-radius: 4px;
+    border: 1px solid rgba(201, 163, 92, 0.42);
+    border-radius: 6px;
     text-align: left;
     cursor: pointer;
     font: inherit;
     box-shadow: 0 6px 18px -12px rgba(0, 0, 0, 0.7);
-    transition: background var(--dur) var(--ease),
-                border-color var(--dur) var(--ease),
-                transform var(--dur) var(--ease),
-                box-shadow var(--dur) var(--ease);
+    transition: background 180ms ease-out,
+                border-color 180ms ease-out,
+                transform 180ms ease-out,
+                box-shadow 180ms ease-out;
     position: relative;
     text-decoration: none;
     width: 100%;
   }
-  .quick__card::before {
-    content: '';
-    position: absolute;
-    inset: auto 0 0 0;
-    height: 2px;
-    background: linear-gradient(90deg, transparent, var(--color-gold), var(--color-gold-dark), transparent);
-    opacity: 0;
-    transition: opacity var(--dur) var(--ease);
+  .quick__card:hover,
+  .quick__card:focus-visible {
+    border-color: var(--color-gold);
+    background: linear-gradient(180deg, var(--color-surface-2), rgba(201, 163, 92, 0.05));
+    transform: translateY(-3px);
+    box-shadow: 0 14px 32px -14px rgba(0, 0, 0, 0.85);
   }
-  .quick__card:hover {
-    border-color: rgba(201, 163, 92, 0.5);
-    background: linear-gradient(180deg, var(--color-surface-2), var(--color-surface));
-    transform: translateY(-2px);
-    box-shadow: 0 14px 32px -16px rgba(0, 0, 0, 0.85);
-  }
-  .quick__card:hover::before { opacity: 1; }
   .quick__card:focus-visible {
     outline: 2px solid var(--color-gold);
-    outline-offset: 2px;
+    outline-offset: 3px;
+  }
+  .quick__card:active {
+    transform: translateY(0);
+    box-shadow: 0 0 0 3px rgba(201, 163, 92, 0.18),
+                0 6px 18px -12px rgba(0, 0, 0, 0.7);
+    transition-duration: 80ms;
+  }
+
+  /* Primary emphasis — Book a Haircut. Reads as 'most important'
+     without solid-gold filling the card (which would compete with the
+     hero's BOOK AN APPOINTMENT button). */
+  .quick__card[data-emphasis='primary'] {
+    border-color: var(--color-gold);
+    background:
+      radial-gradient(120% 80% at 50% 0%, rgba(201, 163, 92, 0.10), transparent 70%),
+      linear-gradient(180deg, var(--color-surface), var(--color-bg-soft));
+    box-shadow: 0 8px 22px -12px rgba(0, 0, 0, 0.75),
+                inset 0 0 0 1px rgba(230, 199, 133, 0.08);
+  }
+  .quick__card[data-emphasis='primary']:hover,
+  .quick__card[data-emphasis='primary']:focus-visible {
+    border-color: var(--color-gold-light);
+    background:
+      radial-gradient(120% 80% at 50% 0%, rgba(201, 163, 92, 0.16), transparent 70%),
+      linear-gradient(180deg, var(--color-surface-2), rgba(201, 163, 92, 0.07));
   }
 
   .quick__glyph {
@@ -236,19 +264,20 @@ function deepLink(slug: (typeof NEEDED)[number]): string {
     place-items: center;
     border: 1px solid rgba(201, 163, 92, 0.45);
     border-radius: 50%;
-    transition: border-color var(--dur) var(--ease), background var(--dur) var(--ease);
+    transition: border-color 180ms ease-out, background 180ms ease-out;
   }
   .quick__glyph svg {
     width: 1.3rem;
     height: 1.3rem;
     display: block;
   }
-  .quick__card:hover .quick__glyph {
+  .quick__card:hover .quick__glyph,
+  .quick__card:focus-visible .quick__glyph {
     border-color: var(--color-gold);
     background: rgba(201, 163, 92, 0.08);
   }
 
-  .quick__body { display: grid; gap: 0.2rem; }
+  .quick__body { display: grid; gap: 0.2rem; min-width: 0; }
   .quick__label {
     font-family: var(--font-display);
     font-size: 1.2rem;
@@ -263,34 +292,65 @@ function deepLink(slug: (typeof NEEDED)[number]): string {
     opacity: 0.78;
     letter-spacing: 0.04em;
   }
-  .quick__arrow {
-    width: 2.2rem;
-    height: 2.2rem;
-    display: grid;
-    place-items: center;
-    color: var(--color-gold-light);
-    border: 1px solid rgba(201, 163, 92, 0.45);
-    border-radius: 50%;
-    font-size: 1rem;
-    line-height: 1;
-    font-weight: 700;
-    transition: transform var(--dur) var(--ease),
-                background var(--dur) var(--ease),
-                color var(--dur) var(--ease),
-                border-color var(--dur) var(--ease);
-  }
-  .quick__card:hover .quick__arrow {
-    transform: translateX(4px);
+
+  /* Gold CTA pill on the right of every card. Same gold token as the
+     hero "BOOK AN APPOINTMENT" button so the visual language matches. */
+  .quick__pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.45rem 0.9rem;
     background: var(--color-gold);
     color: var(--color-text-on-gold);
-    border-color: var(--color-gold);
+    border-radius: 999px;
+    font-family: var(--font-body);
+    font-size: 0.78rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    white-space: nowrap;
+    transition: background 180ms ease-out, color 180ms ease-out, transform 180ms ease-out;
+  }
+  .quick__pill-arrow {
+    display: inline-block;
+    transition: transform 180ms ease-out;
+  }
+  .quick__card:hover .quick__pill,
+  .quick__card:focus-visible .quick__pill {
+    background: var(--color-gold-light);
+  }
+  .quick__card:hover .quick__pill-arrow,
+  .quick__card:focus-visible .quick__pill-arrow {
+    transform: translateX(3px);
+  }
+  /* Primary card pill is one step brighter at rest already, so it
+     leans toward gold-light without going as far as gold-light's
+     hover state. Hover lifts it the rest of the way. */
+  .quick__card[data-emphasis='primary'] .quick__pill {
+    background: var(--color-gold-light);
+  }
+  .quick__card[data-emphasis='primary']:hover .quick__pill,
+  .quick__card[data-emphasis='primary']:focus-visible .quick__pill {
+    background: #f1d59b;
   }
 
   @media (max-width: 880px) {
     .quick__grid { grid-template-columns: repeat(2, 1fr); }
   }
+  @media (max-width: 520px) {
+    .quick__card { gap: 0.7rem; }
+    .quick__pill { padding: 0.4rem 0.7rem; font-size: 0.72rem; }
+  }
   @media (max-width: 460px) {
     .quick__sub { display: none; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .quick__card,
+    .quick__pill,
+    .quick__pill-arrow,
+    .quick__glyph { transition: none; }
+    .quick__card:hover,
+    .quick__card:focus-visible { transform: none; }
   }
 
   /* ---------- Modal ---------- */
