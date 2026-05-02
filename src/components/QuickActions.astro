@@ -187,15 +187,15 @@ function deepLink(slug: (typeof NEEDED)[number]): string {
     align-items: center;
     gap: 0.9rem;
     padding: var(--pad);
-    /* Inverted treatment per the shop's call: gold tile with dark text/icons
-       instead of dark tile with gold accents. Contrasts much harder against
-       the surrounding bg sections so the actions read at a glance. */
-    background: var(--color-gold);
-    color: var(--color-text-on-gold);
+    /* Dark treatment with gold accents (restored after a brief gold-on-
+       black experiment). Readability bumps over the original: bolder
+       label, brighter sub-line, brighter glyph + dividers. */
+    background: transparent;
+    color: var(--color-text);
     border-top: 0;
     border-bottom: 0;
     border-left: 0;
-    border-right: 1px solid var(--color-gold-dark);
+    border-right: 1px solid var(--color-border);
     text-align: left;
     cursor: pointer;
     font: inherit;
@@ -210,59 +210,60 @@ function deepLink(slug: (typeof NEEDED)[number]): string {
     position: absolute;
     inset: auto 0 0 0;
     height: 2px;
-    background: var(--color-text-on-gold);
+    background: var(--color-gold);
     transform: scaleX(0);
     transform-origin: left center;
     transition: transform var(--dur) var(--ease);
   }
-  .quick__card:hover { background: var(--color-gold-light); }
+  .quick__card:hover { background: rgba(201, 163, 92, 0.07); }
   .quick__card:hover::before { transform: scaleX(1); }
 
   .quick__glyph {
-    color: var(--color-text-on-gold);
-    width: 2.4rem;
-    height: 2.4rem;
+    color: var(--color-gold-light);
+    width: 2.6rem;
+    height: 2.6rem;
     display: grid;
     place-items: center;
-    border: 1px solid var(--color-gold-dark);
+    border: 1px solid rgba(201, 163, 92, 0.45);
     border-radius: 50%;
     transition: border-color var(--dur) var(--ease), background var(--dur) var(--ease);
   }
   .quick__glyph svg {
-    width: 1.25rem;
-    height: 1.25rem;
+    width: 1.3rem;
+    height: 1.3rem;
     display: block;
   }
   .quick__card:hover .quick__glyph {
-    border-color: var(--color-text-on-gold);
-    background: rgba(22, 19, 17, 0.08);
+    border-color: var(--color-gold);
+    background: rgba(201, 163, 92, 0.08);
   }
 
-  .quick__body { display: grid; gap: 0.15rem; }
+  .quick__body { display: grid; gap: 0.2rem; }
   .quick__label {
     font-family: var(--font-display);
-    font-size: 1.15rem;
+    font-size: 1.2rem;
     font-weight: 600;
     letter-spacing: -0.005em;
-    color: var(--color-text-on-gold);
+    color: var(--color-text);
     font-variation-settings: 'opsz' 100;
   }
   .quick__sub {
-    font-size: 0.82rem;
-    color: rgba(22, 19, 17, 0.72);
+    font-size: 0.86rem;
+    color: var(--color-text);
+    opacity: 0.78;
     letter-spacing: 0.04em;
   }
   .quick__arrow {
-    color: var(--color-text-on-gold);
+    color: var(--color-gold-light);
     transition: transform var(--dur) var(--ease);
   }
-  .quick__card:hover .quick__arrow { transform: translateX(4px); }
+  .quick__card:hover .quick__arrow { transform: translateX(4px); color: var(--color-gold); }
 
   @media (max-width: 880px) {
     .quick__grid { grid-template-columns: repeat(2, 1fr); }
     .quick__card:nth-child(2) { border-right: 0; }
     .quick__card:nth-child(1),
-    .quick__card:nth-child(2) { border-bottom: 1px solid var(--color-gold-dark); }
+    .quick__card:nth-child(2) { border-bottom: 1px solid var(--color-border); }
   }
   @media (max-width: 460px) {
     .quick__sub { display: none; }
