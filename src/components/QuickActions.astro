@@ -49,12 +49,11 @@ function deepLink(slug: (typeof NEEDED)[number]): string {
         </svg>
       </span>
       <span class="quick__body">
-        <span class="quick__label">Book a Haircut</span>
+        <span class="quick__label">
+          Book a Haircut
+          <span class="quick__title-arrow" aria-hidden="true">→</span>
+        </span>
         <span class="quick__sub">In-and-out, sharp.</span>
-      </span>
-      <span class="quick__pill" aria-hidden="true">
-        <span class="quick__pill-text">Book</span>
-        <span class="quick__pill-arrow">→</span>
       </span>
     </button>
 
@@ -67,12 +66,11 @@ function deepLink(slug: (typeof NEEDED)[number]): string {
         </svg>
       </span>
       <span class="quick__body">
-        <span class="quick__label">Beard Work</span>
+        <span class="quick__label">
+          Beard Work
+          <span class="quick__title-arrow" aria-hidden="true">→</span>
+        </span>
         <span class="quick__sub">The full grooming.</span>
-      </span>
-      <span class="quick__pill" aria-hidden="true">
-        <span class="quick__pill-text">Book</span>
-        <span class="quick__pill-arrow">→</span>
       </span>
     </button>
 
@@ -89,12 +87,11 @@ function deepLink(slug: (typeof NEEDED)[number]): string {
         </svg>
       </span>
       <span class="quick__body">
-        <span class="quick__label">Shop Products</span>
+        <span class="quick__label">
+          Shop Products
+          <span class="quick__title-arrow" aria-hidden="true">→</span>
+        </span>
         <span class="quick__sub">Built by barbers.</span>
-      </span>
-      <span class="quick__pill" aria-hidden="true">
-        <span class="quick__pill-text">Shop</span>
-        <span class="quick__pill-arrow">→</span>
       </span>
     </a>
 
@@ -106,12 +103,11 @@ function deepLink(slug: (typeof NEEDED)[number]): string {
         </svg>
       </span>
       <span class="quick__body">
-        <span class="quick__label">First Visit</span>
+        <span class="quick__label">
+          First Visit
+          <span class="quick__title-arrow" aria-hidden="true">→</span>
+        </span>
         <span class="quick__sub">Start here.</span>
-      </span>
-      <span class="quick__pill" aria-hidden="true">
-        <span class="quick__pill-text">Start Here</span>
-        <span class="quick__pill-arrow">→</span>
       </span>
     </a>
   </div>
@@ -196,13 +192,10 @@ function deepLink(slug: (typeof NEEDED)[number]): string {
   .quick__card {
     --pad: clamp(1rem, 2.2vw, 1.4rem);
     display: grid;
-    grid-template-columns: auto 1fr auto;
+    grid-template-columns: auto 1fr;
     align-items: center;
     gap: 0.9rem;
     padding: var(--pad);
-    /* Visible thin gold border + dark surface so the cards read as
-       proper buttons. The CTA pill on the right is the eye-catcher;
-       the border + lift give the whole card click-affordance. */
     background: linear-gradient(180deg, var(--color-surface), var(--color-bg-soft));
     color: var(--color-text);
     border: 1px solid rgba(201, 163, 92, 0.42);
@@ -211,10 +204,10 @@ function deepLink(slug: (typeof NEEDED)[number]): string {
     cursor: pointer;
     font: inherit;
     box-shadow: 0 6px 18px -12px rgba(0, 0, 0, 0.7);
-    transition: background 180ms ease-out,
-                border-color 180ms ease-out,
-                transform 180ms ease-out,
-                box-shadow 180ms ease-out;
+    transition: background 200ms ease,
+                border-color 200ms ease,
+                transform 200ms ease,
+                box-shadow 200ms ease;
     position: relative;
     text-decoration: none;
     width: 100%;
@@ -223,7 +216,7 @@ function deepLink(slug: (typeof NEEDED)[number]): string {
   .quick__card:focus-visible {
     border-color: var(--color-gold);
     background: linear-gradient(180deg, var(--color-surface-2), rgba(201, 163, 92, 0.05));
-    transform: translateY(-3px);
+    transform: translateY(-2px);
     box-shadow: 0 14px 32px -14px rgba(0, 0, 0, 0.85);
   }
   .quick__card:focus-visible {
@@ -231,9 +224,7 @@ function deepLink(slug: (typeof NEEDED)[number]): string {
     outline-offset: 3px;
   }
   .quick__card:active {
-    transform: translateY(0);
-    box-shadow: 0 0 0 3px rgba(201, 163, 92, 0.18),
-                0 6px 18px -12px rgba(0, 0, 0, 0.7);
+    transform: scale(0.98);
     transition-duration: 80ms;
   }
 
@@ -264,7 +255,7 @@ function deepLink(slug: (typeof NEEDED)[number]): string {
     place-items: center;
     border: 1px solid rgba(201, 163, 92, 0.45);
     border-radius: 50%;
-    transition: border-color 180ms ease-out, background 180ms ease-out;
+    transition: border-color 200ms ease, background 200ms ease;
   }
   .quick__glyph svg {
     width: 1.3rem;
@@ -285,6 +276,19 @@ function deepLink(slug: (typeof NEEDED)[number]): string {
     letter-spacing: -0.005em;
     color: var(--color-text);
     font-variation-settings: 'opsz' 100;
+    display: inline-flex;
+    align-items: baseline;
+    gap: 0.35rem;
+  }
+  .quick__title-arrow {
+    display: inline-block;
+    color: inherit;
+    font-weight: 600;
+    transition: transform 200ms ease;
+  }
+  .quick__card:hover .quick__title-arrow,
+  .quick__card:focus-visible .quick__title-arrow {
+    transform: translateX(4px);
   }
   .quick__sub {
     font-size: 0.86rem;
@@ -293,85 +297,19 @@ function deepLink(slug: (typeof NEEDED)[number]): string {
     letter-spacing: 0.04em;
   }
 
-  /* Gold CTA pill on the right of every card. Same gold token as the
-     hero "BOOK AN APPOINTMENT" button so the visual language matches. */
-  .quick__pill {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.4rem;
-    padding: 0.45rem 0.9rem;
-    background: var(--color-gold);
-    color: var(--color-text-on-gold);
-    border-radius: 999px;
-    font-family: var(--font-body);
-    font-size: 0.78rem;
-    font-weight: 700;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    white-space: nowrap;
-    transition: background 180ms ease-out, color 180ms ease-out, transform 180ms ease-out;
-  }
-  .quick__pill-arrow {
-    display: inline-block;
-    transition: transform 180ms ease-out;
-  }
-  .quick__card:hover .quick__pill,
-  .quick__card:focus-visible .quick__pill {
-    background: var(--color-gold-light);
-  }
-  .quick__card:hover .quick__pill-arrow,
-  .quick__card:focus-visible .quick__pill-arrow {
-    transform: translateX(3px);
-  }
-  /* Primary card pill is one step brighter at rest already, so it
-     leans toward gold-light without going as far as gold-light's
-     hover state. Hover lifts it the rest of the way. */
-  .quick__card[data-emphasis='primary'] .quick__pill {
-    background: var(--color-gold-light);
-  }
-  .quick__card[data-emphasis='primary']:hover .quick__pill,
-  .quick__card[data-emphasis='primary']:focus-visible .quick__pill {
-    background: #f1d59b;
-  }
-
   @media (max-width: 880px) {
     .quick__grid { grid-template-columns: repeat(2, 1fr); }
-    /* Stack the pill below the body so the title gets the full row.
-       At 2-col widths the title was colliding with the pill (e.g.
-       'Book a Haircut' overlapping 'BOOK →', 'First Visit'
-       overlapping 'START HERE →'). */
-    .quick__card {
-      grid-template-columns: auto 1fr;
-      grid-template-rows: auto auto;
-      row-gap: 0.55rem;
-      align-items: start;
-    }
-    .quick__glyph { grid-row: 1; align-self: center; }
-    .quick__body {
-      grid-column: 2;
-      grid-row: 1;
-      align-self: center;
-    }
-    .quick__pill {
-      grid-column: 2;
-      grid-row: 2;
-      justify-self: end;
-    }
-  }
-  @media (max-width: 520px) {
-    .quick__card { gap: 0.7rem; }
-    .quick__pill { padding: 0.4rem 0.7rem; font-size: 0.72rem; }
   }
   @media (max-width: 460px) {
     .quick__sub { display: none; }
   }
   @media (prefers-reduced-motion: reduce) {
     .quick__card,
-    .quick__pill,
-    .quick__pill-arrow,
+    .quick__title-arrow,
     .quick__glyph { transition: none; }
     .quick__card:hover,
-    .quick__card:focus-visible { transform: none; }
+    .quick__card:focus-visible,
+    .quick__card:active { transform: none; }
   }
 
   /* ---------- Modal ---------- */
