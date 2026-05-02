@@ -39,6 +39,17 @@ export interface SignedInCustomer {
   phone: string;
 }
 
+/** Entries for the "Booking for" selector at the top of the wizard.
+ * First entry must be the signed-in customer themselves (isSelf: true);
+ * additional entries are people they've linked via /profile so they can
+ * book on someone else's behalf. */
+export interface BookingForOption {
+  customerId: string;
+  displayName: string;
+  relationship?: string;
+  isSelf: boolean;
+}
+
 interface Props {
   services: Service[];
   barbers: Barber[];
@@ -48,6 +59,8 @@ interface Props {
   /** When set, the wizard skips Step 4 (Details) — the customer is signed
    * in and we already have all four contact fields. */
   signedInCustomer?: SignedInCustomer;
+  /** Self + linked people list. Selector hides if length <= 1. */
+  bookingForOptions?: BookingForOption[];
 }
 
 const STEP_LABELS = ['Service', 'Barber', 'Time', 'Details', 'Confirm'];
@@ -180,7 +193,19 @@ export default function BookingWizard({
   reschedule,
   preselect,
   signedInCustomer,
+  bookingForOptions,
 }: Props) {
+  // "Booking for" selector — currently selected customerId. Defaults to
+  // self (the first option). When the parent picks a linked person, we
+  // override the booking's customerId at submit time so the appointment
+  // is created under THAT person's Square record (their name is what
+  // shows on Square's reminder text + the seller dashboard).
+  const showBookingForSelector = !!bookingForOptions && bookingForOptions.length > 1 && !reschedule;
+  const [bookingForId, setBookingForId] = useState<string>(
+    showBookingForSelector ? (bookingForOptions![0]?.customerId ?? '') : '',
+  );
+  const selectedBookingFor =
+    bookingForOptions?.find((o) => o.customerId === bookingForId) ?? null;
   const skipDetailsStep = isCompleteCustomer(signedInCustomer);
   const initialState = useMemo<WizardState>(() => {
     let base: WizardState;
@@ -350,6 +375,18 @@ export default function BookingWizard({
         };
       }
     } else {
+      // If the parent picked a linked person from the "Booking for"
+      // selector, route the booking under that person's Square customer
+      // record. The form's own givenName/familyName fields stay set to
+      // the linked person's display name so the success screen + Square
+      // dashboard read consistently.
+      const overrideCustomerId =
+        selectedBookingFor && !selectedBookingFor.isSelf
+          ? selectedBookingFor.customerId
+          : undefined;
+      const overrideName = selectedBookingFor && !selectedBookingFor.isSelf
+        ? selectedBookingFor.displayName.split(' ')
+        : null;
       const payload = {
         service: {
           variationId: state.selectedVariation.id,
@@ -364,14 +401,15 @@ export default function BookingWizard({
         },
         slot: { startAtUtc: state.selectedSlot.startAtUtc },
         customer: {
-          givenName: state.customer.givenName.trim(),
-          familyName: state.customer.familyName.trim(),
+          givenName: overrideName ? overrideName[0] : state.customer.givenName.trim(),
+          familyName: overrideName ? overrideName.slice(1).join(' ') : state.customer.familyName.trim(),
           email: state.customer.email.trim(),
           phone: digits(state.customer.phone),
           note: state.customer.note.trim() || undefined,
-          updateContact: state.customer.updateContact,
-          marketingConsent: state.customer.marketingConsent,
+          updateContact: overrideCustomerId ? false : state.customer.updateContact,
+          marketingConsent: overrideCustomerId ? false : state.customer.marketingConsent,
         },
+        existingCustomerId: overrideCustomerId,
       };
 
       try {
@@ -521,6 +559,27 @@ export default function BookingWizard({
               {formatLocalEt(state.selectedSlot.startAtUtc)}
             </span>
           </div>
+        </div>
+      )}
+
+      {showBookingForSelector && bookingForOptions && (
+        <div className="bw-bookfor" role="group" aria-label="Who is this appointment for?">
+          <label htmlFor="bw-bookfor-select" className="bw-bookfor__label">
+            Booking for
+          </label>
+          <select
+            id="bw-bookfor-select"
+            className="bw-bookfor__select"
+            value={bookingForId}
+            onChange={(e) => setBookingForId(e.target.value)}
+          >
+            {bookingForOptions.map((opt) => (
+              <option key={opt.customerId} value={opt.customerId}>
+                {opt.isSelf ? `Me — ${opt.displayName}` : opt.displayName}
+                {!opt.isSelf && opt.relationship ? ` (${opt.relationship})` : ''}
+              </option>
+            ))}
+          </select>
         </div>
       )}
 

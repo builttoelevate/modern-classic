@@ -1,6 +1,6 @@
 import type { APIRoute } from 'astro';
 import { SquareApiError } from '../../../lib/square/client';
-import { findOrCreateCustomer } from '../../../lib/square/customers';
+import { findOrCreateCustomer, getCustomerById } from '../../../lib/square/customers';
 import { createBooking } from '../../../lib/square/bookings';
 import { bookingIdempotencyKey } from '../../../lib/booking/idempotency';
 import { customerInitials, logBooking, redactEmail } from '../../../lib/booking/log';
@@ -139,29 +139,59 @@ export const POST: APIRoute = async ({ request }) => {
   });
 
   try {
-    const findOrCreate = await findOrCreateCustomer({
-      givenName: payload.customer.givenName.trim(),
-      familyName: payload.customer.familyName.trim(),
-      email: payload.customer.email.trim().toLowerCase(),
-      phone: payload.customer.phone,
-      updateContact: payload.customer.updateContact ?? false,
-      marketingConsent: payload.customer.marketingConsent === true,
-      marketingConsentSource: 'booking_flow_step_4',
-    });
+    // "Booking for" path: the wizard already knows the exact Square
+    // customer_id (the linked person the parent picked from the selector).
+    // Skip find-or-create entirely and use that id. We still verify it
+    // exists before booking so a tampered request can't book under
+    // someone else's record.
+    let resolvedCustomerId: string;
+    let marketingDecisionLabel: string;
+    if (payload.existingCustomerId && payload.existingCustomerId.trim().length > 0) {
+      const verified = await getCustomerById(payload.existingCustomerId.trim());
+      if (!verified) {
+        return Response.json(
+          {
+            ok: false,
+            error: { code: 'CUSTOMER_NOT_FOUND', detail: 'Booking-for record not found.' },
+          } satisfies CreateBookingFailure,
+          { status: 400 },
+        );
+      }
+      resolvedCustomerId = verified.id;
+      marketingDecisionLabel = 'noop';
+      logBooking({
+        phase: 'use-existing-customer',
+        attemptId,
+        customerInitials: initials,
+        customerId: resolvedCustomerId,
+      });
+    } else {
+      const findOrCreate = await findOrCreateCustomer({
+        givenName: payload.customer.givenName.trim(),
+        familyName: payload.customer.familyName.trim(),
+        email: payload.customer.email.trim().toLowerCase(),
+        phone: payload.customer.phone,
+        updateContact: payload.customer.updateContact ?? false,
+        marketingConsent: payload.customer.marketingConsent === true,
+        marketingConsentSource: 'booking_flow_step_4',
+      });
+      resolvedCustomerId = findOrCreate.customer.id;
+      marketingDecisionLabel = findOrCreate.marketingDecision.kind;
 
-    logBooking({
-      phase: 'find-or-create-customer',
-      attemptId,
-      customerEmail: redactEmail(payload.customer.email),
-      customerInitials: initials,
-      customerId: findOrCreate.customer.id,
-      marketingConsent: payload.customer.marketingConsent === true,
-      marketingDecision: findOrCreate.marketingDecision.kind,
-    });
+      logBooking({
+        phase: 'find-or-create-customer',
+        attemptId,
+        customerEmail: redactEmail(payload.customer.email),
+        customerInitials: initials,
+        customerId: resolvedCustomerId,
+        marketingConsent: payload.customer.marketingConsent === true,
+        marketingDecision: marketingDecisionLabel,
+      });
+    }
 
     const booking = await createBooking({
       startAtUtc: payload.slot.startAtUtc,
-      customerId: findOrCreate.customer.id,
+      customerId: resolvedCustomerId,
       serviceVariationId: payload.service.variationId,
       serviceVariationVersion: payload.service.version,
       teamMemberId: payload.barber.id,
@@ -178,14 +208,14 @@ export const POST: APIRoute = async ({ request }) => {
       service: payload.service.name,
       startAtUtc: booking.start_at,
       bookingId: booking.id,
-      customerId: findOrCreate.customer.id,
+      customerId: resolvedCustomerId,
       durationMs: Date.now() - startedAt,
     });
 
     const success: CreateBookingSuccess = {
       ok: true,
       bookingId: booking.id,
-      customerId: findOrCreate.customer.id,
+      customerId: resolvedCustomerId,
       startAtUtc: booking.start_at,
     };
     return Response.json(success satisfies CreateBookingResponse, { status: 200 });

@@ -53,6 +53,11 @@ export function BookingCard({ booking, variant, onCancel, onReschedule, onBookAg
         <h3 className="mb-card__when">{booking.startAtLocal}</h3>
         {statusLabel && <span className="mb-card__status">{statusLabel}</span>}
       </header>
+      {booking.bookingFor && (
+        <p className="mb-card__for">
+          For <strong>{booking.bookingFor}</strong>
+        </p>
+      )}
       <dl className="mb-card__details">
         <div>
           <dt>Service</dt>

@@ -40,6 +40,10 @@ export interface BookingDetail {
   priceDisplay: string;
   status: Booking['status'];
   customerNote?: string;
+  /** When this booking belongs to a linked person (kid, partner, etc.)
+   * rather than the signed-in customer themselves, the linked person's
+   * display name. The /my-bookings UI uses this to tag the row "for X". */
+  bookingFor?: string;
 }
 
 export interface CustomerBookings {

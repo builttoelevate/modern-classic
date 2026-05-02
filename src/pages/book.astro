@@ -5,12 +5,13 @@ import BaseLayout from '../layouts/BaseLayout.astro';
 import Header from '../components/Header.astro';
 import Footer from '../components/Footer.astro';
 import BookingWizard from '../components/booking/BookingWizard.tsx';
-import type { RescheduleContext, SignedInCustomer, WizardPreselectProps } from '../components/booking/BookingWizard.tsx';
+import type { RescheduleContext, SignedInCustomer, WizardPreselectProps, BookingForOption } from '../components/booking/BookingWizard.tsx';
 import { getServices } from '../lib/square/catalog';
 import { getBarbers } from '../lib/square/team';
 import { getLocation } from '../lib/square/locations';
 import { getBooking } from '../lib/square/bookings';
 import { findCustomerByEmail } from '../lib/square/customers';
+import { listLinkedPeople } from '../lib/customer/profileLinks';
 import { getSession } from '../lib/auth/middleware';
 import { preselectFromUrl } from '../lib/booking/wizardPreselect';
 import type { Barber, Location, Service } from '../lib/square/types';
@@ -36,6 +37,7 @@ let loadError: string | null = null;
 let reschedule: RescheduleContext | undefined;
 let rescheduleError: string | null = null;
 let signedInCustomer: SignedInCustomer | undefined;
+let bookingForOptions: BookingForOption[] | undefined;
 
 try {
   const [s, b, l] = await Promise.all([getServices(), getBarbers(), getLocation()]);
@@ -50,13 +52,17 @@ try {
 
 // If the visitor is signed in (and not rescheduling — that path runs its
 // own customer lookup below), hydrate their contact info so the wizard
-// can skip Step 4 entirely. Best-effort; any failure just falls back to
-// the normal Step 4 details flow.
+// can skip Step 4 entirely, and load their linked-people list so the
+// "Booking for" selector can render. Best-effort; any failure just
+// falls back to the normal Step 4 details flow with no selector.
 if (!rescheduleId && !loadError) {
   const session = getSession(Astro.request);
   if (session) {
     try {
-      const customer = await findCustomerByEmail(session.email);
+      const [customer, kids] = await Promise.all([
+        findCustomerByEmail(session.email),
+        listLinkedPeople(session.customerId).catch(() => []),
+      ]);
       if (customer) {
         signedInCustomer = {
           givenName: customer.given_name?.trim() ?? '',
@@ -64,6 +70,23 @@ if (!rescheduleId && !loadError) {
           email: session.email,
           phone: customer.phone_number?.trim() ?? '',
         };
+        // Always include "Me" plus any linked dependents. We hand the
+        // wizard a single list it can render in the selector — if it has
+        // length 1 (just "Me"), the selector hides itself.
+        bookingForOptions = [
+          {
+            customerId: customer.id,
+            displayName: signedInCustomer.givenName || 'Me',
+            relationship: 'You',
+            isSelf: true,
+          },
+          ...kids.map((k) => ({
+            customerId: k.customerId,
+            displayName: k.displayName,
+            relationship: k.relationship,
+            isSelf: false,
+          })),
+        ];
       }
     } catch {
       // Silent — Step 4 will still collect details.
@@ -176,6 +199,7 @@ if (rescheduleId && !loadError) {
         reschedule={reschedule}
         preselect={preselect}
         signedInCustomer={signedInCustomer}
+        bookingForOptions={bookingForOptions}
       />
     )}
   </main>

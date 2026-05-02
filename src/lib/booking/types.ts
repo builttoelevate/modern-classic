@@ -43,6 +43,15 @@ export interface CreateBookingRequest {
   barber: WizardBarberPayload;
   slot: WizardSlotPayload;
   customer: WizardCustomerPayload;
+  /**
+   * When set, the booking is created against this Square customer_id
+   * directly — skips the find-or-create-customer pass entirely. Used by
+   * the "Booking for" selector so a parent booking on behalf of a child
+   * (a real, separate Square Customer record) doesn't accidentally get
+   * the parent's record reused. The endpoint validates that the id
+   * exists before booking.
+   */
+  existingCustomerId?: string;
 }
 
 export interface CreateBookingSuccess {

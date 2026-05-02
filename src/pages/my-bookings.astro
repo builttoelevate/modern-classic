@@ -13,6 +13,7 @@ import { isAuthConfigured } from '../lib/auth/session';
 import { getCustomerBookings } from '../lib/square/customerBookings';
 import { getRetailProducts } from '../lib/square/products';
 import { getBarbers } from '../lib/square/team';
+import { listLinkedPeople } from '../lib/customer/profileLinks';
 import { recommendForBooking, generalRecommendations } from '../lib/recommendations/forBooking';
 import { findUsualCombo, type UsualCombo } from '../lib/booking/usual';
 import { shouldShowRebookCard } from '../lib/booking/rebookEligibility';
@@ -50,14 +51,39 @@ let activeBarberIds = new Set<string>();
 let loadError: string | null = null;
 
 try {
-  const [b, p, bs] = await Promise.all([
+  const linkedPeople = await listLinkedPeople(session.customerId).catch(() => []);
+  const [b, p, bs, ...kidBookingResults] = await Promise.all([
     getCustomerBookings(session.customerId),
     getRetailProducts(),
     getBarbers(),
+    // Each linked person's bookings, parallel. Failures fall through to
+    // empty so one bad lookup doesn't blank the whole page.
+    ...linkedPeople.map((lp) =>
+      getCustomerBookings(lp.customerId)
+        .then((kb) => ({ person: lp, bookings: kb }))
+        .catch(() => ({ person: lp, bookings: { upcoming: [], past: [] } })),
+    ),
   ]);
   bookings = b;
   products = p;
   activeBarberIds = new Set(bs.map((m) => m.id));
+
+  // Merge linked-person bookings into the parent's lists, decorating each
+  // with the person's name so the BookingCard can show "for Briar".
+  for (const result of kidBookingResults as Array<{ person: { displayName: string }; bookings: typeof bookings }>) {
+    for (const ub of result.bookings.upcoming) {
+      bookings.upcoming.push({ ...ub, bookingFor: result.person.displayName });
+    }
+    for (const pb of result.bookings.past) {
+      bookings.past.push({ ...pb, bookingFor: result.person.displayName });
+    }
+  }
+  bookings.upcoming.sort(
+    (a, b) => new Date(a.startAtUtc).getTime() - new Date(b.startAtUtc).getTime(),
+  );
+  bookings.past.sort(
+    (a, b) => new Date(b.startAtUtc).getTime() - new Date(a.startAtUtc).getTime(),
+  );
 } catch (err) {
   loadError = err instanceof Error ? err.message : 'Failed to load.';
   // eslint-disable-next-line no-console

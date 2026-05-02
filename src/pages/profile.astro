@@ -7,6 +7,7 @@ import Footer from '../components/Footer.astro';
 import { getSession, refreshSessionCookie } from '../lib/auth/middleware';
 import { isAuthConfigured } from '../lib/auth/session';
 import { getCustomerById } from '../lib/square/customers';
+import { listLinkedPeople, type LinkedPerson } from '../lib/customer/profileLinks';
 import type { Customer } from '../lib/square/types';
 
 import '../styles/portal.css';
@@ -31,9 +32,15 @@ if (!session) {
 }
 
 let customer: Customer | null = null;
+let linkedPeople: LinkedPerson[] = [];
 let loadError: string | null = null;
 try {
-  customer = await getCustomerById(session.customerId);
+  const [c, kids] = await Promise.all([
+    getCustomerById(session.customerId),
+    listLinkedPeople(session.customerId).catch(() => [] as LinkedPerson[]),
+  ]);
+  customer = c;
+  linkedPeople = kids;
 } catch (err) {
   loadError = err instanceof Error ? err.message : 'Failed to load.';
 }
@@ -149,6 +156,81 @@ Astro.response.headers.append('Set-Cookie', refreshSessionCookie(session));
         </form>
       </section>
     )}
+
+    {customer && (
+      <section class="mb-profile" aria-labelledby="people-i-book-for">
+        <header class="mb-profile__head">
+          <h2 id="people-i-book-for">People I book for</h2>
+          <p class="mb-profile__sub">
+            Add kids or anyone else you book appointments for. They get their
+            own name on the chair (so reminder texts say <strong>"Hi
+            Briar"</strong> instead of "Hi {customer.given_name ?? 'you'}"),
+            and you can pick who you're booking for at the top of the booking
+            wizard.
+          </p>
+        </header>
+
+        {linkedPeople.length === 0 ? (
+          <p class="mb-profile__empty">No linked people yet. Add one below.</p>
+        ) : (
+          <ul class="mb-people" id="people-list">
+            {linkedPeople.map((p) => (
+              <li class="mb-person" data-person-id={p.customerId}>
+                <div class="mb-person__id">
+                  <span class="mb-person__name">{p.displayName}</span>
+                  {p.relationship && (
+                    <span class="mb-person__rel">{p.relationship}</span>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  class="mb-person__remove"
+                  data-remove-person
+                  aria-label={`Remove ${p.displayName}`}
+                >
+                  Remove
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+
+        <form id="add-person-form" class="mb-people__add">
+          <div class="mb-profile__row mb-profile__row--two">
+            <label class="mb-profile__field">
+              <span class="mb-profile__label">First name</span>
+              <input type="text" name="givenName" required maxlength="60" placeholder="Briar" />
+            </label>
+            <label class="mb-profile__field">
+              <span class="mb-profile__label">
+                Last name <span class="mb-profile__optional">(optional)</span>
+              </span>
+              <input
+                type="text"
+                name="familyName"
+                maxlength="60"
+                placeholder={customer.family_name ?? ''}
+              />
+            </label>
+          </div>
+          <label class="mb-profile__field">
+            <span class="mb-profile__label">
+              Relationship <span class="mb-profile__optional">(optional)</span>
+            </span>
+            <input
+              type="text"
+              name="relationship"
+              maxlength="32"
+              placeholder="Son · Daughter · Partner · Parent"
+            />
+          </label>
+          <div class="mb-profile__actions">
+            <button type="submit" class="mb-btn">Add person</button>
+          </div>
+          <p class="mb-profile__status" data-add-status hidden></p>
+        </form>
+      </section>
+    )}
   </main>
   <Footer />
 </BaseLayout>
@@ -236,5 +318,92 @@ Astro.response.headers.append('Set-Cookie', refreshSessionCookie(session));
         submitBtn.textContent = 'Save changes';
       }
     });
+  })();
+
+  // ---------- People I book for ----------
+  (function () {
+    const addForm = document.getElementById('add-person-form');
+    const list = document.getElementById('people-list');
+    if (!addForm) return;
+    const addStatus = addForm.querySelector('[data-add-status]');
+    const addBtn = addForm.querySelector('button[type="submit"]');
+
+    function showAdd(msg, kind) {
+      if (!addStatus) return;
+      addStatus.textContent = msg;
+      addStatus.className = 'mb-profile__status mb-profile__status--' + kind;
+      addStatus.hidden = false;
+    }
+
+    addForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      addBtn.disabled = true;
+      addBtn.textContent = 'Adding…';
+      const payload = {
+        givenName: addForm.givenName.value.trim(),
+        familyName: addForm.familyName.value.trim(),
+        relationship: addForm.relationship.value.trim(),
+      };
+      if (!payload.givenName) {
+        showAdd('First name is required.', 'error');
+        addBtn.disabled = false;
+        addBtn.textContent = 'Add person';
+        return;
+      }
+      try {
+        const res = await fetch('/api/customer/kids', {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        const data = await res.json();
+        if (!res.ok || !data.ok) {
+          showAdd((data && data.error && data.error.detail) || 'Could not add.', 'error');
+          addBtn.disabled = false;
+          addBtn.textContent = 'Add person';
+          return;
+        }
+        // Reload to render the new entry consistently with server-side state.
+        window.location.reload();
+      } catch {
+        showAdd('Network error. Please try again.', 'error');
+        addBtn.disabled = false;
+        addBtn.textContent = 'Add person';
+      }
+    });
+
+    if (list) {
+      list.addEventListener('click', async (e) => {
+        const target = e.target;
+        if (!(target instanceof HTMLElement)) return;
+        if (!target.matches('[data-remove-person]')) return;
+        const li = target.closest('.mb-person');
+        if (!li) return;
+        const id = li.getAttribute('data-person-id');
+        if (!id) return;
+        if (!confirm('Remove this person from your account? Their past appointments stay on file.')) return;
+        target.disabled = true;
+        target.textContent = 'Removing…';
+        try {
+          const res = await fetch('/api/customer/kids/' + encodeURIComponent(id), {
+            method: 'DELETE',
+            credentials: 'same-origin',
+          });
+          const data = await res.json();
+          if (!res.ok || !data.ok) {
+            target.disabled = false;
+            target.textContent = 'Remove';
+            alert((data && data.error && data.error.detail) || 'Could not remove.');
+            return;
+          }
+          window.location.reload();
+        } catch {
+          target.disabled = false;
+          target.textContent = 'Remove';
+          alert('Network error. Please try again.');
+        }
+      });
+    }
   })();
 </script>
