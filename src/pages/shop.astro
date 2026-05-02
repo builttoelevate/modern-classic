@@ -66,6 +66,13 @@ const itemListSchema = {
 >
   <Header />
   <main id="main">
+    <div class="shop-promo" role="status">
+      <div class="container shop-promo__inner">
+        <span class="shop-promo__tag">Free Shipping</span>
+        <span class="shop-promo__copy">on orders over <strong>$60</strong> · Cruelty-free · Built by barbers in Zanesville, OH</span>
+      </div>
+    </div>
+
     <section class="shop-hero" aria-labelledby="shop-hero-heading">
       <div class="shop-hero__ornaments" aria-hidden="true">
         <div class="shop-hero__glow"></div>
@@ -82,12 +89,29 @@ const itemListSchema = {
           tested daily at our shop on Linden Avenue.
         </p>
         <p class="shop-hero__note">
-          Checkout on <strong>mdrnclassic.com</strong> — every product card opens the
-          full Shopify product page with sizes, ingredients, and free shipping
-          on orders over $60.
+          Checkout on <strong>mdrnclassic.com</strong> — every card opens the
+          full product page with sizes, ingredients, and shipping options.
         </p>
       </div>
     </section>
+
+    <nav class="shop-nav" aria-label="Shop categories">
+      <div class="container shop-nav__inner">
+        <ul class="shop-nav__list">
+          <li><a href="#shop-top" class="shop-chip is-active">All <span class="shop-chip__count">{all.length}</span></a></li>
+          {grouped.map((group) => (
+            <li>
+              <a class="shop-chip" href={`#group-${group.collection.replace(/\W+/g, '-')}-heading`}>
+                {group.collection}
+                <span class="shop-chip__count">{group.items.length}</span>
+              </a>
+            </li>
+          ))}
+        </ul>
+      </div>
+    </nav>
+
+    <span id="shop-top" class="shop-top-anchor" aria-hidden="true"></span>
 
     {grouped.map((group) => (
       <section class="shop-group" aria-labelledby={`group-${group.collection.replace(/\W+/g, '-')}-heading`}>
@@ -106,9 +130,11 @@ const itemListSchema = {
                 target="_blank"
                 rel="noopener noreferrer"
                 data-reveal
+                data-featured={p.featured ? 'true' : undefined}
                 style={`--reveal-delay: ${(i % 4) * 60}ms`}
               >
                 <div class="prod-card__media">
+                  {p.featured && <span class="prod-card__badge">Featured</span>}
                   <img src={p.imageUrl} alt={`${p.name} — ${p.size}`} loading="lazy" decoding="async" />
                 </div>
                 <div class="prod-card__body">
@@ -118,8 +144,9 @@ const itemListSchema = {
                   <p class="prod-card__desc">{p.description}</p>
                   <div class="prod-card__foot">
                     <span class="prod-card__price">{fmt(p.price)}</span>
-                    <span class="prod-card__cta">
-                      Shop <span class="arrow" aria-hidden="true">→</span>
+                    <span class="prod-card__cta" aria-hidden="true">
+                      <span class="prod-card__cta-text">Shop</span>
+                      <span class="prod-card__cta-arrow">→</span>
                     </span>
                   </div>
                 </div>
@@ -154,7 +181,142 @@ const itemListSchema = {
   <MobileBookCTA />
 </BaseLayout>
 
+<script is:inline>
+  // Highlight the chip whose section is currently in view. Pure DOM —
+  // no framework dependency. IntersectionObserver fires once per
+  // section as it crosses the viewport's "active band" (top of the
+  // page after the sticky chip nav).
+  (function () {
+    const chips = document.querySelectorAll('.shop-chip');
+    const sections = document.querySelectorAll('.shop-group');
+    if (!chips.length || !sections.length || !('IntersectionObserver' in window)) return;
+    const chipByHref = new Map();
+    chips.forEach((c) => chipByHref.set(c.getAttribute('href'), c));
+    const observer = new IntersectionObserver(
+      (entries) => {
+        // Find the entry closest to the top of the active band that's
+        // currently intersecting. Falls back to last entry on rapid scroll.
+        const visible = entries
+          .filter((e) => e.isIntersecting)
+          .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top);
+        if (!visible.length) return;
+        const heading = visible[0].target.querySelector('h2');
+        if (!heading) return;
+        const id = '#' + heading.id;
+        chips.forEach((c) => c.classList.remove('is-active'));
+        const match = chipByHref.get(id);
+        if (match) match.classList.add('is-active');
+      },
+      { rootMargin: '-120px 0px -60% 0px', threshold: 0 },
+    );
+    sections.forEach((s) => observer.observe(s));
+  })();
+</script>
+
 <style>
+  /* ---------- Top promo strip ---------- */
+  .shop-promo {
+    background:
+      linear-gradient(90deg,
+        rgba(201, 163, 92, 0.18) 0%,
+        rgba(201, 163, 92, 0.10) 50%,
+        rgba(201, 163, 92, 0.18) 100%);
+    border-bottom: 1px solid rgba(201, 163, 92, 0.35);
+    color: var(--color-text);
+    font-size: 0.82rem;
+  }
+  .shop-promo__inner {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem 0.85rem;
+    align-items: center;
+    justify-content: center;
+    padding: 0.55rem 0;
+    text-align: center;
+  }
+  .shop-promo__tag {
+    background: var(--color-gold);
+    color: var(--color-text-on-gold);
+    padding: 0.18rem 0.55rem;
+    border-radius: 999px;
+    font-size: 0.66rem;
+    font-weight: 700;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+  .shop-promo__copy { color: var(--color-text); letter-spacing: 0.04em; }
+  .shop-promo__copy strong { color: var(--color-gold-light); font-weight: 700; }
+  @media (max-width: 540px) {
+    .shop-promo__copy { font-size: 0.78rem; }
+  }
+
+  /* ---------- Sticky category chips ---------- */
+  .shop-nav {
+    position: sticky;
+    top: var(--header-h, 64px);
+    z-index: 5;
+    background: rgba(11, 10, 8, 0.92);
+    -webkit-backdrop-filter: blur(8px);
+    backdrop-filter: blur(8px);
+    border-bottom: 1px solid var(--color-border-soft);
+  }
+  .shop-nav__inner { padding: 0; }
+  .shop-nav__list {
+    list-style: none;
+    margin: 0;
+    padding: 0.65rem 0;
+    display: flex;
+    flex-wrap: nowrap;
+    gap: 0.5rem;
+    overflow-x: auto;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+    scroll-snap-type: x proximity;
+  }
+  .shop-nav__list::-webkit-scrollbar { display: none; }
+  .shop-nav__list > li { scroll-snap-align: start; flex-shrink: 0; }
+  .shop-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    padding: 0.5rem 0.85rem;
+    border: 1px solid var(--color-border);
+    border-radius: 999px;
+    background: var(--color-surface);
+    color: var(--color-text);
+    font-size: 0.78rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    text-decoration: none;
+    font-weight: 600;
+    transition: border-color var(--dur) var(--ease),
+                background var(--dur) var(--ease),
+                color var(--dur) var(--ease);
+    white-space: nowrap;
+  }
+  .shop-chip:hover {
+    border-color: var(--color-gold);
+    background: var(--color-surface-2);
+  }
+  .shop-chip.is-active {
+    border-color: var(--color-gold);
+    color: var(--color-gold-light);
+    background: rgba(201, 163, 92, 0.06);
+  }
+  .shop-chip__count {
+    font-size: 0.66rem;
+    font-weight: 700;
+    color: var(--color-gold);
+    background: rgba(201, 163, 92, 0.12);
+    padding: 0.12rem 0.4rem;
+    border-radius: 999px;
+    letter-spacing: 0.04em;
+  }
+  /* Anchor target offset so jumping to a section clears the sticky chip nav. */
+  .shop-top-anchor { display: block; height: 0; scroll-margin-top: 100px; }
+  .shop-group { scroll-margin-top: 100px; }
+
   /* ---------- Page hero ---------- */
   .shop-hero {
     position: relative;
@@ -272,6 +434,24 @@ const itemListSchema = {
     place-items: center;
     overflow: hidden;
   }
+  .prod-card__badge {
+    position: absolute;
+    top: 0.7rem;
+    left: 0.7rem;
+    background: var(--color-gold);
+    color: var(--color-text-on-gold);
+    padding: 0.25rem 0.6rem;
+    border-radius: 999px;
+    font-size: 0.62rem;
+    font-weight: 700;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    z-index: 1;
+    box-shadow: 0 4px 14px -6px rgba(0, 0, 0, 0.6);
+  }
+  .prod-card[data-featured='true'] {
+    border-color: rgba(201, 163, 92, 0.5);
+  }
   .prod-card__media img {
     max-width: 70%;
     max-height: 78%;
@@ -339,18 +519,24 @@ const itemListSchema = {
     color: var(--color-gold-light);
   }
   .prod-card__cta {
-    font-size: 0.78rem;
-    font-weight: 600;
-    letter-spacing: 0.18em;
-    text-transform: uppercase;
-    color: var(--color-gold);
     display: inline-flex;
     align-items: center;
-    gap: 0.45rem;
+    gap: 0.4rem;
+    padding: 0.4rem 0.85rem;
+    background: var(--color-gold);
+    color: var(--color-text-on-gold);
+    border-radius: 999px;
+    font-family: var(--font-body);
+    font-size: 0.74rem;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    white-space: nowrap;
+    transition: background var(--dur) var(--ease);
   }
-  .prod-card__cta .arrow { transition: transform var(--dur) var(--ease); }
-  .prod-card:hover .prod-card__cta { color: var(--color-gold-light); }
-  .prod-card:hover .prod-card__cta .arrow { transform: translateX(3px); }
+  .prod-card__cta-arrow { display: inline-block; transition: transform var(--dur) var(--ease); }
+  .prod-card:hover .prod-card__cta { background: var(--color-gold-light); }
+  .prod-card:hover .prod-card__cta-arrow { transform: translateX(3px); }
 
   /* ---------- Foot ---------- */
   .shop-foot {
