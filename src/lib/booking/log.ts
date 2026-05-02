@@ -4,6 +4,9 @@
 export type BookingPhase =
   | 'request-received'
   | 'find-or-create-customer'
+  | 'use-existing-customer'
+  | 'use-session-customer'
+  | 'session-customer-missing-fallback'
   | 'create-booking'
   | 'success'
   | 'validation-failed'

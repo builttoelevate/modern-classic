@@ -4,6 +4,7 @@ import { findOrCreateCustomer, getCustomerById } from '../../../lib/square/custo
 import { createBooking } from '../../../lib/square/bookings';
 import { bookingIdempotencyKey } from '../../../lib/booking/idempotency';
 import { customerInitials, logBooking, redactEmail } from '../../../lib/booking/log';
+import { getSession } from '../../../lib/auth/middleware';
 import type {
   CreateBookingFailure,
   CreateBookingRequest,
@@ -138,12 +139,17 @@ export const POST: APIRoute = async ({ request }) => {
     serviceVariationId: payload.service.variationId,
   });
 
+  const session = getSession(request);
+
   try {
-    // "Booking for" path: the wizard already knows the exact Square
-    // customer_id (the linked person the parent picked from the selector).
-    // Skip find-or-create entirely and use that id. We still verify it
-    // exists before booking so a tampered request can't book under
-    // someone else's record.
+    // Resolve the Square customer_id, in priority order:
+    //   1. existingCustomerId  — "Booking for" (parent → linked person).
+    //   2. session.customerId  — signed-in customer; the session is the
+    //      source of truth, NOT the typed email. A one-character email
+    //      typo on Step 4 used to find-or-create a brand-new Square
+    //      record, which silently split bookings off the real customer
+    //      (no SMS opt-in, missing from /my-bookings).
+    //   3. findOrCreateCustomer — true guest checkout, match-by-email.
     let resolvedCustomerId: string;
     let marketingDecisionLabel: string;
     if (payload.existingCustomerId && payload.existingCustomerId.trim().length > 0) {
@@ -165,6 +171,41 @@ export const POST: APIRoute = async ({ request }) => {
         customerInitials: initials,
         customerId: resolvedCustomerId,
       });
+    } else if (session) {
+      const verified = await getCustomerById(session.customerId);
+      if (verified) {
+        resolvedCustomerId = verified.id;
+        marketingDecisionLabel = 'noop';
+        logBooking({
+          phase: 'use-session-customer',
+          attemptId,
+          customerInitials: initials,
+          customerId: resolvedCustomerId,
+        });
+      } else {
+        // Session points at a customer Square no longer has (deleted /
+        // merged out from under us). Fall through to find-or-create so
+        // the booking still completes rather than 4xx'ing the user.
+        const findOrCreate = await findOrCreateCustomer({
+          givenName: payload.customer.givenName.trim(),
+          familyName: payload.customer.familyName.trim(),
+          email: payload.customer.email.trim().toLowerCase(),
+          phone: payload.customer.phone,
+          updateContact: payload.customer.updateContact ?? false,
+          marketingConsent: payload.customer.marketingConsent === true,
+          marketingConsentSource: 'booking_flow_step_4',
+        });
+        resolvedCustomerId = findOrCreate.customer.id;
+        marketingDecisionLabel = findOrCreate.marketingDecision.kind;
+        logBooking({
+          phase: 'session-customer-missing-fallback',
+          attemptId,
+          customerEmail: redactEmail(payload.customer.email),
+          customerInitials: initials,
+          customerId: resolvedCustomerId,
+          marketingDecision: marketingDecisionLabel,
+        });
+      }
     } else {
       const findOrCreate = await findOrCreateCustomer({
         givenName: payload.customer.givenName.trim(),
