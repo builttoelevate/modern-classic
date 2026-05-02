@@ -199,7 +199,14 @@ Astro.response.headers.append('Set-Cookie', refreshSessionCookie(session));
           <div class="mb-profile__row mb-profile__row--two">
             <label class="mb-profile__field">
               <span class="mb-profile__label">First name</span>
-              <input type="text" name="givenName" required maxlength="60" placeholder="Briar" />
+              <input
+                type="text"
+                name="givenName"
+                required
+                maxlength="60"
+                placeholder="Their first name"
+                autocomplete="off"
+              />
             </label>
             <label class="mb-profile__field">
               <span class="mb-profile__label">
@@ -209,7 +216,8 @@ Astro.response.headers.append('Set-Cookie', refreshSessionCookie(session));
                 type="text"
                 name="familyName"
                 maxlength="60"
-                placeholder={customer.family_name ?? ''}
+                placeholder={customer.family_name ? `Defaults to ${customer.family_name}` : 'Last name'}
+                autocomplete="off"
               />
             </label>
           </div>
@@ -386,22 +394,36 @@ Astro.response.headers.append('Set-Cookie', refreshSessionCookie(session));
         target.disabled = true;
         target.textContent = 'Removing…';
         try {
+          // Content-Type: application/json keeps Astro's CSRF protection from
+          // blocking this bodyless DELETE — without it, Astro returns an
+          // HTML error page that fails res.json() parsing and the user sees
+          // a misleading "network error" instead of the real reason.
           const res = await fetch('/api/customer/kids/' + encodeURIComponent(id), {
             method: 'DELETE',
             credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/json' },
           });
-          const data = await res.json();
-          if (!res.ok || !data.ok) {
+          let data = null;
+          try {
+            data = await res.json();
+          } catch {
+            // Non-JSON response (likely an error page). Fall through with
+            // status-based message.
+          }
+          if (!res.ok || !data || !data.ok) {
             target.disabled = false;
             target.textContent = 'Remove';
-            alert((data && data.error && data.error.detail) || 'Could not remove.');
+            const msg =
+              (data && data.error && data.error.detail) ||
+              `Could not remove (status ${res.status}). Please try again.`;
+            alert(msg);
             return;
           }
           window.location.reload();
-        } catch {
+        } catch (err) {
           target.disabled = false;
           target.textContent = 'Remove';
-          alert('Network error. Please try again.');
+          alert('Network error: ' + (err && err.message ? err.message : 'try again.'));
         }
       });
     }
