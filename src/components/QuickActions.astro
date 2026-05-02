@@ -89,7 +89,7 @@ function deepLink(slug: (typeof NEEDED)[number]): string {
       <span class="quick__arrow" aria-hidden="true">→</span>
     </a>
 
-    <button type="button" class="quick__card" data-qa-open="first" aria-haspopup="dialog">
+    <a class="quick__card" href={deepLink('new-customer')}>
       <span class="quick__glyph" aria-hidden="true">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
              stroke-width="1.3" stroke-linejoin="round">
@@ -101,7 +101,7 @@ function deepLink(slug: (typeof NEEDED)[number]): string {
         <span class="quick__sub">Start here.</span>
       </span>
       <span class="quick__arrow" aria-hidden="true">→</span>
-    </button>
+    </a>
   </div>
   <hr class="rule" />
 </section>
@@ -167,39 +167,6 @@ function deepLink(slug: (typeof NEEDED)[number]): string {
   </div>
 </dialog>
 
-<dialog id="qa-modal-first" class="qa-modal" aria-labelledby="qa-first-title">
-  <div class="qa-modal__panel">
-    <header class="qa-modal__head">
-      <p class="qa-modal__eyebrow">First visit at Modern Classic</p>
-      <h3 id="qa-first-title">Welcome — let's get this right.</h3>
-      <button type="button" class="qa-modal__close" data-qa-close aria-label="Close">×</button>
-    </header>
-    <div class="qa-modal__body">
-      <p>
-        Your first appointment includes extra consultation time so we can talk
-        through your hair, your style, and what you're after — no rushed
-        chair time on day one.
-      </p>
-      <ul class="qa-tips">
-        <li>
-          <strong>Bring a picture.</strong> A reference photo of a cut or
-          style you like is the fastest way to land it.
-        </li>
-        <li>
-          <strong>Think about upkeep.</strong> Daily 30 seconds, weekly 2
-          minutes, or once-a-month? We'll match the cut to your routine.
-        </li>
-        <li>
-          <strong>Mention any cowlicks, scars, or tender spots</strong> when
-          you sit down — easier to plan around than to discover halfway in.
-        </li>
-      </ul>
-      <a class="qa-cta" href={deepLink('new-customer')}>
-        Book my first visit <span aria-hidden="true">→</span>
-      </a>
-    </div>
-  </div>
-</dialog>
 
 <style>
   .quick {
@@ -220,12 +187,15 @@ function deepLink(slug: (typeof NEEDED)[number]): string {
     align-items: center;
     gap: 0.9rem;
     padding: var(--pad);
-    border-right: 1px solid var(--color-border-soft);
-    background: transparent;
+    /* Inverted treatment per the shop's call: gold tile with dark text/icons
+       instead of dark tile with gold accents. Contrasts much harder against
+       the surrounding bg sections so the actions read at a glance. */
+    background: var(--color-gold);
+    color: var(--color-text-on-gold);
     border-top: 0;
     border-bottom: 0;
     border-left: 0;
-    color: var(--color-text);
+    border-right: 1px solid var(--color-gold-dark);
     text-align: left;
     cursor: pointer;
     font: inherit;
@@ -240,47 +210,50 @@ function deepLink(slug: (typeof NEEDED)[number]): string {
     position: absolute;
     inset: auto 0 0 0;
     height: 2px;
-    background: var(--color-gold);
+    background: var(--color-text-on-gold);
     transform: scaleX(0);
     transform-origin: left center;
     transition: transform var(--dur) var(--ease);
   }
-  .quick__card:hover { background: rgba(201, 163, 92, 0.04); }
+  .quick__card:hover { background: var(--color-gold-light); }
   .quick__card:hover::before { transform: scaleX(1); }
 
   .quick__glyph {
-    color: var(--color-gold);
+    color: var(--color-text-on-gold);
     width: 2.4rem;
     height: 2.4rem;
     display: grid;
     place-items: center;
-    border: 1px solid var(--color-rule);
+    border: 1px solid var(--color-gold-dark);
     border-radius: 50%;
-    transition: border-color var(--dur) var(--ease);
+    transition: border-color var(--dur) var(--ease), background var(--dur) var(--ease);
   }
   .quick__glyph svg {
     width: 1.25rem;
     height: 1.25rem;
     display: block;
   }
-  .quick__card:hover .quick__glyph { border-color: var(--color-gold); }
+  .quick__card:hover .quick__glyph {
+    border-color: var(--color-text-on-gold);
+    background: rgba(22, 19, 17, 0.08);
+  }
 
   .quick__body { display: grid; gap: 0.15rem; }
   .quick__label {
     font-family: var(--font-display);
     font-size: 1.15rem;
-    font-weight: 500;
+    font-weight: 600;
     letter-spacing: -0.005em;
-    color: var(--color-text);
+    color: var(--color-text-on-gold);
     font-variation-settings: 'opsz' 100;
   }
   .quick__sub {
     font-size: 0.82rem;
-    color: var(--color-text-muted);
+    color: rgba(22, 19, 17, 0.72);
     letter-spacing: 0.04em;
   }
   .quick__arrow {
-    color: var(--color-gold);
+    color: var(--color-text-on-gold);
     transition: transform var(--dur) var(--ease);
   }
   .quick__card:hover .quick__arrow { transform: translateX(4px); }
@@ -289,7 +262,7 @@ function deepLink(slug: (typeof NEEDED)[number]): string {
     .quick__grid { grid-template-columns: repeat(2, 1fr); }
     .quick__card:nth-child(2) { border-right: 0; }
     .quick__card:nth-child(1),
-    .quick__card:nth-child(2) { border-bottom: 1px solid var(--color-border-soft); }
+    .quick__card:nth-child(2) { border-bottom: 1px solid var(--color-gold-dark); }
   }
   @media (max-width: 460px) {
     .quick__sub { display: none; }
