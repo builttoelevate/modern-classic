@@ -264,10 +264,27 @@ function deepLink(slug: (typeof NEEDED)[number]): string {
     letter-spacing: 0.04em;
   }
   .quick__arrow {
+    width: 2.2rem;
+    height: 2.2rem;
+    display: grid;
+    place-items: center;
     color: var(--color-gold-light);
-    transition: transform var(--dur) var(--ease);
+    border: 1px solid rgba(201, 163, 92, 0.45);
+    border-radius: 50%;
+    font-size: 1rem;
+    line-height: 1;
+    font-weight: 700;
+    transition: transform var(--dur) var(--ease),
+                background var(--dur) var(--ease),
+                color var(--dur) var(--ease),
+                border-color var(--dur) var(--ease);
   }
-  .quick__card:hover .quick__arrow { transform: translateX(4px); color: var(--color-gold); }
+  .quick__card:hover .quick__arrow {
+    transform: translateX(4px);
+    background: var(--color-gold);
+    color: var(--color-text-on-gold);
+    border-color: var(--color-gold);
+  }
 
   @media (max-width: 880px) {
     .quick__grid { grid-template-columns: repeat(2, 1fr); }
