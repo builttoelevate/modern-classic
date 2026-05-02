@@ -22,6 +22,35 @@ interface WaitlistApiResponse {
 
 type Status = 'idle' | 'submitting' | 'success' | 'error';
 
+type DayKey = 'mon' | 'tue' | 'wed' | 'thu' | 'fri' | 'sat';
+type TimeKey = 'morning' | 'afternoon' | 'evening';
+
+const DAY_OPTIONS: Array<{ key: DayKey; label: string }> = [
+  { key: 'mon', label: 'Mon' },
+  { key: 'tue', label: 'Tue' },
+  { key: 'wed', label: 'Wed' },
+  { key: 'thu', label: 'Thu' },
+  { key: 'fri', label: 'Fri' },
+  { key: 'sat', label: 'Sat' },
+];
+
+const TIME_OPTIONS: Array<{ key: TimeKey; label: string; sub: string }> = [
+  { key: 'morning', label: 'Morning', sub: 'before 12pm' },
+  { key: 'afternoon', label: 'Afternoon', sub: '12 – 5pm' },
+  { key: 'evening', label: 'Evening', sub: '5pm +' },
+];
+
+/** YYYY-MM-DD for `date` in shop-tz (America/New_York). Used for default
+ * date-range values. en-CA locale conveniently produces the ISO format. */
+function shopDateKey(date: Date): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/New_York',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(date);
+}
+
 export function WaitlistSheet({
   open,
   onClose,
@@ -36,11 +65,44 @@ export function WaitlistSheet({
   const [name, setName] = useState(prefillName);
   const [email, setEmail] = useState(prefillEmail);
   const [phone, setPhone] = useState(prefillPhone);
-  const [preferredDate, setPreferredDate] = useState('');
+  // Default the date range to "today through 30 days out" — covers
+  // most customers' realistic flexibility window.
+  const [dateFrom, setDateFrom] = useState(() => shopDateKey(new Date()));
+  const [dateTo, setDateTo] = useState(() => {
+    const t = new Date();
+    t.setDate(t.getDate() + 30);
+    return shopDateKey(t);
+  });
+  // All chips on by default = "any day / any time works." Customer can
+  // toggle off to narrow.
+  const [daysOfWeek, setDaysOfWeek] = useState<DayKey[]>([
+    'mon',
+    'tue',
+    'wed',
+    'thu',
+    'fri',
+    'sat',
+  ]);
+  const [timesOfDay, setTimesOfDay] = useState<TimeKey[]>([
+    'morning',
+    'afternoon',
+    'evening',
+  ]);
   const [note, setNote] = useState('');
   const [status, setStatus] = useState<Status>('idle');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const firstFieldRef = useRef<HTMLInputElement>(null);
+
+  function toggleDay(key: DayKey) {
+    setDaysOfWeek((prev) =>
+      prev.includes(key) ? prev.filter((d) => d !== key) : [...prev, key],
+    );
+  }
+  function toggleTime(key: TimeKey) {
+    setTimesOfDay((prev) =>
+      prev.includes(key) ? prev.filter((t) => t !== key) : [...prev, key],
+    );
+  }
 
   // Sync prefill values back in if they change while the sheet was closed.
   useEffect(() => {
@@ -99,7 +161,10 @@ export function WaitlistSheet({
           barberName,
           serviceVariationId,
           teamMemberId,
-          preferredDate: preferredDate.trim() || undefined,
+          dateFrom: dateFrom || undefined,
+          dateTo: dateTo || undefined,
+          daysOfWeek,
+          timesOfDay,
           note: note.trim() || undefined,
         }),
       });
@@ -143,8 +208,8 @@ export function WaitlistSheet({
               <strong>You're on the list.</strong>
             </p>
             <p>
-              We'll reach out as soon as a {serviceName} opening with {barberName} comes
-              up — usually within a few days. Questions? Call{' '}
+              We'll email you the moment a {serviceName} opening with {barberName}{' '}
+              shows up that matches the dates and times you picked. Questions? Call{' '}
               <a className="link-gold" href="tel:+17402974462">740-297-4462</a>.
             </p>
             <div className="bw-waitlist__actions">
@@ -156,9 +221,9 @@ export function WaitlistSheet({
         ) : (
           <form className="bw-waitlist__form" onSubmit={submit} noValidate>
             <p className="bw-waitlist__sub">
-              Tell us how to reach you and we'll text or email when a{' '}
-              <strong>{serviceName}</strong> opening with <strong>{barberName}</strong>{' '}
-              comes up.
+              Tell us how to reach you and when you're available — we'll email
+              you automatically the moment a <strong>{serviceName}</strong> opening
+              with <strong>{barberName}</strong> matches.
             </p>
 
             <label className="bw-field">
@@ -199,18 +264,78 @@ export function WaitlistSheet({
               </label>
             </div>
 
-            <label className="bw-field">
-              <span className="bw-field__label">
-                Preferred date <span className="bw-field__optional">(optional)</span>
-              </span>
-              <input
-                type="text"
-                placeholder="e.g. weekday afternoons, May 15+"
-                maxLength={64}
-                value={preferredDate}
-                onChange={(e) => setPreferredDate(e.target.value)}
-              />
-            </label>
+            <div className="bw-waitlist__prefs">
+              <p className="bw-waitlist__prefs-help">
+                Tell us when you're available. We'll <strong>email you the moment
+                a slot opens</strong> that matches.
+              </p>
+
+              <div className="bw-field-row">
+                <label className="bw-field">
+                  <span className="bw-field__label">From</span>
+                  <input
+                    type="date"
+                    value={dateFrom}
+                    min={shopDateKey(new Date())}
+                    onChange={(e) => setDateFrom(e.target.value)}
+                  />
+                </label>
+                <label className="bw-field">
+                  <span className="bw-field__label">To</span>
+                  <input
+                    type="date"
+                    value={dateTo}
+                    min={dateFrom || shopDateKey(new Date())}
+                    onChange={(e) => setDateTo(e.target.value)}
+                  />
+                </label>
+              </div>
+
+              <div className="bw-field">
+                <span className="bw-field__label">
+                  Days that work <span className="bw-field__optional">(tap to toggle)</span>
+                </span>
+                <div className="bw-chip-row" role="group" aria-label="Days of week">
+                  {DAY_OPTIONS.map((opt) => {
+                    const active = daysOfWeek.includes(opt.key);
+                    return (
+                      <button
+                        key={opt.key}
+                        type="button"
+                        className={`bw-chip${active ? ' bw-chip--on' : ''}`}
+                        aria-pressed={active}
+                        onClick={() => toggleDay(opt.key)}
+                      >
+                        {opt.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="bw-field">
+                <span className="bw-field__label">
+                  Times that work <span className="bw-field__optional">(tap to toggle)</span>
+                </span>
+                <div className="bw-chip-row" role="group" aria-label="Times of day">
+                  {TIME_OPTIONS.map((opt) => {
+                    const active = timesOfDay.includes(opt.key);
+                    return (
+                      <button
+                        key={opt.key}
+                        type="button"
+                        className={`bw-chip bw-chip--wide${active ? ' bw-chip--on' : ''}`}
+                        aria-pressed={active}
+                        onClick={() => toggleTime(opt.key)}
+                      >
+                        <span className="bw-chip__label">{opt.label}</span>
+                        <span className="bw-chip__sub">{opt.sub}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
 
             <label className="bw-field">
               <span className="bw-field__label">

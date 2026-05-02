@@ -204,6 +204,31 @@ Cron schedule lives in `vercel.json` under `crons[]`. To change the
 trigger time, edit the cron expression there. Vercel Hobby tier limits
 crons to once-daily granularity, which is what we use.
 
+### Phase 8 env vars (waitlist auto-notify)
+
+`/api/cron/waitlist-notify` polls Square availability for matches against
+each active waitlist entry's preferences (date range + day-of-week chips
++ time-of-day chips). When a match appears it emails the customer via
+Resend. Anti-spam: per-slot dedup + 12-hour per-entry cooldown. Mirrors
+the auth pattern of the review-request cron — separate secret so the
+two crons can be rotated/disabled independently.
+
+```
+# Bearer secret for /api/cron/waitlist-notify. Generate with:
+# openssl rand -hex 32
+WAITLIST_NOTIFY_SECRET=
+```
+
+To trigger the cron manually (production or local):
+```
+curl -H "Authorization: Bearer $WAITLIST_NOTIFY_SECRET" \
+  "https://mdrnclassic.com/api/cron/waitlist-notify?dryRun=1"
+```
+
+`?dryRun=1` runs the full match logic and returns stats but doesn't
+send emails or write to KV — safe to call any time. Drop the flag to
+go live.
+
 ### Where things live
 
 - `src/lib/square/` — typed wrapper around the Square HTTP API (no SDK).

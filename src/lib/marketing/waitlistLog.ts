@@ -63,6 +63,28 @@ export interface WaitlistEntry {
   adminNote?: string;
   /** ISO of the last status change. */
   statusChangedAt?: string;
+
+  /** Phase 8 — auto-notify preferences. All optional so legacy entries
+   * created before this feature still render in admin without breaking. */
+
+  /** ISO date (YYYY-MM-DD) in shop tz, inclusive. Earliest day the
+   * customer would accept a slot on. */
+  dateFrom?: string;
+  /** ISO date (YYYY-MM-DD) in shop tz, inclusive. Latest day. The cron
+   * auto-archives entries whose dateTo is in the past. */
+  dateTo?: string;
+  /** Subset of ['mon','tue','wed','thu','fri','sat']. Empty/absent = any
+   * day-of-week is acceptable. Sundays excluded — shop is closed. */
+  daysOfWeek?: string[];
+  /** Subset of ['morning','afternoon','evening']. Bands: morning < 12,
+   * afternoon 12–17, evening ≥ 17. Empty/absent = any time. */
+  timesOfDay?: string[];
+
+  /** Notify bookkeeping — set by the cron once we email the customer
+   * about an opening. lastNotifiedAt powers the 12-hour cooldown,
+   * notifiedSlotStartAtUtc is the per-slot dedup key. */
+  lastNotifiedAt?: string;
+  notifiedSlotStartAtUtc?: string;
 }
 
 const KEY_PREFIX = 'mc:waitlist:';
@@ -93,6 +115,11 @@ export interface RecordWaitlistInput {
   teamMemberId: string | null;
   preferredDate?: string;
   note?: string;
+  /** Phase 8 — structured availability prefs for the auto-notify cron. */
+  dateFrom?: string;
+  dateTo?: string;
+  daysOfWeek?: string[];
+  timesOfDay?: string[];
 }
 
 export async function recordWaitlistEntry(
@@ -111,6 +138,10 @@ export async function recordWaitlistEntry(
     teamMemberId: input.teamMemberId,
     preferredDate: input.preferredDate,
     note: input.note,
+    dateFrom: input.dateFrom,
+    dateTo: input.dateTo,
+    daysOfWeek: input.daysOfWeek,
+    timesOfDay: input.timesOfDay,
     submittedAt,
     status: 'new',
     statusChangedAt: submittedAt,
@@ -181,4 +212,40 @@ export async function countWaitlistByStatus(): Promise<Record<WaitlistStatus, nu
   };
   for (const e of all) counts[e.status]++;
   return counts;
+}
+
+/**
+ * Phase 8 — list only waitlist entries the auto-notify cron should
+ * still consider. 'booked' and 'archived' are out by definition.
+ */
+export async function listActiveWaitlistEntries(opts: { limit?: number } = {}): Promise<
+  WaitlistEntry[]
+> {
+  const all = await listWaitlistEntries({
+    limit: opts.limit ?? 500,
+    includeArchived: false,
+  });
+  return all.filter((e) => e.status === 'new' || e.status === 'contacted');
+}
+
+/**
+ * Phase 8 — record that we just emailed a customer about a specific
+ * slot opening. Sets both lastNotifiedAt (powers the 12-hour cooldown)
+ * and notifiedSlotStartAtUtc (per-slot dedup). Preserves the entry's
+ * existing TTL via keepTtl, mirroring recordReviewRequestClicked.
+ */
+export async function markWaitlistNotified(
+  id: string,
+  slotStartAtUtc: string,
+): Promise<WaitlistEntry | null> {
+  const redis = getRedis();
+  const existing = await redis.get<WaitlistEntry>(kEntry(id));
+  if (!existing) return null;
+  const updated: WaitlistEntry = {
+    ...existing,
+    lastNotifiedAt: new Date().toISOString(),
+    notifiedSlotStartAtUtc: slotStartAtUtc,
+  };
+  await redis.set(kEntry(id), updated, { keepTtl: true });
+  return updated;
 }

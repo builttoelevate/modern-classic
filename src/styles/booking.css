@@ -593,6 +593,69 @@
 .bw-waitlist__success p { margin: 0; color: var(--color-text); line-height: 1.55; }
 .bw-waitlist__success p strong { color: var(--color-gold-light); }
 
+/* ---------- Waitlist preference picker (Phase 8 auto-notify) ---------- */
+.bw-waitlist__prefs {
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-3);
+  background: var(--color-bg-soft, rgba(255, 255, 255, 0.02));
+  border: 1px solid var(--color-border-soft);
+  border-radius: var(--radius-sm);
+}
+.bw-waitlist__prefs-help {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: 0.88rem;
+  line-height: 1.5;
+}
+.bw-waitlist__prefs-help strong {
+  color: var(--color-gold-light);
+  font-weight: 600;
+}
+.bw-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+.bw-chip {
+  appearance: none;
+  font: inherit;
+  color: var(--color-text-muted);
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  padding: 0.5rem 0.85rem;
+  cursor: pointer;
+  font-size: 0.82rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  transition: border-color var(--dur-fast) var(--ease),
+              background var(--dur-fast) var(--ease),
+              color var(--dur-fast) var(--ease);
+}
+.bw-chip:hover { border-color: var(--color-gold); color: var(--color-text); }
+.bw-chip--on {
+  background: rgba(201, 163, 92, 0.14);
+  border-color: var(--color-gold);
+  color: var(--color-gold-light);
+}
+.bw-chip--on:hover { background: rgba(201, 163, 92, 0.20); }
+.bw-chip--wide {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  padding: 0.55rem 0.95rem;
+  gap: 2px;
+}
+.bw-chip__label { font-weight: 600; }
+.bw-chip__sub {
+  font-size: 0.7rem;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  color: var(--color-text-dim);
+}
+.bw-chip--on .bw-chip__sub { color: var(--color-gold); }
+
 /* ---------- Form ---------- */
 .bw-form {
   display: grid;

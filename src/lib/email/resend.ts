@@ -184,3 +184,42 @@ export async function sendReviewRequest(
     },
   });
 }
+
+export interface SendWaitlistOpeningInput {
+  to: string;
+  customerName: string;
+  barberName: string;
+  serviceName: string;
+  whenLabel: string;
+  bookUrl: string;
+  shopAddress: string;
+  shopPhone: string;
+}
+
+/**
+ * Phase 8 — fired by /api/cron/waitlist-notify the moment a slot
+ * matching a customer's waitlist preferences appears on Square. Reply-to
+ * goes to the shop inbox so a customer can reply to confirm or ask
+ * questions; the customer themselves is in the To: header. No
+ * unsubscribe header — these are transactional (the customer asked us
+ * to email them about openings), not marketing.
+ */
+export async function sendWaitlistOpening(
+  input: SendWaitlistOpeningInput,
+): Promise<{ id: string }> {
+  const { waitlistOpeningHtml, waitlistOpeningText, waitlistOpeningSubject } = await import(
+    './templates/waitlistOpening'
+  );
+  const html = waitlistOpeningHtml(input);
+  const text = waitlistOpeningText(input);
+  return sendEmail({
+    to: input.to,
+    subject: waitlistOpeningSubject({
+      whenLabel: input.whenLabel,
+      barberName: input.barberName,
+    }),
+    html,
+    text,
+    replyTo: REPLY_TO,
+  });
+}

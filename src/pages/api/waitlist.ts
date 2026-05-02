@@ -76,6 +76,46 @@ export const POST: APIRoute = async ({ request, clientAddress }) => {
     ? b.teamMemberId.trim().slice(0, 64)
     : null;
 
+  // Phase 8 — auto-notify preferences. Validated as a strict YYYY-MM-DD
+  // ISO date and a small allow-list of chip keys. All optional so the
+  // older clients that don't send them still work.
+  const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+  const dateFrom = typeof b.dateFrom === 'string' && ISO_DATE.test(b.dateFrom)
+    ? b.dateFrom
+    : undefined;
+  const dateTo = typeof b.dateTo === 'string' && ISO_DATE.test(b.dateTo)
+    ? b.dateTo
+    : undefined;
+  if (dateFrom && dateTo && dateTo < dateFrom) {
+    return Response.json(
+      {
+        ok: false,
+        error: { code: 'BAD_REQUEST', detail: '"To" date can\'t be before "From" date.' },
+      },
+      { status: 400 },
+    );
+  }
+  const ALLOWED_DAYS = new Set(['mon', 'tue', 'wed', 'thu', 'fri', 'sat']);
+  const ALLOWED_TIMES = new Set(['morning', 'afternoon', 'evening']);
+  const daysOfWeek = Array.isArray(b.daysOfWeek)
+    ? Array.from(
+        new Set(
+          b.daysOfWeek.filter(
+            (d): d is string => typeof d === 'string' && ALLOWED_DAYS.has(d),
+          ),
+        ),
+      )
+    : undefined;
+  const timesOfDay = Array.isArray(b.timesOfDay)
+    ? Array.from(
+        new Set(
+          b.timesOfDay.filter(
+            (t): t is string => typeof t === 'string' && ALLOWED_TIMES.has(t),
+          ),
+        ),
+      )
+    : undefined;
+
   if (!name || !email || !phone || !serviceName || !barberName) {
     return Response.json(
       {
@@ -166,6 +206,10 @@ export const POST: APIRoute = async ({ request, clientAddress }) => {
         teamMemberId,
         preferredDate,
         note,
+        dateFrom,
+        dateTo,
+        daysOfWeek,
+        timesOfDay,
       });
     } catch (err) {
       const detail = err instanceof Error ? err.message : String(err);

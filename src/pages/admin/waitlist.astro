@@ -55,6 +55,57 @@ function fmtPhone(raw: string): string {
   return raw;
 }
 
+/** Compact "May 5 – May 20" range label in shop tz. Tolerates either
+ * date being absent (open-ended) and YYYY-MM-DD ISO strings. */
+function fmtDateRange(from?: string, to?: string): string | null {
+  if (!from && !to) return null;
+  const fmt = new Intl.DateTimeFormat('en-US', {
+    timeZone: SHOP_TZ,
+    month: 'short',
+    day: 'numeric',
+  });
+  const fromLabel = from ? fmt.format(new Date(`${from}T12:00:00`)) : 'open';
+  const toLabel = to ? fmt.format(new Date(`${to}T12:00:00`)) : 'open';
+  return `${fromLabel} – ${toLabel}`;
+}
+
+const DAY_LABELS: Record<string, string> = {
+  mon: 'Mon', tue: 'Tue', wed: 'Wed', thu: 'Thu', fri: 'Fri', sat: 'Sat',
+};
+const TIME_LABELS: Record<string, string> = {
+  morning: 'Morning', afternoon: 'Afternoon', evening: 'Evening',
+};
+
+/** Builds the "May 5 – May 20 · Tue/Wed/Thu · Afternoon" subtitle.
+ * Skips segments that are fully open (all chips on or empty). Returns
+ * null when no window info is set so admin row can hide it. */
+function fmtWindow(entry: WaitlistEntry): string | null {
+  const range = fmtDateRange(entry.dateFrom, entry.dateTo);
+  const days = entry.daysOfWeek;
+  const showDays = Array.isArray(days) && days.length > 0 && days.length < 6;
+  const times = entry.timesOfDay;
+  const showTimes = Array.isArray(times) && times.length > 0 && times.length < 3;
+  const parts: string[] = [];
+  if (range) parts.push(range);
+  if (showDays) parts.push(days!.map((d) => DAY_LABELS[d] ?? d).join('/'));
+  if (showTimes) parts.push(times!.map((t) => TIME_LABELS[t] ?? t).join('/'));
+  return parts.length > 0 ? parts.join(' · ') : null;
+}
+
+/** Compact "3 hours ago" / "2 days ago" for the notification stamp. */
+function relativeFromNow(iso: string, now = new Date()): string {
+  const t = new Date(iso).getTime();
+  if (!Number.isFinite(t)) return iso;
+  const diffMs = now.getTime() - t;
+  const mins = Math.round(diffMs / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins} min ago`;
+  const hrs = Math.round(mins / 60);
+  if (hrs < 24) return `${hrs} hr${hrs === 1 ? '' : 's'} ago`;
+  const days = Math.round(hrs / 24);
+  return `${days} day${days === 1 ? '' : 's'} ago`;
+}
+
 function bookHrefFor(entry: WaitlistEntry): string {
   const params = new URLSearchParams();
   if (entry.serviceVariationId) params.set('service', entry.serviceVariationId);
@@ -208,6 +259,29 @@ function bookHrefFor(entry: WaitlistEntry): string {
         color: var(--dim);
         margin-bottom: 4px;
       }
+      .entry-notify {
+        margin: 10px 0 0;
+        padding: 6px 10px;
+        font-size: 0.78rem;
+        letter-spacing: 0.04em;
+        border-radius: 4px;
+        display: inline-block;
+      }
+      .entry-notify--idle {
+        background: rgba(176, 166, 149, 0.08);
+        color: var(--muted);
+        border: 1px solid var(--border);
+      }
+      .entry-notify--on {
+        background: rgba(108, 184, 124, 0.10);
+        color: #a4d091;
+        border: 1px solid rgba(108, 184, 124, 0.30);
+      }
+      .entry-notify--archived {
+        background: rgba(176, 166, 149, 0.04);
+        color: var(--dim);
+        border: 1px solid var(--border);
+      }
 
       .actions {
         display: flex; flex-direction: column; gap: 8px;
@@ -338,13 +412,28 @@ function bookHrefFor(entry: WaitlistEntry): string {
                           <a href={`mailto:${e.customerEmail}`}>{e.customerEmail}</a>
                         ) : '—'}
                       </dd>
-                      {e.preferredDate && (
+                      {fmtWindow(e) && (
+                        <>
+                          <dt>Window</dt>
+                          <dd>{fmtWindow(e)}</dd>
+                        </>
+                      )}
+                      {e.preferredDate && !fmtWindow(e) && (
                         <>
                           <dt>Preferred</dt>
                           <dd>{e.preferredDate}</dd>
                         </>
                       )}
                     </dl>
+                    <p class={`entry-notify entry-notify--${e.lastNotifiedAt ? 'on' : e.status === 'archived' ? 'archived' : 'idle'}`}>
+                      {e.lastNotifiedAt ? (
+                        <>Auto-notified {relativeFromNow(e.lastNotifiedAt)}</>
+                      ) : e.status === 'archived' ? (
+                        <>Auto-archived (window passed)</>
+                      ) : (
+                        <>No matching slot yet — checking every 30 min</>
+                      )}
+                    </p>
                     {e.note && (
                       <div class="entry-note">
                         <span class="lbl">Their note</span>
