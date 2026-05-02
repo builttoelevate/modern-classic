@@ -162,11 +162,10 @@ Astro.response.headers.append('Set-Cookie', refreshSessionCookie(session));
         <header class="mb-profile__head">
           <h2 id="people-i-book-for">People I book for</h2>
           <p class="mb-profile__sub">
-            Add kids or anyone else you book appointments for. They get their
-            own name on the chair (so reminder texts say <strong>"Hi
-            Briar"</strong> instead of "Hi {customer.given_name ?? 'you'}"),
-            and you can pick who you're booking for at the top of the booking
-            wizard.
+            Add kids or anyone else you book appointments for. Each person
+            gets their own name on the chair, so the shop's reminder texts
+            greet <strong>them</strong>, not you. Pick who you're booking
+            for at the top of the booking wizard.
           </p>
         </header>
 
@@ -204,7 +203,6 @@ Astro.response.headers.append('Set-Cookie', refreshSessionCookie(session));
                 name="givenName"
                 required
                 maxlength="60"
-                placeholder="Their first name"
                 autocomplete="off"
               />
             </label>
@@ -216,7 +214,6 @@ Astro.response.headers.append('Set-Cookie', refreshSessionCookie(session));
                 type="text"
                 name="familyName"
                 maxlength="60"
-                placeholder={customer.family_name ? `Defaults to ${customer.family_name}` : 'Last name'}
                 autocomplete="off"
               />
             </label>
@@ -229,7 +226,7 @@ Astro.response.headers.append('Set-Cookie', refreshSessionCookie(session));
               type="text"
               name="relationship"
               maxlength="32"
-              placeholder="Son · Daughter · Partner · Parent"
+              autocomplete="off"
             />
           </label>
           <div class="mb-profile__actions">
