@@ -40,6 +40,12 @@
   font-size: 0.95rem;
   margin: 0;
 }
+.mb-head__actions {
+  margin-left: auto;
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
 .mb-head__signout {
   margin-left: auto;
   font-size: 0.78rem;
@@ -52,8 +58,10 @@
   border-radius: 2px;
   cursor: pointer;
   font-family: inherit;
+  text-decoration: none;
   transition: border-color var(--dur) var(--ease), color var(--dur) var(--ease);
 }
+.mb-head__actions .mb-head__signout { margin-left: 0; }
 .mb-head__signout:hover {
   border-color: var(--color-gold);
   color: var(--color-gold-light);
@@ -577,3 +585,71 @@
 }
 .mb-newcust__sub { margin: 0; color: var(--color-text-muted); line-height: 1.55; }
 .mb-newcust .mb-btn { justify-self: flex-start; margin-top: 0.5rem; }
+
+/* ---------- Profile form ---------- */
+.mb-profile {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: clamp(1.25rem, 3vw, 1.75rem);
+  display: grid;
+  gap: 1.25rem;
+}
+.mb-profile__sub {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: 0.95rem;
+  line-height: 1.55;
+}
+.mb-profile form { display: grid; gap: 1.1rem; }
+.mb-profile__row { display: grid; gap: 1rem; }
+.mb-profile__row--two { grid-template-columns: 1fr; }
+@media (min-width: 540px) {
+  .mb-profile__row--two { grid-template-columns: 1fr 1fr; }
+}
+.mb-profile__field { display: grid; gap: 0.4rem; }
+.mb-profile__label {
+  font-size: 0.7rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+  font-weight: 600;
+}
+.mb-profile input {
+  width: 100%;
+  padding: 0.85rem 0.95rem;
+  background: var(--color-surface-2);
+  color: var(--color-text);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  font-size: 1rem;
+  font-family: inherit;
+  transition: border-color var(--dur) var(--ease);
+}
+.mb-profile input:focus {
+  outline: 2px solid rgba(201, 163, 92, 0.4);
+  outline-offset: 1px;
+  border-color: var(--color-gold);
+}
+.mb-profile__hint {
+  font-size: 0.82rem;
+  color: var(--color-text-dim);
+  line-height: 1.4;
+}
+.mb-profile__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  margin-top: 0.25rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--color-border);
+}
+.mb-profile__status {
+  margin: 0;
+  font-size: 0.92rem;
+  line-height: 1.45;
+}
+.mb-profile__status--ok { color: #a4d091; }
+.mb-profile__status--error { color: #f0a37a; }
+.mb-profile__status[hidden] { display: none; }

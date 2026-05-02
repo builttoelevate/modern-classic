@@ -128,7 +128,10 @@ Astro.response.headers.append('Set-Cookie', refreshSessionCookie(session));
         <h1>Your bookings</h1>
         <p class="mb-head__email">{customerLabel}</p>
       </div>
-      <button type="button" class="mb-head__signout" id="signout-btn">Sign out</button>
+      <div class="mb-head__actions">
+        <a class="mb-head__signout" href={`${base}/profile`}>Profile</a>
+        <button type="button" class="mb-head__signout" id="signout-btn">Sign out</button>
+      </div>
     </div>
 
     {loadError ? (

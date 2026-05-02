@@ -23,9 +23,11 @@ const bookRel = isGhPages ? 'noopener' : '';
 
 // Phase 5 — "My Bookings" lives behind SSR + auth, so on gh-pages we
 // don't render it. On the Vercel deploy it's always visible; if the
-// user isn't signed in, /my-bookings redirects to /sign-in.
+// user isn't signed in, /my-bookings redirects to /sign-in. Same
+// reasoning for /profile — only Vercel; unauth users get redirected.
 const showMyBookings = !isGhPages;
 const myBookingsUrl = `${base}/my-bookings`;
+const profileUrl = `${base}/profile`;
 ---
 <header class="site-header" data-elevated="false">
   <div class="container header-inner">
@@ -41,7 +43,10 @@ const myBookingsUrl = `${base}/my-bookings`;
           <li><a href={href}>{label}</a></li>
         ))}
         {showMyBookings && (
-          <li><a href={myBookingsUrl}>My Bookings</a></li>
+          <>
+            <li><a href={myBookingsUrl}>My Bookings</a></li>
+            <li><a href={profileUrl}>Profile</a></li>
+          </>
         )}
       </ul>
     </nav>
@@ -73,7 +78,10 @@ const myBookingsUrl = `${base}/my-bookings`;
           <li><a href={href} data-drawer-link>{label}</a></li>
         ))}
         {showMyBookings && (
-          <li><a href={myBookingsUrl} data-drawer-link>My Bookings</a></li>
+          <>
+            <li><a href={myBookingsUrl} data-drawer-link>My Bookings</a></li>
+            <li><a href={profileUrl} data-drawer-link>Profile</a></li>
+          </>
         )}
       </ul>
     </nav>

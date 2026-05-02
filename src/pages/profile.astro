@@ -1,0 +1,240 @@
+---
+export const prerender = false;
+
+import BaseLayout from '../layouts/BaseLayout.astro';
+import Header from '../components/Header.astro';
+import Footer from '../components/Footer.astro';
+import { getSession, refreshSessionCookie } from '../lib/auth/middleware';
+import { isAuthConfigured } from '../lib/auth/session';
+import { getCustomerById } from '../lib/square/customers';
+import type { Customer } from '../lib/square/types';
+
+import '../styles/portal.css';
+
+const base = import.meta.env.BASE_URL.replace(/\/$/, '');
+
+if (!isAuthConfigured()) {
+  return new Response(
+    'Customer portal is temporarily unavailable. Please try again shortly.',
+    { status: 503, headers: { 'Content-Type': 'text/plain' } },
+  );
+}
+
+const session = getSession(Astro.request);
+if (!session) {
+  return new Response(null, {
+    status: 302,
+    headers: {
+      Location: `${base}/sign-in?redirect=${encodeURIComponent(`${base}/profile`)}`,
+    },
+  });
+}
+
+let customer: Customer | null = null;
+let loadError: string | null = null;
+try {
+  customer = await getCustomerById(session.customerId);
+} catch (err) {
+  loadError = err instanceof Error ? err.message : 'Failed to load.';
+}
+
+function fmtPhone(raw: string): string {
+  const d = raw.replace(/[^0-9]/g, '');
+  if (d.length === 11 && d.startsWith('1')) {
+    return `(${d.slice(1, 4)}) ${d.slice(4, 7)}-${d.slice(7)}`;
+  }
+  if (d.length === 10) {
+    return `(${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6)}`;
+  }
+  return raw;
+}
+
+const customerLabel = session.email;
+
+// Sliding cookie refresh.
+Astro.response.headers.append('Set-Cookie', refreshSessionCookie(session));
+---
+<BaseLayout
+  title="My Profile — Modern Classic Barbershop"
+  description="Manage your name, email, and phone on file at Modern Classic."
+>
+  <Header />
+  <main id="main" class="mb-page">
+    <div class="mb-head">
+      <div class="mb-head__id">
+        <span class="mb-head__eyebrow">Your account</span>
+        <h1>Profile</h1>
+        <p class="mb-head__email">{customerLabel}</p>
+      </div>
+      <a class="mb-head__signout" href={`${base}/my-bookings`}>← My bookings</a>
+    </div>
+
+    {loadError && (
+      <div class="mb-empty">
+        <p>We couldn't load your profile right now. Please try again in a moment, or call <a class="link-gold" href="tel:+17402974462">740-297-4462</a>.</p>
+      </div>
+    )}
+
+    {customer && (
+      <section class="mb-profile">
+        <p class="mb-profile__sub">
+          Update what we (and Square) have on file. Your email is how you sign in;
+          your phone is how the shop sends reminders. Changes apply to future
+          bookings — past appointments keep whatever info was used when you booked.
+        </p>
+
+        <form id="profile-form">
+          <div class="mb-profile__row mb-profile__row--two">
+            <label class="mb-profile__field">
+              <span class="mb-profile__label">First name</span>
+              <input
+                type="text"
+                name="givenName"
+                value={customer.given_name ?? ''}
+                data-original={customer.given_name ?? ''}
+                autocomplete="given-name"
+                maxlength="80"
+                required
+              />
+            </label>
+            <label class="mb-profile__field">
+              <span class="mb-profile__label">Last name</span>
+              <input
+                type="text"
+                name="familyName"
+                value={customer.family_name ?? ''}
+                data-original={customer.family_name ?? ''}
+                autocomplete="family-name"
+                maxlength="80"
+                required
+              />
+            </label>
+          </div>
+
+          <label class="mb-profile__field">
+            <span class="mb-profile__label">Email</span>
+            <input
+              type="email"
+              name="email"
+              value={customer.email_address ?? ''}
+              data-original={customer.email_address ?? ''}
+              autocomplete="email"
+              autocapitalize="none"
+              spellcheck="false"
+              maxlength="120"
+              required
+            />
+            <span class="mb-profile__hint">This is how you sign in. Make sure you can receive email here.</span>
+          </label>
+
+          <label class="mb-profile__field">
+            <span class="mb-profile__label">Mobile phone</span>
+            <input
+              type="tel"
+              name="phone"
+              value={customer.phone_number ? fmtPhone(customer.phone_number) : ''}
+              data-original={customer.phone_number ?? ''}
+              autocomplete="tel"
+              maxlength="32"
+              required
+            />
+            <span class="mb-profile__hint">Square sends appointment reminders + cancellation notices here.</span>
+          </label>
+
+          <div class="mb-profile__actions">
+            <button type="button" class="mb-btn mb-btn--ghost" data-reset>Reset</button>
+            <button type="submit" class="mb-btn">Save changes</button>
+          </div>
+          <p class="mb-profile__status" data-status hidden></p>
+        </form>
+      </section>
+    )}
+  </main>
+  <Footer />
+</BaseLayout>
+
+<script is:inline>
+  (function () {
+    const form = document.getElementById('profile-form');
+    if (!form) return;
+    const status = form.querySelector('[data-status]');
+    const submitBtn = form.querySelector('button[type="submit"]');
+    const resetBtn = form.querySelector('[data-reset]');
+
+    function show(msg, kind) {
+      if (!status) return;
+      status.textContent = msg;
+      status.className = 'mb-profile__status mb-profile__status--' + kind;
+      status.hidden = false;
+    }
+    function clear() {
+      if (!status) return;
+      status.textContent = '';
+      status.hidden = true;
+    }
+
+    if (resetBtn) {
+      resetBtn.addEventListener('click', () => {
+        form.querySelectorAll('input').forEach((input) => {
+          const original = input.dataset.original ?? '';
+          if (input.name === 'phone' && original) {
+            const d = original.replace(/[^0-9]/g, '');
+            if (d.length === 11 && d.startsWith('1')) {
+              input.value = '(' + d.slice(1, 4) + ') ' + d.slice(4, 7) + '-' + d.slice(7);
+            } else if (d.length === 10) {
+              input.value = '(' + d.slice(0, 3) + ') ' + d.slice(3, 6) + '-' + d.slice(6);
+            } else {
+              input.value = original;
+            }
+          } else {
+            input.value = original;
+          }
+        });
+        clear();
+      });
+    }
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      clear();
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Saving…';
+      const payload = {
+        givenName: form.givenName.value.trim(),
+        familyName: form.familyName.value.trim(),
+        email: form.email.value.trim(),
+        phone: form.phone.value.trim(),
+      };
+      try {
+        const res = await fetch('/api/customer/update-self', {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        const data = await res.json();
+        if (!res.ok || !data.ok) {
+          show((data && data.error && data.error.detail) || 'Could not save changes.', 'error');
+          submitBtn.disabled = false;
+          submitBtn.textContent = 'Save changes';
+          return;
+        }
+        if (data.changed === false) {
+          show('No changes to save.', 'ok');
+        } else {
+          show('Saved. Updated: ' + (data.fields || []).join(', ') + '.', 'ok');
+          // Sync the data-original attrs so a second submit doesn't think they're stale.
+          form.querySelectorAll('input').forEach((input) => {
+            input.dataset.original = input.value;
+          });
+        }
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Save changes';
+      } catch {
+        show('Network error. Please try again.', 'error');
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Save changes';
+      }
+    });
+  })();
+</script>
