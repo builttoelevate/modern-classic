@@ -178,45 +178,55 @@ function deepLink(slug: (typeof NEEDED)[number]): string {
   .quick__grid {
     display: grid;
     grid-template-columns: repeat(4, 1fr);
-    gap: 0;
+    gap: 0.75rem;
+    padding: clamp(1rem, 2vw, 1.5rem) 0;
   }
   .quick__card {
-    --pad: clamp(1.1rem, 2.4vw, 1.6rem);
+    --pad: clamp(1rem, 2.2vw, 1.4rem);
     display: grid;
     grid-template-columns: auto 1fr auto;
     align-items: center;
     gap: 0.9rem;
     padding: var(--pad);
-    /* Dark treatment with gold accents (restored after a brief gold-on-
-       black experiment). Readability bumps over the original: bolder
-       label, brighter sub-line, brighter glyph + dividers. */
-    background: transparent;
+    /* Card affordance — subtle surface + visible border + soft lift on
+       hover so the tiles read as obviously-tappable buttons rather than
+       four labels floating against the photo above. */
+    background: linear-gradient(180deg, var(--color-surface), var(--color-bg-soft));
     color: var(--color-text);
-    border-top: 0;
-    border-bottom: 0;
-    border-left: 0;
-    border-right: 1px solid var(--color-border);
+    border: 1px solid var(--color-border);
+    border-radius: 4px;
     text-align: left;
     cursor: pointer;
     font: inherit;
-    transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
+    box-shadow: 0 6px 18px -12px rgba(0, 0, 0, 0.7);
+    transition: background var(--dur) var(--ease),
+                border-color var(--dur) var(--ease),
+                transform var(--dur) var(--ease),
+                box-shadow var(--dur) var(--ease);
     position: relative;
     text-decoration: none;
     width: 100%;
   }
-  .quick__card:last-child { border-right: 0; }
   .quick__card::before {
     content: '';
     position: absolute;
     inset: auto 0 0 0;
     height: 2px;
-    background: var(--color-gold);
-    transform: scaleX(0);
-    transform-origin: left center;
-    transition: transform var(--dur) var(--ease);
+    background: linear-gradient(90deg, transparent, var(--color-gold), var(--color-gold-dark), transparent);
+    opacity: 0;
+    transition: opacity var(--dur) var(--ease);
   }
-  .quick__card:hover { background: rgba(201, 163, 92, 0.07); }
-  .quick__card:hover::before { transform: scaleX(1); }
+  .quick__card:hover {
+    border-color: rgba(201, 163, 92, 0.5);
+    background: linear-gradient(180deg, var(--color-surface-2), var(--color-surface));
+    transform: translateY(-2px);
+    box-shadow: 0 14px 32px -16px rgba(0, 0, 0, 0.85);
+  }
+  .quick__card:hover::before { opacity: 1; }
+  .quick__card:focus-visible {
+    outline: 2px solid var(--color-gold);
+    outline-offset: 2px;
+  }
 
   .quick__glyph {
     color: var(--color-gold-light);
@@ -261,9 +271,6 @@ function deepLink(slug: (typeof NEEDED)[number]): string {
 
   @media (max-width: 880px) {
     .quick__grid { grid-template-columns: repeat(2, 1fr); }
-    .quick__card:nth-child(2) { border-right: 0; }
-    .quick__card:nth-child(1),
-    .quick__card:nth-child(2) { border-bottom: 1px solid var(--color-border); }
   }
   @media (max-width: 460px) {
     .quick__sub { display: none; }
