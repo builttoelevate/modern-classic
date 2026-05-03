@@ -131,7 +131,7 @@ const itemListSchema = {
                 data-featured={p.featured ? 'true' : undefined}
                 style={`--reveal-delay: ${(i % 4) * 60}ms`}
               >
-                <div class="prod-card__media">
+                <div class:list={['prod-card__media', p.whiteBg && 'prod-card__media--white']}>
                   {p.featured && <span class="prod-card__badge">Featured</span>}
                   <img src={p.imageUrl} alt={`${p.name} — ${p.size}`} loading="lazy" decoding="async" />
                 </div>
@@ -460,6 +460,37 @@ const itemListSchema = {
     filter: drop-shadow(0 14px 28px rgba(0, 0, 0, 0.5));
   }
   .prod-card:hover .prod-card__media img { transform: scale(1.05); }
+
+  /* White-seamless studio shots (e.g. Savoir cologne JPGs) sit on the
+     same dark card background as transparent PNGs by way of two tricks:
+       1. mix-blend-mode: multiply on the img — pure white pixels in the
+          source multiply with the dark card to disappear, while the
+          black bottle body multiplies to itself and stays opaque.
+       2. A radial vignette on top, scoped to the bottle silhouette,
+          masks any residual edge halo at the perimeter so the white
+          plate never reads. */
+  .prod-card__media--white img {
+    mix-blend-mode: multiply;
+    /* Slight lift to compensate for the gold cap darkening under
+       multiply against the dark card gradient. */
+    filter: drop-shadow(0 14px 28px rgba(0, 0, 0, 0.5)) brightness(1.18) contrast(1.05);
+    /* Bottle is taller than the powder/clay shots — keep the cap visible
+       and don't crop into the base. */
+    max-width: 64%;
+    max-height: 84%;
+  }
+  .prod-card__media--white::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(ellipse 28% 50% at 50% 50%,
+      transparent 0%,
+      rgba(11, 10, 8, 0.55) 70%,
+      rgba(11, 10, 8, 0.92) 100%);
+    pointer-events: none;
+    /* Sits above the image but below the badge (z-index: 1). */
+    z-index: 0;
+  }
 
   .prod-card__body {
     display: grid;
