@@ -12,7 +12,7 @@ const all = (await getCollection('products'))
   .map((p) => p.data);
 
 // Group products by collection so the page reads like a curated shop floor
-// instead of a flat list. Order: featured collections first, then bundles last.
+// instead of a flat list.
 const collectionOrder = [
   'Styling',
   'Texture & Finish',
@@ -20,7 +20,6 @@ const collectionOrder = [
   'Shaving / Beard Care',
   'Shaving',
   'Fragrance',
-  'Bundles',
 ];
 const groupedMap = new Map<string, typeof all>();
 for (const p of all) {
@@ -78,7 +77,6 @@ const itemListSchema = {
         <div class="shop-hero__glow"></div>
       </div>
       <div class="container shop-hero__inner">
-        <p class="eyebrow">The Take-Home Kit</p>
         <h1 id="shop-hero-heading" class="shop-hero__h1">
           <span class="shop-hero__line">Grooming essentials,</span>
           <span class="shop-hero__line italic-accent">built by barbers.</span>
