@@ -82,7 +82,12 @@ const itemListSchema = {
                   -1 -1 -1 3 0"
         />
         <feComponentTransfer>
-          <feFuncA type="linear" slope="3" intercept="-1" />
+          {/* Steeper alpha falloff. Effective cutoff: matrix-output
+              A < 0.6 → 0 (transparent), A > 0.7 → 1 (opaque). The
+              Shaving Cream JPG has a soft drop-shadow halo whose mid
+              tones (~75–85% gray) survived the prior slope=3 curve;
+              slope=10 intercept=-6 cuts those off. */}
+          <feFuncA type="linear" slope="10" intercept="-6" />
         </feComponentTransfer>
       </filter>
     </svg>
