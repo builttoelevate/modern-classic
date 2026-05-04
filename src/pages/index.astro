@@ -9,6 +9,12 @@
 export const prerender = process.env.DEPLOY_TARGET === 'gh-pages';
 
 import BaseLayout from '../layouts/BaseLayout.astro';
+// The hero's "Join the waitlist" trigger mounts the booking flow's
+// WaitlistSheet via portal. Its styles live in booking.css alongside
+// the rest of the booking-flow UI; without this import on the
+// homepage the sheet would mount into document.body unstyled and
+// render invisibly.
+import '../styles/booking.css';
 import Header from '../components/Header.astro';
 import TrustStrip from '../components/TrustStrip.astro';
 import Hero from '../components/Hero.astro';
