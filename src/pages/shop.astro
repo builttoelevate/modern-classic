@@ -65,6 +65,22 @@ const itemListSchema = {
 >
   <Header />
   <main id="main">
+    {/* SVG color-key filter for white-seamless product JPGs. The matrix
+        keeps RGB unchanged but recomputes alpha so pure-white pixels
+        drop to fully transparent while bottle/black/gold pixels stay
+        fully opaque. Hidden from layout. */}
+    <svg width="0" height="0" aria-hidden="true" focusable="false" style="position:absolute">
+      <filter id="mc-key-white" color-interpolation-filters="sRGB">
+        <feColorMatrix
+          type="matrix"
+          values="1 0 0 0 0
+                  0 1 0 0 0
+                  0 0 1 0 0
+                  -1 -1 -1 3 0"
+        />
+      </filter>
+    </svg>
+
     <div class="shop-promo" role="status">
       <div class="container shop-promo__inner">
         <span class="shop-promo__tag">Free Shipping</span>
@@ -461,35 +477,16 @@ const itemListSchema = {
   }
   .prod-card:hover .prod-card__media img { transform: scale(1.05); }
 
-  /* White-seamless studio shots (e.g. Savoir cologne JPGs) sit on the
-     same dark card background as transparent PNGs by way of two tricks:
-       1. mix-blend-mode: multiply on the img — pure white pixels in the
-          source multiply with the dark card to disappear, while the
-          black bottle body multiplies to itself and stays opaque.
-       2. A radial vignette on top, scoped to the bottle silhouette,
-          masks any residual edge halo at the perimeter so the white
-          plate never reads. */
+  /* White-seamless studio shots (Savoir bottles, Shaving Cream tin)
+     ship with a baked-in white background. We key it out via an SVG
+     color matrix filter (definition in the inline <svg> just below
+     the main element): white pixels become transparent while the
+     bottle, gold lettering, and dark plate stay fully opaque. This
+     replaces an earlier mix-blend-mode: multiply approach which read
+     as a dark overlay on top of the photos because the bottles
+     themselves are nearly black and multiplied to invisibility. */
   .prod-card__media--white img {
-    mix-blend-mode: multiply;
-    /* Slight lift to compensate for the gold cap darkening under
-       multiply against the dark card gradient. */
-    filter: drop-shadow(0 14px 28px rgba(0, 0, 0, 0.5)) brightness(1.18) contrast(1.05);
-    /* Bottle is taller than the powder/clay shots — keep the cap visible
-       and don't crop into the base. */
-    max-width: 64%;
-    max-height: 84%;
-  }
-  .prod-card__media--white::after {
-    content: '';
-    position: absolute;
-    inset: 0;
-    background: radial-gradient(ellipse 28% 50% at 50% 50%,
-      transparent 0%,
-      rgba(11, 10, 8, 0.55) 70%,
-      rgba(11, 10, 8, 0.92) 100%);
-    pointer-events: none;
-    /* Sits above the image but below the badge (z-index: 1). */
-    z-index: 0;
+    filter: url(#mc-key-white) drop-shadow(0 14px 28px rgba(0, 0, 0, 0.5));
   }
 
   .prod-card__body {
