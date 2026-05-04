@@ -427,8 +427,10 @@ const itemListSchema = {
   @media (max-width: 980px) {
     .shop-group__grid { grid-template-columns: repeat(2, 1fr); }
   }
+  /* At phone width we stay 2-up — feels like a real shop floor instead
+     of a luxury catalog. Cards tighten further at .prod-card below. */
   @media (max-width: 540px) {
-    .shop-group__grid { grid-template-columns: 1fr; }
+    .shop-group__grid { gap: 0.75rem; }
   }
 
   /* ---------- Product cards ---------- */
@@ -578,6 +580,64 @@ const itemListSchema = {
   .prod-card__cta-arrow { display: inline-block; transition: transform var(--dur) var(--ease); }
   .prod-card:hover .prod-card__cta { background: var(--color-gold-light); }
   .prod-card:hover .prod-card__cta-arrow { transform: translateX(3px); }
+
+  /* ---------- Mobile (2-up) tightening ----------
+     At ≤540px each card is half-width, so the body needs to shed
+     vertical weight: drop the description, shrink padding, hide the
+     size eyebrow, and turn the Buy CTA into a compact icon-style
+     pill so price + CTA sit cleanly on one line. */
+  @media (max-width: 540px) {
+    .prod-card__body {
+      padding: 0.75rem 0.85rem 0.85rem;
+      gap: 0.3rem;
+    }
+    .prod-card__category {
+      font-size: 0.55rem;
+      letter-spacing: 0.22em;
+    }
+    .prod-card__name {
+      font-size: 1.05rem;
+      line-height: 1.2;
+    }
+    .prod-card__size {
+      font-size: 0.62rem;
+      letter-spacing: 0.14em;
+    }
+    /* Description is the main vertical spend per card — hide it on
+       mobile so each tile is name + price + CTA, scannable at a
+       glance. The product detail page (Shopify) has the full copy. */
+    .prod-card__desc { display: none; }
+    .prod-card__foot {
+      margin-top: 0.35rem;
+      padding-top: 0.5rem;
+      gap: 0.5rem;
+    }
+    .prod-card__price {
+      font-size: 0.95rem;
+    }
+    .prod-card__cta {
+      padding: 0.32rem 0.65rem;
+      font-size: 0.62rem;
+      letter-spacing: 0.08em;
+      gap: 0.3rem;
+    }
+    /* Tighter image padding so the bottle still reads at half width. */
+    .prod-card__media img {
+      max-width: 78%;
+      max-height: 82%;
+    }
+    .prod-card__media--white img {
+      max-width: 78%;
+      max-height: 82%;
+    }
+    .prod-card__badge {
+      top: 0.5rem;
+      left: 0.5rem;
+      font-size: 0.55rem;
+      padding: 0.2rem 0.45rem;
+      letter-spacing: 0.14em;
+    }
+  }
 
   /* ---------- Foot ---------- */
   .shop-foot {
