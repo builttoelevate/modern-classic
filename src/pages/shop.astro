@@ -603,10 +603,14 @@ const itemListSchema = {
       font-size: 0.62rem;
       letter-spacing: 0.14em;
     }
-    /* Description is the main vertical spend per card — hide it on
-       mobile so each tile is name + price + CTA, scannable at a
-       glance. The product detail page (Shopify) has the full copy. */
-    .prod-card__desc { display: none; }
+    /* Short description, capped at 2 lines, so the product is
+       obvious at a glance without bloating the card. Full copy still
+       lives on the Shopify detail page that the card links out to. */
+    .prod-card__desc {
+      font-size: 0.78rem;
+      line-height: 1.4;
+      -webkit-line-clamp: 2;
+    }
     .prod-card__foot {
       margin-top: 0.35rem;
       padding-top: 0.5rem;
