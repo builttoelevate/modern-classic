@@ -43,8 +43,8 @@ const DAY_OPTIONS: Array<{ key: DayKey; label: string }> = [
 
 const TIME_OPTIONS: Array<{ key: TimeKey; label: string; sub: string }> = [
   { key: 'morning', label: 'Morning', sub: 'before 12pm' },
-  { key: 'afternoon', label: 'Afternoon', sub: '12 – 5pm' },
-  { key: 'evening', label: 'Evening', sub: '5pm +' },
+  { key: 'afternoon', label: 'Afternoon', sub: '12 – 3pm' },
+  { key: 'evening', label: 'Evening', sub: '3pm +' },
 ];
 
 /** YYYY-MM-DD for `date` in shop-tz (America/New_York). Used for default
