@@ -13,6 +13,13 @@ interface Props {
   prefillName?: string;
   prefillEmail?: string;
   prefillPhone?: string;
+  /** When the caller can't pre-pick a barber for the customer (e.g. the
+   * hero trigger fires before any booking-flow choice has been made),
+   * pass the active roster here and the sheet renders a dropdown
+   * defaulting to "Any barber". When omitted, the sheet uses the
+   * `barberName` prop as fixed display text — the existing behavior
+   * for the in-flow Step 3 trigger that already knows the barber. */
+  barberOptions?: Array<{ id: string; displayName: string }>;
 }
 
 interface WaitlistApiResponse {
@@ -61,10 +68,16 @@ export function WaitlistSheet({
   prefillName = '',
   prefillEmail = '',
   prefillPhone = '',
+  barberOptions,
 }: Props) {
   const [name, setName] = useState(prefillName);
   const [email, setEmail] = useState(prefillEmail);
   const [phone, setPhone] = useState(prefillPhone);
+  // Barber selection — only used when `barberOptions` is supplied.
+  // Stored as the team_member_id so we can look up displayName at
+  // submit time without keeping a tuple in state. Empty string =
+  // "Any barber" (default).
+  const [pickedBarberId, setPickedBarberId] = useState<string>('');
   // Default the date range to "today through 30 days out" — covers
   // most customers' realistic flexibility window.
   const [dateFrom, setDateFrom] = useState(() => shopDateKey(new Date()));
@@ -143,12 +156,21 @@ export function WaitlistSheet({
   if (!open) return null;
   if (typeof document === 'undefined') return null;
 
+  // When the dropdown is in play, the customer's selection wins over
+  // the prop default. Empty pickedBarberId = "Any barber".
+  const showBarberPicker = Array.isArray(barberOptions) && barberOptions.length > 0;
+  const pickedBarber = showBarberPicker && pickedBarberId
+    ? barberOptions!.find((b) => b.id === pickedBarberId) ?? null
+    : null;
+  const effectiveBarberName = pickedBarber?.displayName ?? barberName;
+  const effectiveTeamMemberId = pickedBarber?.id ?? teamMemberId ?? null;
+
   // The hero-level trigger doesn't have a concrete service/barber yet —
   // we pass "Any service" / "Any barber" sentinels through so the admin
   // email + KV record still capture the customer's flexibility, but the
   // user-facing copy reads naturally instead of "a Any service opening
   // with Any barber matches".
-  const isFlexibleBarber = /^any\b/i.test(barberName);
+  const isFlexibleBarber = /^any\b/i.test(effectiveBarberName);
   const isFlexibleService = /^any\b/i.test(serviceName);
   const matchPhrase = (() => {
     if (isFlexibleBarber && isFlexibleService) return 'an opening that fits';
@@ -156,10 +178,10 @@ export function WaitlistSheet({
       <>a <strong>{serviceName}</strong> opening</>
     );
     if (isFlexibleService) return (
-      <>an opening with <strong>{barberName}</strong></>
+      <>an opening with <strong>{effectiveBarberName}</strong></>
     );
     return (
-      <>a <strong>{serviceName}</strong> opening with <strong>{barberName}</strong></>
+      <>a <strong>{serviceName}</strong> opening with <strong>{effectiveBarberName}</strong></>
     );
   })();
 
@@ -178,9 +200,9 @@ export function WaitlistSheet({
           email: email.trim(),
           phone: phone.trim(),
           serviceName,
-          barberName,
+          barberName: effectiveBarberName,
           serviceVariationId,
-          teamMemberId,
+          teamMemberId: effectiveTeamMemberId,
           dateFrom: dateFrom || undefined,
           dateTo: dateTo || undefined,
           daysOfWeek,
@@ -282,6 +304,24 @@ export function WaitlistSheet({
                 />
               </label>
             </div>
+
+            {showBarberPicker && (
+              <label className="bw-field">
+                <span className="bw-field__label">Barber</span>
+                <select
+                  className="bw-field__select"
+                  value={pickedBarberId}
+                  onChange={(e) => setPickedBarberId(e.target.value)}
+                >
+                  <option value="">Any barber</option>
+                  {barberOptions!.map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {b.displayName}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
 
             <div className="bw-waitlist__prefs">
               <p className="bw-waitlist__prefs-help">

@@ -684,7 +684,8 @@
   color: var(--color-text-muted);
 }
 .bw-field input,
-.bw-field textarea {
+.bw-field textarea,
+.bw-field__select {
   padding: 0.85rem 0.95rem;
   background: var(--color-surface);
   border: 1px solid var(--color-border);
@@ -694,10 +695,25 @@
   transition: border-color var(--dur-fast) var(--ease);
 }
 .bw-field input:focus,
-.bw-field textarea:focus {
+.bw-field textarea:focus,
+.bw-field__select:focus {
   outline: 2px solid var(--color-gold-light);
   outline-offset: 2px;
   border-color: var(--color-gold);
+}
+/* Native <select> needs explicit appearance reset and a custom caret to
+   match the dark form fields — without these the OS draws a light
+   chrome dropdown that looks out of place. */
+.bw-field__select {
+  appearance: none;
+  -webkit-appearance: none;
+  font-family: inherit;
+  cursor: pointer;
+  /* Gold caret SVG, right-aligned. */
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath fill='%23c9a35c' d='M6 8 0 0h12z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.95rem center;
+  padding-right: 2.25rem;
 }
 .bw-field textarea {
   resize: vertical;
