@@ -31,12 +31,16 @@ const COOLDOWN_MS = 12 * 60 * 60 * 1000;
 
 /** Local time band a slot's hour belongs to.
  *   morning   < 12
- *   afternoon 12 ≤ h < 17
- *   evening   ≥ 17
+ *   afternoon 12 ≤ h < 15
+ *   evening   ≥ 15
+ *
+ * Threshold lives here AND in WaitlistSheet's TIME_OPTIONS sub-labels —
+ * keep them in sync so the chip a customer toggles ("3pm +") agrees
+ * with the band the matcher assigns to a slot.
  */
 function bandFor(hour24: number): 'morning' | 'afternoon' | 'evening' {
   if (hour24 < 12) return 'morning';
-  if (hour24 < 17) return 'afternoon';
+  if (hour24 < 15) return 'afternoon';
   return 'evening';
 }
 
