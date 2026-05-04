@@ -143,6 +143,26 @@ export function WaitlistSheet({
   if (!open) return null;
   if (typeof document === 'undefined') return null;
 
+  // The hero-level trigger doesn't have a concrete service/barber yet —
+  // we pass "Any service" / "Any barber" sentinels through so the admin
+  // email + KV record still capture the customer's flexibility, but the
+  // user-facing copy reads naturally instead of "a Any service opening
+  // with Any barber matches".
+  const isFlexibleBarber = /^any\b/i.test(barberName);
+  const isFlexibleService = /^any\b/i.test(serviceName);
+  const matchPhrase = (() => {
+    if (isFlexibleBarber && isFlexibleService) return 'an opening that fits';
+    if (isFlexibleBarber) return (
+      <>a <strong>{serviceName}</strong> opening</>
+    );
+    if (isFlexibleService) return (
+      <>an opening with <strong>{barberName}</strong></>
+    );
+    return (
+      <>a <strong>{serviceName}</strong> opening with <strong>{barberName}</strong></>
+    );
+  })();
+
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (status === 'submitting') return;
@@ -208,8 +228,8 @@ export function WaitlistSheet({
               <strong>You're on the list.</strong>
             </p>
             <p>
-              We'll email you the moment a {serviceName} opening with {barberName}{' '}
-              shows up that matches the dates and times you picked. Questions? Call{' '}
+              We'll email you the moment {matchPhrase} shows up that matches
+              the dates and times you picked. Questions? Call{' '}
               <a className="link-gold" href="tel:+17402974462">740-297-4462</a>.
             </p>
             <div className="bw-waitlist__actions">
@@ -222,8 +242,7 @@ export function WaitlistSheet({
           <form className="bw-waitlist__form" onSubmit={submit} noValidate>
             <p className="bw-waitlist__sub">
               Tell us how to reach you and when you're available — we'll email
-              you automatically the moment a <strong>{serviceName}</strong> opening
-              with <strong>{barberName}</strong> matches.
+              you automatically the moment {matchPhrase} matches.
             </p>
 
             <label className="bw-field">
