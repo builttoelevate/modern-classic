@@ -66,9 +66,12 @@ const itemListSchema = {
   <Header />
   <main id="main">
     {/* SVG color-key filter for white-seamless product JPGs. The matrix
-        keeps RGB unchanged but recomputes alpha so pure-white pixels
-        drop to fully transparent while bottle/black/gold pixels stay
-        fully opaque. Hidden from layout. */}
+        recomputes alpha so pure-white pixels drop to fully transparent
+        while bottle/black/gold pixels stay fully opaque. The chained
+        feComponentTransfer sharpens the alpha falloff: mid-bright
+        halo pixels (e.g. the soft drop-shadow around the Shaving Cream
+        tin) get pushed to fully transparent rather than rendering as
+        a faint glow against the dark card. Hidden from layout. */}
     <svg width="0" height="0" aria-hidden="true" focusable="false" style="position:absolute">
       <filter id="mc-key-white" color-interpolation-filters="sRGB">
         <feColorMatrix
@@ -78,6 +81,9 @@ const itemListSchema = {
                   0 0 1 0 0
                   -1 -1 -1 3 0"
         />
+        <feComponentTransfer>
+          <feFuncA type="linear" slope="3" intercept="-1" />
+        </feComponentTransfer>
       </filter>
     </svg>
 
