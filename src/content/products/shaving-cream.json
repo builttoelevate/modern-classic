@@ -10,5 +10,6 @@
   "imageUrl": "https://mdrnclassic.com/cdn/shop/files/125mlshavingcreamartemis.jpg?v=1709607444&width=600",
   "productUrl": "https://mdrnclassic.com/products/mdrn%E2%84%A2-classic-125ml-shaving-cream",
   "featured": false,
-  "order": 10
+  "order": 10,
+  "whiteBg": true
 }
