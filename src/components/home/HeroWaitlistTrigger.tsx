@@ -10,6 +10,9 @@ interface Props {
   barberName?: string;
   /** Square team_member_id matching barberName above, when known. */
   teamMemberId?: string | null;
+  /** Active barber roster — when provided, the WaitlistSheet shows a
+   * dropdown defaulting to "Any barber" so the customer can pick. */
+  barberOptions?: Array<{ id: string; displayName: string }>;
 }
 
 /**
@@ -22,7 +25,11 @@ interface Props {
  * inbox) is unchanged from Phase 8 — this just adds a hero-level
  * entry point.
  */
-export function HeroWaitlistTrigger({ barberName, teamMemberId = null }: Props) {
+export function HeroWaitlistTrigger({
+  barberName,
+  teamMemberId = null,
+  barberOptions,
+}: Props) {
   const [open, setOpen] = useState(false);
 
   return (
@@ -46,6 +53,7 @@ export function HeroWaitlistTrigger({ barberName, teamMemberId = null }: Props) 
         barberName={barberName ?? 'Any barber'}
         teamMemberId={teamMemberId}
         serviceVariationId={null}
+        barberOptions={barberOptions}
       />
     </>
   );

@@ -48,6 +48,20 @@ interface AvailabilityProps {
 }
 
 let availability: AvailabilityProps = { mode: 'fallback' };
+// Active barber roster — passed through to the hero waitlist trigger so
+// the WaitlistSheet can render a dropdown defaulting to "Any barber".
+// Best-effort: a Square hiccup here just hides the dropdown; the rest
+// of the homepage still renders.
+let waitlistBarberOptions: Array<{ id: string; displayName: string }> = [];
+try {
+  const allBarbers = await getBarbers();
+  waitlistBarberOptions = allBarbers.map((b) => ({
+    id: b.id,
+    displayName: b.displayName,
+  }));
+} catch {
+  waitlistBarberOptions = [];
+}
 
 try {
   const session = getSession(Astro.request);
@@ -100,7 +114,7 @@ try {
   <Header />
   <TrustStrip />
   <main id="main">
-    <Hero availability={availability} />
+    <Hero availability={availability} waitlistBarberOptions={waitlistBarberOptions} />
     <QuickActions />
     <Services />
     <Barbers />
