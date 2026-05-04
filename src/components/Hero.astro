@@ -3,6 +3,7 @@ import { Image } from 'astro:assets';
 import logo from '../assets/logo-vintage-lettering.png';
 import shopInterior from '../assets/shop-interior.jpg';
 import HeroAvailability from './home/HeroAvailability.astro';
+import { HeroWaitlistTrigger } from './home/HeroWaitlistTrigger';
 import type { AvailabilitySlot } from '../lib/square/types';
 
 interface Props {
@@ -85,14 +86,27 @@ const bookRel = isGhPages ? 'noopener' : '';
     </div>
 
     {availability && (
-      <HeroAvailability
-        mode={availability.mode}
-        slot={availability.slot}
-        barberName={availability.barberName}
-        teamMemberId={availability.teamMemberId}
-        basePath={base}
-        isGhPages={isGhPages}
-      />
+      <div class="hero__avail-row">
+        <HeroAvailability
+          mode={availability.mode}
+          slot={availability.slot}
+          barberName={availability.barberName}
+          teamMemberId={availability.teamMemberId}
+          basePath={base}
+          isGhPages={isGhPages}
+        />
+        {/* Tertiary waitlist CTA — sits inline with the availability pill
+            on wide screens, drops below it on narrow. Stays visually
+            subordinate to the green pill and to the two hero buttons
+            above. Hidden on the gh-pages preview where there's no API. */}
+        {!isGhPages && (
+          <HeroWaitlistTrigger
+            client:load
+            barberName={availability.barberName}
+            teamMemberId={availability.teamMemberId}
+          />
+        )}
+      </div>
     )}
 
     <ul class="hero__meta" aria-label="What we do">
@@ -361,5 +375,74 @@ const bookRel = isGhPages ? 'noopener' : '';
 
   @media (max-width: 480px) {
     .hero__corner { width: 28px; height: 28px; }
+  }
+
+  /* ---------- Availability row: pill + waitlist trigger ----------
+     Wide screens: pill on the left, "Need it sooner?" trigger inline
+     to its right with a thin gold separator. Narrow screens stack
+     trigger below pill. */
+  .hero__avail-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.4rem 0.85rem;
+    margin-top: clamp(0.6rem, 1.5vw, 1rem);
+  }
+  .hero__avail-row :global(.hero-avail) {
+    /* HeroAvailability already has its own margin-top; the row owns
+       vertical spacing now, so neutralize the child's. */
+    margin-top: 0;
+  }
+
+  /* ---------- Tertiary waitlist trigger ----------
+     Plain text-button affordance — no pill, no border, no fill. Sits
+     visually below the two hero CTAs and the green availability pill.
+     Gold underline animates in on hover for affordance. */
+  :global(.hero-waitlist-trigger) {
+    appearance: none;
+    background: none;
+    border: 0;
+    padding: 0;
+    margin: 0;
+    color: var(--color-text-muted);
+    font-family: var(--font-body);
+    font-size: 0.82rem;
+    letter-spacing: 0.02em;
+    line-height: 1.3;
+    cursor: pointer;
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0.35rem;
+    text-align: left;
+  }
+  :global(.hero-waitlist-trigger__lead) {
+    color: var(--color-text-muted);
+  }
+  :global(.hero-waitlist-trigger__cta) {
+    color: var(--color-gold);
+    font-weight: 600;
+    border-bottom: 1px solid transparent;
+    padding-bottom: 1px;
+    transition: color var(--dur) var(--ease), border-color var(--dur) var(--ease);
+  }
+  :global(.hero-waitlist-trigger:hover .hero-waitlist-trigger__cta),
+  :global(.hero-waitlist-trigger:focus-visible .hero-waitlist-trigger__cta) {
+    color: var(--color-gold-light);
+    border-bottom-color: rgba(201, 163, 92, 0.55);
+  }
+  :global(.hero-waitlist-trigger__arrow) {
+    margin-left: 0.25rem;
+    transition: transform var(--dur) var(--ease);
+    display: inline-block;
+  }
+  :global(.hero-waitlist-trigger:hover .hero-waitlist-trigger__arrow),
+  :global(.hero-waitlist-trigger:focus-visible .hero-waitlist-trigger__arrow) {
+    transform: translateX(3px);
+  }
+  :global(.hero-waitlist-trigger:focus-visible) {
+    outline: 2px solid rgba(201, 163, 92, 0.6);
+    outline-offset: 4px;
+    border-radius: 2px;
   }
 </style>
