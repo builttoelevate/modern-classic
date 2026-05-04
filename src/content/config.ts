@@ -30,6 +30,10 @@ const products = defineCollection({
     productUrl: z.string().url(),
     featured: z.boolean(),
     order: z.number(),
+    /** Set true when imageUrl is a white-seamless studio shot. The shop
+     * cards apply a vignette to mask the white edges so the bottle reads
+     * against the dark card background like the other product photos. */
+    whiteBg: z.boolean().optional(),
   }),
 });
 

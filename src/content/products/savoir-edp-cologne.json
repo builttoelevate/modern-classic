@@ -10,5 +10,6 @@
   "imageUrl": "https://mdrnclassic.com/cdn/shop/files/50mlcologneartemis.jpg?v=1764266090&width=600",
   "productUrl": "https://mdrnclassic.com/products/savoir-edp-cologne",
   "featured": false,
-  "order": 4
+  "order": 4,
+  "whiteBg": true
 }
