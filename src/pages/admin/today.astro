@@ -35,8 +35,13 @@ function shopMidnightUtc(daysOffset: number): Date {
   const y = Number(get('year'));
   const m = Number(get('month'));
   const d = Number(get('day'));
-  // Iterate to absorb DST without pulling in a tz library.
-  let utc = new Date(Date.UTC(y, m - 1, d + daysOffset, 0, 0, 0));
+  return shopMidnightUtcFor(y, m, d + daysOffset);
+}
+
+// Same DST-safe local-midnight resolver, but for an arbitrary y/m/d in shop tz.
+// Used by the ?date=YYYY-MM-DD query param so the admin can pick any day.
+function shopMidnightUtcFor(y: number, m: number, d: number): Date {
+  let utc = new Date(Date.UTC(y, m - 1, d, 0, 0, 0));
   for (let i = 0; i < 2; i++) {
     const ps = new Intl.DateTimeFormat('en-US', {
       timeZone: SHOP_TZ,
@@ -56,7 +61,7 @@ function shopMidnightUtc(daysOffset: number): Date {
       Number(g('minute')),
       0,
     );
-    const target = Date.UTC(y, m - 1, d + daysOffset, 0, 0, 0);
+    const target = Date.UTC(y, m - 1, d, 0, 0, 0);
     const diff = target - localAsUtc;
     if (diff === 0) break;
     utc = new Date(utc.getTime() + diff);
@@ -64,14 +69,40 @@ function shopMidnightUtc(daysOffset: number): Date {
   return utc;
 }
 
-const startUtc = shopMidnightUtc(0);
-const endUtc = shopMidnightUtc(2); // through end of tomorrow
+// YYYY-MM-DD in shop tz for `date` (defaults to now). Used as the default
+// value for the date picker AND to know "what is today" in the shop's
+// timezone regardless of where Vercel runs the function.
+function shopDateKey(date: Date = new Date()): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: SHOP_TZ,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(date);
+}
+
+// ---------- Read filters from query string ----------
+// date  — YYYY-MM-DD in shop tz. Defaults to today.
+// barber — Square team_member_id, or 'all'. Defaults to 'all'.
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+const todayKey = shopDateKey();
+const tomorrowKey = shopDateKey(new Date(Date.now() + 86_400_000));
+const requestedDate = Astro.url.searchParams.get('date');
+const filterDateKey = requestedDate && ISO_DATE.test(requestedDate)
+  ? requestedDate
+  : todayKey;
+const filterBarber = Astro.url.searchParams.get('barber') ?? 'all';
+
+const [dy, dm, dd] = filterDateKey.split('-').map(Number);
+const startUtc = shopMidnightUtcFor(dy, dm, dd);
+const endUtc = shopMidnightUtcFor(dy, dm, dd + 1);
 
 let bookings: Booking[] = [];
 let customers = new Map<string, Customer>();
 let loadError: string | null = null;
 const barberNames = new Map<string, string>();
 const serviceNames = new Map<string, string>();
+let allBarbers: Array<{ id: string; displayName: string }> = [];
 
 try {
   const [list, barbers, services] = await Promise.all([
@@ -83,6 +114,15 @@ try {
   for (const b of barbers) barberNames.set(b.id, b.displayName);
   for (const s of services) {
     for (const v of s.variations) serviceNames.set(v.id, s.name);
+  }
+  allBarbers = barbers.map((b) => ({ id: b.id, displayName: b.displayName }));
+
+  // Apply barber filter server-side AFTER the cancellation filter so the
+  // count + list both reflect the chosen barber. 'all' = no narrowing.
+  if (filterBarber !== 'all') {
+    bookings = bookings.filter(
+      (b) => b.appointment_segments?.[0]?.team_member_id === filterBarber,
+    );
   }
 
   // Fetch each unique customer in parallel so the table can show name + phone
@@ -117,7 +157,6 @@ interface Row {
   customerPhone: string;
   customerEmail: string;
   note: string;
-  isTomorrow: boolean;
   status: Booking['status'];
 }
 
@@ -125,11 +164,9 @@ const rows: Row[] = bookings
   .map((b) => {
     const seg = b.appointment_segments?.[0];
     const c = b.customer_id ? customers.get(b.customer_id) : undefined;
-    const startUtcDate = new Date(b.start_at);
-    const isTomorrow = startUtcDate.getTime() >= shopMidnightUtc(1).getTime();
     return {
       booking: b,
-      startUtc: startUtcDate,
+      startUtc: new Date(b.start_at),
       service: seg ? (serviceNames.get(seg.service_variation_id) ?? '—') : '—',
       barber: seg ? (barberNames.get(seg.team_member_id) ?? '—') : '—',
       customerName: c
@@ -138,14 +175,10 @@ const rows: Row[] = bookings
       customerPhone: c?.phone_number?.trim() ?? '',
       customerEmail: c?.email_address?.trim() ?? '',
       note: b.customer_note?.trim() ?? '',
-      isTomorrow,
       status: b.status,
     };
   })
   .sort((a, b) => a.startUtc.getTime() - b.startUtc.getTime());
-
-const todayRows = rows.filter((r) => !r.isTomorrow);
-const tomorrowRows = rows.filter((r) => r.isTomorrow);
 
 const fmtTime = new Intl.DateTimeFormat('en-US', {
   timeZone: SHOP_TZ,
@@ -159,8 +192,16 @@ const fmtDate = new Intl.DateTimeFormat('en-US', {
   month: 'long',
   day: 'numeric',
 });
-const todayLabel = fmtDate.format(shopMidnightUtc(0));
-const tomorrowLabel = fmtDate.format(shopMidnightUtc(1));
+
+// Friendly heading: "Today", "Tomorrow", or the date itself.
+const isToday = filterDateKey === todayKey;
+const isTomorrow = filterDateKey === tomorrowKey;
+const dateHeading = isToday ? 'Today' : isTomorrow ? 'Tomorrow' : fmtDate.format(startUtc);
+const dateSubLabel = fmtDate.format(startUtc);
+
+const filterBarberName = filterBarber === 'all'
+  ? null
+  : (barberNames.get(filterBarber) ?? null);
 
 function statusClass(status: string): string {
   if (status === 'ACCEPTED') return 'ok';
@@ -237,6 +278,101 @@ function formatPhone(raw: string): string {
       .topnav a { color: var(--muted); text-decoration: none; padding-bottom: 4px; }
       .topnav a.active { color: var(--gold); border-bottom: 2px solid var(--gold); }
       .topnav a:hover { color: var(--gold); }
+      /* ---------- Filter bar ---------- */
+      .filters {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: flex-end;
+        gap: 12px;
+        margin: 0 0 24px;
+        padding: 16px;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+      }
+      .filters__quick {
+        display: flex;
+        gap: 6px;
+      }
+      .chip {
+        display: inline-block;
+        padding: 6px 12px;
+        border-radius: 999px;
+        background: transparent;
+        border: 1px solid var(--border);
+        color: var(--muted);
+        font-size: 0.78rem;
+        font-weight: 600;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        text-decoration: none;
+        white-space: nowrap;
+      }
+      .chip:hover { color: var(--gold); border-color: rgba(201, 163, 92, 0.45); }
+      .chip--active {
+        color: var(--gold);
+        border-color: var(--gold);
+        background: rgba(201, 163, 92, 0.08);
+      }
+      .filters__field {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        min-width: 0;
+      }
+      .filters__label {
+        font-size: 0.66rem;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+        color: var(--dim);
+      }
+      .filters input[type="date"],
+      .filters select {
+        appearance: none;
+        -webkit-appearance: none;
+        background: var(--surface-2);
+        border: 1px solid var(--border);
+        color: var(--text);
+        font: inherit;
+        font-size: 0.92rem;
+        padding: 8px 12px;
+        border-radius: 6px;
+        min-width: 12rem;
+      }
+      .filters select {
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath fill='%23c9a35c' d='M6 8 0 0h12z'/%3E%3C/svg%3E");
+        background-repeat: no-repeat;
+        background-position: right 12px center;
+        padding-right: 32px;
+        cursor: pointer;
+      }
+      .filters input[type="date"]:focus,
+      .filters select:focus {
+        outline: 2px solid var(--gold);
+        outline-offset: 2px;
+        border-color: var(--gold);
+      }
+      .filters__apply {
+        appearance: none;
+        background: var(--gold);
+        color: #1a140a;
+        border: 0;
+        padding: 9px 18px;
+        border-radius: 6px;
+        font-weight: 700;
+        font-size: 0.78rem;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        cursor: pointer;
+      }
+      .filters__apply:hover { background: #d8b370; }
+      @media (max-width: 600px) {
+        .filters { padding: 12px; }
+        .filters__field { flex: 1 1 100%; }
+        .filters input[type="date"],
+        .filters select { width: 100%; min-width: 0; }
+        .filters__apply { width: 100%; padding: 12px; }
+      }
       table { width: 100%; border-collapse: collapse; font-size: 0.92rem; }
       th, td {
         padding: 10px 12px;
@@ -308,19 +444,57 @@ function formatPhone(raw: string): string {
         <a href="/admin/waitlist">Waitlist</a>
         <a href="/admin/reviews">Reviews</a>
       </nav>
-      <h1>Today &amp; tomorrow</h1>
+      <h1>Today's chair</h1>
       <p class="sub">Live from Square. Excludes cancellations + no-shows. Times in shop time (Eastern).</p>
+
+      {/* Filter bar — plain GET form, no JS. The page re-renders with the
+          chosen date + barber as query params. Quick-buttons preset the
+          date input to today/tomorrow before submit. */}
+      <form class="filters" method="get" action="/admin/today">
+        <div class="filters__quick">
+          <a
+            class={`chip ${isToday && filterBarber === 'all' ? 'chip--active' : ''}`}
+            href={`/admin/today?date=${todayKey}${filterBarber !== 'all' ? `&barber=${filterBarber}` : ''}`}
+          >Today</a>
+          <a
+            class={`chip ${isTomorrow ? 'chip--active' : ''}`}
+            href={`/admin/today?date=${tomorrowKey}${filterBarber !== 'all' ? `&barber=${filterBarber}` : ''}`}
+          >Tomorrow</a>
+        </div>
+        <label class="filters__field">
+          <span class="filters__label">Date</span>
+          <input type="date" name="date" value={filterDateKey} />
+        </label>
+        <label class="filters__field">
+          <span class="filters__label">Barber</span>
+          <select name="barber">
+            <option value="all" selected={filterBarber === 'all'}>All barbers</option>
+            {allBarbers.map((b) => (
+              <option value={b.id} selected={filterBarber === b.id}>{b.displayName}</option>
+            ))}
+          </select>
+        </label>
+        <button type="submit" class="filters__apply">Apply</button>
+      </form>
 
       {loadError && <p class="err">Failed to load bookings: {loadError}</p>}
 
       {!loadError && (
         <>
           <h2>
-            Today
-            <span class="day-meta">{todayLabel} · {todayRows.length} {todayRows.length === 1 ? 'appointment' : 'appointments'}</span>
+            {dateHeading}
+            <span class="day-meta">
+              {!isToday && !isTomorrow ? '' : `${dateSubLabel} · `}
+              {rows.length} {rows.length === 1 ? 'appointment' : 'appointments'}
+              {filterBarberName && ` · ${filterBarberName}`}
+            </span>
           </h2>
-          {todayRows.length === 0 ? (
-            <p class="empty">No appointments today.</p>
+          {rows.length === 0 ? (
+            <p class="empty">
+              {filterBarberName
+                ? `No appointments for ${filterBarberName} on this date.`
+                : 'No appointments on this date.'}
+            </p>
           ) : (
             <table>
               <thead>
@@ -334,54 +508,7 @@ function formatPhone(raw: string): string {
                 </tr>
               </thead>
               <tbody>
-                {todayRows.map((r) => (
-                  <tr>
-                    <td data-label="Time" class="time-cell">{fmtTime.format(r.startUtc)}</td>
-                    <td data-label="Customer" class="name-cell">
-                      <strong>{r.customerName}</strong>
-                      {r.customerPhone && (
-                        <span class="meta">
-                          <a class="tel" href={`tel:${r.customerPhone.replace(/[^0-9+]/g, '')}`}>
-                            {formatPhone(r.customerPhone)}
-                          </a>
-                        </span>
-                      )}
-                      {r.customerEmail && (
-                        <span class="meta">{r.customerEmail}</span>
-                      )}
-                    </td>
-                    <td data-label="Service">{r.service}</td>
-                    <td data-label="Barber">{r.barber}</td>
-                    <td data-label="Note" class="note-cell">{r.note || '—'}</td>
-                    <td data-label="Status">
-                      <span class={`pill ${statusClass(r.status)}`}>{r.status.replace(/_/g, ' ')}</span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-
-          <h2>
-            Tomorrow
-            <span class="day-meta">{tomorrowLabel} · {tomorrowRows.length} {tomorrowRows.length === 1 ? 'appointment' : 'appointments'}</span>
-          </h2>
-          {tomorrowRows.length === 0 ? (
-            <p class="empty">Nothing on the books for tomorrow yet.</p>
-          ) : (
-            <table>
-              <thead>
-                <tr>
-                  <th>Time</th>
-                  <th>Customer</th>
-                  <th>Service</th>
-                  <th>Barber</th>
-                  <th>Note</th>
-                  <th>Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {tomorrowRows.map((r) => (
+                {rows.map((r) => (
                   <tr>
                     <td data-label="Time" class="time-cell">{fmtTime.format(r.startUtc)}</td>
                     <td data-label="Customer" class="name-cell">
