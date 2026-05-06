@@ -789,11 +789,17 @@ function Step5Time({
             const hasSlots = slotsByDate.has(dateKey);
             const disabled = isPast || !hasSlots;
             const isActive = dateKey === activeDate;
+            // The shared .bw-cal-day CSS targets data-has-slots +
+            // data-selected attributes (not class names) — match the
+            // single-flow calendar's contract so clickable days
+            // actually look clickable and the picked day fills gold.
             return (
               <button
                 key={dateKey}
                 type="button"
-                className={`bw-cal-day ${isActive ? 'is-active' : ''} ${disabled ? 'is-disabled' : ''}`}
+                className="bw-cal-day"
+                data-has-slots={hasSlots ? 'true' : undefined}
+                data-selected={isActive ? 'true' : undefined}
                 disabled={disabled}
                 aria-pressed={isActive}
                 onClick={() => setActiveDate(dateKey)}
