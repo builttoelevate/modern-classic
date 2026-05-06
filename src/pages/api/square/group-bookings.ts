@@ -203,14 +203,12 @@ export const POST: APIRoute = async ({ request }) => {
   //    fall through to find-or-create.
   let parentCustomerId: string;
   let parentPhone: string;
-  let parentFamilyName: string;
   try {
     if (session) {
       const verified = await getCustomerById(session.customerId);
       if (verified) {
         parentCustomerId = verified.id;
         parentPhone = verified.phone_number?.trim() || v.parent.phone;
-        parentFamilyName = verified.family_name?.trim() || v.parent.familyName;
       } else {
         const found = await findOrCreateCustomer({
           givenName: v.parent.givenName,
@@ -220,7 +218,6 @@ export const POST: APIRoute = async ({ request }) => {
         });
         parentCustomerId = found.customer.id;
         parentPhone = v.parent.phone;
-        parentFamilyName = v.parent.familyName;
       }
     } else {
       const found = await findOrCreateCustomer({
@@ -231,7 +228,6 @@ export const POST: APIRoute = async ({ request }) => {
       });
       parentCustomerId = found.customer.id;
       parentPhone = v.parent.phone;
-      parentFamilyName = v.parent.familyName;
     }
   } catch (err) {
     if (err instanceof SquareApiError) {
@@ -299,10 +295,20 @@ export const POST: APIRoute = async ({ request }) => {
         400,
       );
     }
+    // Don't fabricate a surname from the parent — group members may
+    // be cousins, friends, anyone whose last name doesn't match the
+    // parent's. Take what the customer typed verbatim: if they wrote
+    // two words ("Tommy Smith"), split first / rest into given /
+    // family. If just one word ("Tommy"), use as given and leave
+    // family empty (Square allows that).
+    const trimmed = a.displayName.trim();
+    const firstSpace = trimmed.indexOf(' ');
+    const givenName = firstSpace === -1 ? trimmed : trimmed.slice(0, firstSpace);
+    const familyName = firstSpace === -1 ? '' : trimmed.slice(firstSpace + 1).trim();
     try {
       const created = await createCustomer({
-        givenName: a.displayName,
-        familyName: parentFamilyName,
+        givenName,
+        familyName,
         email: '',
         phone: parentPhone,
       });
@@ -311,7 +317,11 @@ export const POST: APIRoute = async ({ request }) => {
         try {
           const link: LinkedPerson = {
             customerId: created.id,
-            displayName: `${a.displayName} ${parentFamilyName}`.trim(),
+            // Show exactly what the parent typed — no parent surname
+            // tacked on. The chip picker on the next group booking
+            // will read back "Tommy" if they typed "Tommy", not
+            // "Tommy {Parent's Last Name}".
+            displayName: trimmed,
             relationship: undefined,
             linkedAt: new Date().toISOString(),
           };
