@@ -37,6 +37,48 @@ function deepLink(slug: (typeof NEEDED)[number]): string {
 <section class="quick" aria-label="Quick actions">
   <hr class="rule" />
   <div class="container quick__grid">
+    {/* Source order is the customer's intended journey:
+        1. First Visit  → "I'm new, where do I start?"
+        2. Shop Products → "I want take-home grooming."
+        3. Book a Cut    → primary booking action.
+        4. Beard Work    → secondary booking action. */}
+    <a class="quick__card" href={deepLink('new-customer')}>
+      <span class="quick__glyph" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="1.3" stroke-linejoin="round">
+          <polygon points="12,3 14.35,8.76 20.56,9.22 15.8,13.24 17.29,19.28 12,16 6.71,19.28 8.2,13.24 3.44,9.22 9.65,8.76"/>
+        </svg>
+      </span>
+      <span class="quick__body">
+        <span class="quick__label">
+          First Visit
+          <span class="quick__title-arrow" aria-hidden="true">→</span>
+        </span>
+        <span class="quick__sub">Start here.</span>
+      </span>
+    </a>
+
+    <a class="quick__card" href={`${base}/shop`}>
+      <span class="quick__glyph" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 3 L12 13"/>
+          <path d="M12 6 C 8 8, 7 11, 7.5 13.5 C 7.8 14.6 8.6 15 9.5 15"/>
+          <path d="M12 6 C 16 8, 17 11, 16.5 13.5 C 16.2 14.6 15.4 15 14.5 15"/>
+          <line x1="8" y1="16" x2="16" y2="16"/>
+          <path d="M12 16 L12 21"/>
+          <circle cx="12" cy="6" r="0.7" fill="currentColor"/>
+        </svg>
+      </span>
+      <span class="quick__body">
+        <span class="quick__label">
+          Shop Products
+          <span class="quick__title-arrow" aria-hidden="true">→</span>
+        </span>
+        <span class="quick__sub">Built by barbers.</span>
+      </span>
+    </a>
+
     <button type="button" class="quick__card" data-qa-open="haircut" data-emphasis="primary" aria-haspopup="dialog">
       <span class="quick__glyph" aria-hidden="true">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -73,43 +115,6 @@ function deepLink(slug: (typeof NEEDED)[number]): string {
         <span class="quick__sub">The full grooming.</span>
       </span>
     </button>
-
-    <a class="quick__card" href={`${base}/shop`}>
-      <span class="quick__glyph" aria-hidden="true">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
-             stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M12 3 L12 13"/>
-          <path d="M12 6 C 8 8, 7 11, 7.5 13.5 C 7.8 14.6 8.6 15 9.5 15"/>
-          <path d="M12 6 C 16 8, 17 11, 16.5 13.5 C 16.2 14.6 15.4 15 14.5 15"/>
-          <line x1="8" y1="16" x2="16" y2="16"/>
-          <path d="M12 16 L12 21"/>
-          <circle cx="12" cy="6" r="0.7" fill="currentColor"/>
-        </svg>
-      </span>
-      <span class="quick__body">
-        <span class="quick__label">
-          Shop Products
-          <span class="quick__title-arrow" aria-hidden="true">→</span>
-        </span>
-        <span class="quick__sub">Built by barbers.</span>
-      </span>
-    </a>
-
-    <a class="quick__card" href={deepLink('new-customer')}>
-      <span class="quick__glyph" aria-hidden="true">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
-             stroke-width="1.3" stroke-linejoin="round">
-          <polygon points="12,3 14.35,8.76 20.56,9.22 15.8,13.24 17.29,19.28 12,16 6.71,19.28 8.2,13.24 3.44,9.22 9.65,8.76"/>
-        </svg>
-      </span>
-      <span class="quick__body">
-        <span class="quick__label">
-          First Visit
-          <span class="quick__title-arrow" aria-hidden="true">→</span>
-        </span>
-        <span class="quick__sub">Start here.</span>
-      </span>
-    </a>
   </div>
   <hr class="rule" />
 </section>
