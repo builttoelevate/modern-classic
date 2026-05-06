@@ -1,5 +1,19 @@
 ---
-// TODO: Replace decorative monogram panel with real shop interior photo when provided.
+// Sticky aside next to the founder story is a featured product card —
+// surfaces a single product (Salt Spray) tied directly to the "made by
+// barbers, used in our shop" copy. Replaces the prior decorative MC
+// monogram panel.
+
+const SALT_SPRAY = {
+  name: 'Salt Spray',
+  category: 'Texture & Finish',
+  size: '250ml',
+  price: '$24',
+  description: 'Designs raw, beach-textured hair. A messy, undone look — volume, texture, and control. Great at thickening fine hair.',
+  imageUrl: 'https://mdrnclassic.com/cdn/shop/files/2_14233aba-bfed-4b86-8ff6-30a2c9ec6ac0.png?width=1445',
+  productUrl: 'https://mdrnclassic.com/products/mdrn%E2%84%A2-classic-250ml-salt-spray',
+  alt: 'MDRN Classic 250ml salt spray bottle',
+};
 ---
 <section id="about" class="story" aria-labelledby="story-heading">
   <div class="container story__grid">
@@ -35,41 +49,28 @@
       </p>
     </div>
 
-    <aside class="story__visual" aria-hidden="true" data-reveal style="--reveal-delay: 80ms">
-      <div class="story__panel">
-        <svg class="story__monogram" viewBox="0 0 200 200" fill="none" role="img"
-             aria-label="MC monogram">
-          <defs>
-            <linearGradient id="mc-grad" x1="0" y1="0" x2="1" y2="1">
-              <stop offset="0%"  stop-color="#e6c785"/>
-              <stop offset="55%" stop-color="#c9a35c"/>
-              <stop offset="100%" stop-color="#8a6e35"/>
-            </linearGradient>
-          </defs>
-          <circle cx="100" cy="100" r="92" stroke="url(#mc-grad)" stroke-width="1"/>
-          <circle cx="100" cy="100" r="86" stroke="url(#mc-grad)" stroke-width="0.6" opacity="0.5"/>
-          <text x="100" y="118" text-anchor="middle"
-                font-family="Fraunces, Georgia, serif"
-                font-size="92" font-weight="500"
-                fill="url(#mc-grad)" letter-spacing="-2">MC</text>
-          <g stroke="url(#mc-grad)" stroke-width="0.6" opacity="0.6">
-            <line x1="100" y1="14" x2="100" y2="28"/>
-            <line x1="100" y1="172" x2="100" y2="186"/>
-            <line x1="14" y1="100" x2="28" y2="100"/>
-            <line x1="172" y1="100" x2="186" y2="100"/>
-          </g>
-        </svg>
-
-        <p class="story__caption">
-          Est. Zanesville &nbsp;·&nbsp; Cut. Style. Shave.
-        </p>
-
-        <ul class="story__pillars">
-          <li><strong>Cruelty-free</strong> formulations</li>
-          <li><strong>Paraben-free</strong>, no buildup</li>
-          <li><strong>Barber-tested</strong> in our chairs</li>
-        </ul>
-      </div>
+    <aside class="story__visual" data-reveal style="--reveal-delay: 80ms">
+      <a class="story__panel story__panel--product"
+         href={SALT_SPRAY.productUrl}
+         target="_blank"
+         rel="noopener noreferrer"
+         aria-label={`Shop ${SALT_SPRAY.name} on the MDRN Classic store`}>
+        <span class="story__product-eyebrow">Featured Product</span>
+        <div class="story__product-media">
+          <img src={SALT_SPRAY.imageUrl} alt={SALT_SPRAY.alt} loading="lazy" decoding="async" />
+        </div>
+        <div class="story__product-body">
+          <p class="story__product-category">{SALT_SPRAY.category} · {SALT_SPRAY.size}</p>
+          <h3 class="story__product-name">{SALT_SPRAY.name}</h3>
+          <p class="story__product-desc">{SALT_SPRAY.description}</p>
+          <div class="story__product-foot">
+            <span class="story__product-price">{SALT_SPRAY.price}</span>
+            <span class="story__product-cta">
+              Shop Now <span class="arrow" aria-hidden="true">→</span>
+            </span>
+          </div>
+        </div>
+      </a>
     </aside>
   </div>
 </section>
@@ -117,18 +118,27 @@
   .story__visual { position: sticky; top: calc(var(--header-h) + 1.5rem); }
   .story__panel {
     position: relative;
-    aspect-ratio: 4 / 5;
     display: grid;
-    place-items: center;
-    align-content: center;
-    gap: 1rem;
-    padding: 2rem;
+    grid-template-rows: auto 1fr auto;
+    gap: 0;
+    padding: 0;
     background:
       radial-gradient(circle at 50% 35%, rgba(201,163,92,0.10), transparent 65%),
       linear-gradient(180deg, var(--color-surface-2), var(--color-bg));
     border: 1px solid var(--color-border);
     border-radius: 2px;
     overflow: hidden;
+    color: var(--color-text);
+    text-decoration: none;
+    transition: border-color var(--dur) var(--ease),
+                transform var(--dur) var(--ease),
+                box-shadow var(--dur) var(--ease);
+  }
+  .story__panel--product:hover,
+  .story__panel--product:focus-visible {
+    border-color: rgba(201, 163, 92, 0.55);
+    transform: translateY(-3px);
+    box-shadow: 0 18px 50px -25px rgba(0, 0, 0, 0.7);
   }
   .story__panel::before {
     /* hairline frame */
@@ -137,6 +147,7 @@
     inset: 12px;
     border: 1px solid var(--color-rule);
     pointer-events: none;
+    z-index: 1;
   }
   .story__panel::after {
     /* corner accent */
@@ -148,29 +159,109 @@
       linear-gradient(-45deg, rgba(201,163,92,0.04), transparent 35%);
     pointer-events: none;
   }
-  .story__monogram { width: min(70%, 280px); height: auto; }
-  .story__caption {
+
+  /* "Featured Product" eyebrow pinned to the top of the panel,
+     inside the hairline frame. */
+  .story__product-eyebrow {
+    z-index: 2;
+    align-self: start;
+    justify-self: center;
+    margin-top: 1.4rem;
+    padding: 0.25rem 0.7rem;
+    font-size: 0.62rem;
+    font-weight: 700;
+    letter-spacing: 0.24em;
+    text-transform: uppercase;
+    color: var(--color-text-on-gold, #1a140a);
+    background: var(--color-gold);
+    border-radius: 999px;
+  }
+
+  /* Bottle floats on the same warm-gold-halo plate the product cards
+     elsewhere on the site use — keeps cross-section visual rhythm. */
+  .story__product-media {
+    position: relative;
+    aspect-ratio: 1 / 1;
+    display: grid;
+    place-items: center;
+    margin: 0.4rem 1.4rem 0;
+    overflow: hidden;
+  }
+  .story__product-media img {
+    max-width: 70%;
+    max-height: 86%;
+    width: auto;
+    height: auto;
+    object-fit: contain;
+    transition: transform var(--dur-slow) var(--ease);
+    filter: drop-shadow(0 18px 32px rgba(0, 0, 0, 0.6));
+  }
+  .story__panel--product:hover .story__product-media img {
+    transform: scale(1.04);
+  }
+
+  .story__product-body {
+    position: relative;
+    z-index: 2;
+    display: grid;
+    gap: 0.4rem;
+    padding: 0 1.6rem 1.5rem;
+    text-align: center;
+  }
+  .story__product-category {
+    font-family: var(--font-body);
+    font-size: 0.62rem;
+    font-weight: 600;
+    letter-spacing: 0.3em;
+    text-transform: uppercase;
+    color: var(--color-gold-deep);
+    margin: 0;
+  }
+  .story__product-name {
+    font-family: var(--font-display);
+    font-size: 1.6rem;
+    font-weight: 500;
+    line-height: 1.15;
+    letter-spacing: -0.005em;
+    margin: 0;
+    color: var(--color-text);
+  }
+  .story__product-desc {
+    color: var(--color-text-muted);
+    font-size: 0.92rem;
+    line-height: 1.5;
+    margin: 0;
+    max-width: 28rem;
+    margin-inline: auto;
+  }
+  .story__product-foot {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.75rem;
+    margin-top: 0.5rem;
+    padding-top: 0.6rem;
+    border-top: 1px solid var(--color-rule);
+  }
+  .story__product-price {
+    font-family: var(--font-body);
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: var(--color-gold-light);
+  }
+  .story__product-cta {
     font-size: 0.74rem;
-    letter-spacing: 0.32em;
+    font-weight: 600;
+    letter-spacing: 0.18em;
     text-transform: uppercase;
     color: var(--color-gold);
-    text-align: center;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
   }
-  .story__pillars {
-    list-style: none;
-    padding: 0;
-    margin: 0.75rem 0 0;
-    display: grid;
-    gap: 0.35rem;
-    text-align: center;
-    font-size: 0.85rem;
-    color: var(--color-text-muted);
-    letter-spacing: 0.04em;
-  }
-  .story__pillars strong {
-    color: var(--color-text);
-    font-weight: 600;
-  }
+  .story__product-cta .arrow { transition: transform var(--dur) var(--ease); }
+  .story__panel--product:hover .story__product-cta { color: var(--color-gold-light); }
+  .story__panel--product:hover .story__product-cta .arrow { transform: translateX(3px); }
 
   @media (max-width: 860px) {
     .story__grid { grid-template-columns: 1fr; }
