@@ -61,14 +61,42 @@ function hourFor(slot: AvailabilitySlot): number {
 }
 
 /**
- * Returns the first slot the entry should be notified about, or null.
+ * Predicate shared by `findMatchingSlot` (cron, first-match) and
+ * `findMatchingSlotsForEntry` (admin page, multi-match). Pure — no
+ * cooldown / time-since-notified logic; that lives at the call sites
+ * because cron and admin treat it differently.
  *
  * Skips:
- *   - Any slot if the entry was notified within COOLDOWN_MS.
  *   - The exact slot already notified about (per-slot dedup).
  *   - Slots whose local date is outside [dateFrom, dateTo].
  *   - Slots whose local day-of-week isn't in daysOfWeek (when set + non-empty).
  *   - Slots whose local hour band isn't in timesOfDay (when set + non-empty).
+ */
+function slotMatchesEntryPrefs(entry: WaitlistEntry, slot: AvailabilitySlot): boolean {
+  if (entry.notifiedSlotStartAtUtc && slot.startAtUtc === entry.notifiedSlotStartAtUtc) {
+    return false;
+  }
+  const dateFrom = entry.dateFrom?.trim() || null;
+  const dateTo = entry.dateTo?.trim() || null;
+  if (dateFrom && slot.dateKey < dateFrom) return false;
+  if (dateTo && slot.dateKey > dateTo) return false;
+
+  if (entry.daysOfWeek && entry.daysOfWeek.length > 0) {
+    const dow = dayOfWeekFor(slot);
+    if (!dow || !entry.daysOfWeek.includes(dow)) return false;
+  }
+
+  if (entry.timesOfDay && entry.timesOfDay.length > 0) {
+    const band = bandFor(hourFor(slot));
+    if (!entry.timesOfDay.includes(band)) return false;
+  }
+  return true;
+}
+
+/**
+ * Returns the first slot the entry should be notified about, or null.
+ * Used by the auto-notify cron — short-circuits at the first match and
+ * respects the 12h cooldown window so the cron doesn't spam customers.
  */
 export function findMatchingSlot(
   entry: WaitlistEntry,
@@ -80,37 +108,39 @@ export function findMatchingSlot(
     if (Number.isFinite(last) && now.getTime() - last < COOLDOWN_MS) return null;
   }
 
-  const dateFrom = entry.dateFrom?.trim() || null;
-  const dateTo = entry.dateTo?.trim() || null;
-  const daysFilter =
-    entry.daysOfWeek && entry.daysOfWeek.length > 0 ? new Set(entry.daysOfWeek) : null;
-  const timesFilter =
-    entry.timesOfDay && entry.timesOfDay.length > 0 ? new Set(entry.timesOfDay) : null;
-
   // Slots from searchAvailability are already sorted earliest-first, but
   // sort defensively so the matcher's contract doesn't depend on caller.
   const sorted = [...slots].sort((a, b) => a.startAtUtc.localeCompare(b.startAtUtc));
-
   for (const slot of sorted) {
-    if (entry.notifiedSlotStartAtUtc && slot.startAtUtc === entry.notifiedSlotStartAtUtc) {
-      continue;
-    }
-    if (dateFrom && slot.dateKey < dateFrom) continue;
-    if (dateTo && slot.dateKey > dateTo) continue;
-
-    if (daysFilter) {
-      const dow = dayOfWeekFor(slot);
-      if (!dow || !daysFilter.has(dow)) continue;
-    }
-
-    if (timesFilter) {
-      const band = bandFor(hourFor(slot));
-      if (!timesFilter.has(band)) continue;
-    }
-
-    return slot;
+    if (slotMatchesEntryPrefs(entry, slot)) return slot;
   }
   return null;
+}
+
+/**
+ * Returns up to `limit` matching slots for an entry. Used by the admin
+ * waitlist page to render a small list of openings inline. Deliberately
+ * does NOT apply the 12h cooldown gate — the admin should be able to see
+ * (and act on) matching slots even right after the cron just emailed.
+ * Per-slot dedup against `notifiedSlotStartAtUtc` is preserved so the
+ * admin doesn't accidentally re-email about the exact slot the cron
+ * already covered.
+ */
+export function findMatchingSlotsForEntry(
+  entry: WaitlistEntry,
+  slots: AvailabilitySlot[],
+  opts: { limit?: number } = {},
+): AvailabilitySlot[] {
+  const limit = Math.max(1, opts.limit ?? 5);
+  const sorted = [...slots].sort((a, b) => a.startAtUtc.localeCompare(b.startAtUtc));
+  const out: AvailabilitySlot[] = [];
+  for (const slot of sorted) {
+    if (slotMatchesEntryPrefs(entry, slot)) {
+      out.push(slot);
+      if (out.length >= limit) break;
+    }
+  }
+  return out;
 }
 
 /**

@@ -8,6 +8,8 @@ import {
   type WaitlistEntry,
   type WaitlistStatus,
 } from '../../lib/marketing/waitlistLog';
+import { findMatchingSlotsForEntryFromSquare } from '../../lib/marketing/waitlistSlotSuggestions';
+import type { AvailabilitySlot } from '../../lib/square/types';
 
 const auth = checkBasicAuth(Astro.request);
 if (!auth.ok) {
@@ -28,6 +30,45 @@ try {
 } catch (err) {
   loadError = err instanceof Error ? err.message : 'Unknown error';
 }
+
+/** Per-entry openings — fetched in parallel for active entries that
+ * carry a serviceVariationId. Failures are stored as null so the row
+ * can render an inline "couldn't load openings" line without taking
+ * the whole page down. Legacy entries without serviceVariationId are
+ * absent from the map entirely. */
+type SlotsResult = AvailabilitySlot[] | { error: string };
+const slotsByEntry = new Map<string, SlotsResult>();
+const activeEntries = entries.filter(
+  (e) => (e.status === 'new' || e.status === 'contacted') && e.serviceVariationId,
+);
+if (activeEntries.length > 0) {
+  const settled = await Promise.allSettled(
+    activeEntries.map((e) =>
+      findMatchingSlotsForEntryFromSquare(e, { limit: 5 }).then(
+        (slots) => [e.id, slots] as const,
+      ),
+    ),
+  );
+  settled.forEach((r, idx) => {
+    const id = activeEntries[idx].id;
+    if (r.status === 'fulfilled') {
+      slotsByEntry.set(id, r.value[1]);
+    } else {
+      const reason = r.reason instanceof Error ? r.reason.message : String(r.reason);
+      slotsByEntry.set(id, { error: reason });
+    }
+  });
+}
+
+const fmtSlot = new Intl.DateTimeFormat('en-US', {
+  timeZone: 'America/New_York',
+  weekday: 'short',
+  month: 'short',
+  day: 'numeric',
+  hour: 'numeric',
+  minute: '2-digit',
+  hour12: true,
+});
 
 const SHOP_TZ = 'America/New_York';
 const fmtSubmittedAt = new Intl.DateTimeFormat('en-US', {
@@ -331,6 +372,69 @@ function bookHrefFor(entry: WaitlistEntry): string {
         color: var(--muted);
         text-align: center;
       }
+
+      /* ---------- Inline slot suggestions ---------- */
+      .slot-suggestions {
+        margin-top: 12px;
+        padding: 10px 12px;
+        background: var(--surface-2);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+      }
+      .slot-suggestions__lbl {
+        display: block;
+        font-size: 0.66rem;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+        color: var(--dim);
+        margin-bottom: 8px;
+      }
+      .slot-suggestions__empty,
+      .slot-suggestions__err {
+        margin: 0;
+        font-size: 0.86rem;
+        color: var(--muted);
+      }
+      .slot-suggestions__err { color: #f0a37a; }
+      .slot-list {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+      .slot-row {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 10px;
+        justify-content: space-between;
+        padding: 6px 8px;
+        background: rgba(11, 10, 8, 0.45);
+        border: 1px solid var(--border);
+        border-radius: 4px;
+      }
+      .slot-when {
+        font-size: 0.92rem;
+        font-weight: 600;
+        color: var(--gold-light);
+      }
+      .slot-actions {
+        display: flex;
+        gap: 6px;
+        flex-wrap: wrap;
+      }
+      .slot-btn {
+        padding: 6px 10px;
+        font-size: 0.66rem;
+        letter-spacing: 0.10em;
+      }
+      @media (max-width: 540px) {
+        .slot-row { flex-direction: column; align-items: stretch; }
+        .slot-actions { justify-content: stretch; }
+        .slot-actions .slot-btn { flex: 1; }
+      }
     </style>
   </head>
   <body>
@@ -434,6 +538,63 @@ function bookHrefFor(entry: WaitlistEntry): string {
                         <>No matching slot yet — checking every 30 min</>
                       )}
                     </p>
+
+                    {(() => {
+                      const result = slotsByEntry.get(e.id);
+                      if (!result) return null;
+                      if (!Array.isArray(result)) {
+                        return (
+                          <div class="slot-suggestions slot-suggestions--err">
+                            <span class="slot-suggestions__lbl">Openings</span>
+                            <p class="slot-suggestions__err">Couldn't load openings: {result.error}</p>
+                          </div>
+                        );
+                      }
+                      return (
+                        <div class="slot-suggestions">
+                          <span class="slot-suggestions__lbl">
+                            Matching openings ({result.length})
+                          </span>
+                          {result.length === 0 ? (
+                            <p class="slot-suggestions__empty">
+                              No openings match their window. Use Schedule them to browse manually.
+                            </p>
+                          ) : (
+                            <ul class="slot-list">
+                              {result.map((slot) => (
+                                <li class="slot-row">
+                                  <span class="slot-when">
+                                    {fmtSlot.format(new Date(slot.startAtUtc))}
+                                  </span>
+                                  <span class="slot-actions">
+                                    <button
+                                      class="btn primary slot-btn"
+                                      data-slot-action="book"
+                                      data-entry-id={e.id}
+                                      data-start={slot.startAtUtc}
+                                      data-svid={slot.serviceVariationId}
+                                      data-tmid={slot.teamMemberId}
+                                      data-mins={slot.durationMinutes}
+                                    >Book this slot</button>
+                                    <button
+                                      class="btn ghost slot-btn"
+                                      data-slot-action="notify"
+                                      data-entry-id={e.id}
+                                      data-start={slot.startAtUtc}
+                                      data-svid={slot.serviceVariationId}
+                                      data-tmid={slot.teamMemberId}
+                                      data-mins={slot.durationMinutes}
+                                    >Email customer</button>
+                                  </span>
+                                </li>
+                              ))}
+                            </ul>
+                          )}
+                          <p class="status-msg" data-slot-msg></p>
+                        </div>
+                      );
+                    })()}
+
                     {e.note && (
                       <div class="entry-note">
                         <span class="lbl">Their note</span>
@@ -479,11 +640,15 @@ function bookHrefFor(entry: WaitlistEntry): string {
         entries.forEach((entry) => {
           const id = entry.dataset.id;
           const msg = entry.querySelector('[data-status-msg]');
-          const buttons = entry.querySelectorAll('button[data-action]');
-          buttons.forEach((btn) => {
+          const slotMsg = entry.querySelector('[data-slot-msg]');
+          const statusButtons = entry.querySelectorAll('button[data-action]');
+          const slotButtons = entry.querySelectorAll('button[data-slot-action]');
+
+          // ---------- Status mutations (Mark contacted / booked / archive) ----------
+          statusButtons.forEach((btn) => {
             btn.addEventListener('click', async () => {
               const status = btn.dataset.action;
-              buttons.forEach((b) => (b.disabled = true));
+              statusButtons.forEach((b) => (b.disabled = true));
               if (msg) {
                 msg.textContent = 'Saving…';
                 msg.className = 'status-msg';
@@ -501,17 +666,74 @@ function bookHrefFor(entry: WaitlistEntry): string {
                     msg.textContent = (data && data.error && data.error.detail) || 'Could not update.';
                     msg.className = 'status-msg error';
                   }
-                  buttons.forEach((b) => (b.disabled = false));
+                  statusButtons.forEach((b) => (b.disabled = false));
                   return;
                 }
-                // Reload to keep counts + filters consistent.
                 window.location.reload();
               } catch (err) {
                 if (msg) {
                   msg.textContent = 'Network error. Try again.';
                   msg.className = 'status-msg error';
                 }
-                buttons.forEach((b) => (b.disabled = false));
+                statusButtons.forEach((b) => (b.disabled = false));
+              }
+            });
+          });
+
+          // ---------- Slot actions (Book this slot / Email customer) ----------
+          slotButtons.forEach((btn) => {
+            btn.addEventListener('click', async () => {
+              const action = btn.dataset.slotAction;
+              const endpoint =
+                action === 'book'
+                  ? '/api/admin/waitlist/schedule'
+                  : '/api/admin/waitlist/notify';
+              const body = {
+                entryId: btn.dataset.entryId,
+                startAtUtc: btn.dataset.start,
+                serviceVariationId: btn.dataset.svid,
+                teamMemberId: btn.dataset.tmid,
+                durationMinutes: Number(btn.dataset.mins),
+              };
+              slotButtons.forEach((b) => (b.disabled = true));
+              if (slotMsg) {
+                slotMsg.textContent = action === 'book' ? 'Booking…' : 'Sending email…';
+                slotMsg.className = 'status-msg';
+              }
+              try {
+                const res = await fetch(endpoint, {
+                  method: 'POST',
+                  credentials: 'same-origin',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify(body),
+                });
+                const data = await res.json();
+                if (!res.ok || !data.ok) {
+                  const detail = (data && data.error && data.error.detail) || 'Action failed.';
+                  if (slotMsg) {
+                    slotMsg.textContent = detail;
+                    slotMsg.className = 'status-msg error';
+                  }
+                  // 409 SLOT_TAKEN — refresh so the stale row clears out.
+                  if (res.status === 409) {
+                    setTimeout(() => window.location.reload(), 1500);
+                    return;
+                  }
+                  slotButtons.forEach((b) => (b.disabled = false));
+                  return;
+                }
+                if (slotMsg) {
+                  slotMsg.textContent =
+                    action === 'book' ? 'Booked! Reloading…' : 'Email sent. Reloading…';
+                  slotMsg.className = 'status-msg ok';
+                }
+                window.location.reload();
+              } catch (err) {
+                if (slotMsg) {
+                  slotMsg.textContent = 'Network error. Try again.';
+                  slotMsg.className = 'status-msg error';
+                }
+                slotButtons.forEach((b) => (b.disabled = false));
               }
             });
           });
