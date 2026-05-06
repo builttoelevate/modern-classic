@@ -8,6 +8,12 @@ import {
   type GroupMode,
 } from './groupWizardState';
 
+export interface BookingForOption {
+  customerId: string;
+  displayName: string;
+  isSelf: boolean;
+}
+
 interface Props {
   services: Service[];
   barbers: Barber[];
@@ -18,6 +24,10 @@ interface Props {
     email: string;
     phone: string;
   };
+  /** Self + already-linked people. Step 6 surfaces this so the parent
+   * can pick saved names instead of typing every time. Empty/length-1
+   * (just self) hides the dropdown and we fall back to plain inputs. */
+  bookingForOptions?: BookingForOption[];
 }
 
 const SHOP_TZ = 'America/New_York';
@@ -37,7 +47,9 @@ export default function GroupBookingWizard({
   services,
   barbers,
   signedInCustomer,
+  bookingForOptions,
 }: Props) {
+  const savedPeople = bookingForOptions ?? [];
   const [state, dispatch] = useReducer(reducer, undefined, () =>
     makeInitialState(2),
   );
@@ -142,7 +154,16 @@ export default function GroupBookingWizard({
   const submit = async () => {
     if (!state.selectedSlot || !state.mode) return;
     dispatch({ type: 'SET_STATUS', status: { kind: 'submitting' } });
-    const assignments = buildAssignments(state.members, state.selectedSlot);
+    const assignments = buildAssignments(state.members, state.selectedSlot).map(
+      (a, idx) => {
+        const m = state.members[idx];
+        return {
+          ...a,
+          who: m.who,
+          existingCustomerId: m.existingCustomerId,
+        };
+      },
+    );
     try {
       const res = await fetch('/api/square/group-bookings', {
         method: 'POST',
@@ -273,10 +294,12 @@ export default function GroupBookingWizard({
               parent={state.parent}
               members={state.members}
               groupNote={state.groupNote}
+              savedPeople={savedPeople}
               onParent={(patch) => dispatch({ type: 'SET_PARENT', patch })}
               onMemberName={(key, name) =>
                 dispatch({ type: 'SET_MEMBER_NAME', key, name })
               }
+              onMemberWho={(payload) => dispatch({ type: 'SET_MEMBER_WHO', ...payload })}
               onGroupNote={(note) => dispatch({ type: 'SET_GROUP_NOTE', note })}
             />
           )}
@@ -681,23 +704,43 @@ function Step6Details({
   parent,
   members,
   groupNote,
+  savedPeople,
   onParent,
   onMemberName,
+  onMemberWho,
   onGroupNote,
 }: {
   parent: { givenName: string; familyName: string; email: string; phone: string };
-  members: Array<{ key: string; displayName: string }>;
+  members: Array<{
+    key: string;
+    displayName: string;
+    who: 'self' | 'existing' | 'new';
+    existingCustomerId?: string;
+  }>;
   groupNote: string;
+  savedPeople: BookingForOption[];
   onParent: (patch: Partial<typeof parent>) => void;
   onMemberName: (key: string, name: string) => void;
+  onMemberWho: (payload: {
+    key: string;
+    who: 'self' | 'existing' | 'new';
+    existingCustomerId?: string;
+    displayName?: string;
+  }) => void;
   onGroupNote: (note: string) => void;
 }) {
+  // The picker only adds value when the parent has saved people. With
+  // length 1 (just self) we still let them tap "Me", but we hide the
+  // dropdown entirely if they aren't signed in (length 0). Plain
+  // text inputs are the fallback in that case.
+  const hasOptions = savedPeople.length > 0;
   return (
     <div className="gw__step-body">
-      <h2>Your details + a name for each person</h2>
+      <h2>Your details + each person</h2>
       <p className="gw__lede">
-        We'll use the parent's contact info for confirmations. Each person's name
-        goes on their booking so the shop knows who's who.
+        Parent contact for confirmations. Pick saved people from your profile, or
+        type a new name — we'll add new names to your profile so they're one tap
+        away next time.
       </p>
       <fieldset className="gw__field-block">
         <legend>Parent / point of contact</legend>
@@ -743,17 +786,57 @@ function Step6Details({
         </div>
       </fieldset>
       <fieldset className="gw__field-block">
-        <legend>Names for each person</legend>
+        <legend>Who's getting cut</legend>
         {members.map((m, idx) => (
-          <label key={m.key} className="bw-field">
-            <span className="bw-field__label">Person {idx + 1}</span>
-            <input
-              type="text"
-              placeholder={idx === 0 ? 'e.g. Tommy' : 'Name'}
-              value={m.displayName}
-              onChange={(e) => onMemberName(m.key, e.target.value)}
-            />
-          </label>
+          <div key={m.key} className="gw__person-row">
+            <span className="gw__person-num">Person {idx + 1}</span>
+            {hasOptions && (
+              <div className="gw__person-picker">
+                {savedPeople.map((p) => {
+                  const active =
+                    (p.isSelf && m.who === 'self') ||
+                    (!p.isSelf && m.who === 'existing' && m.existingCustomerId === p.customerId);
+                  return (
+                    <button
+                      key={p.customerId}
+                      type="button"
+                      className={`gw__person-chip ${active ? 'is-active' : ''}`}
+                      onClick={() =>
+                        onMemberWho({
+                          key: m.key,
+                          who: p.isSelf ? 'self' : 'existing',
+                          existingCustomerId: p.isSelf ? undefined : p.customerId,
+                          displayName: p.displayName,
+                        })
+                      }
+                    >
+                      {p.displayName}
+                    </button>
+                  );
+                })}
+                <button
+                  type="button"
+                  className={`gw__person-chip ${m.who === 'new' ? 'is-active' : ''}`}
+                  onClick={() =>
+                    onMemberWho({ key: m.key, who: 'new', displayName: '' })
+                  }
+                >
+                  + New person
+                </button>
+              </div>
+            )}
+            {(!hasOptions || m.who === 'new') && (
+              <label className="bw-field gw__person-name">
+                <span className="bw-field__label">Name</span>
+                <input
+                  type="text"
+                  placeholder={idx === 0 ? 'e.g. Tommy' : 'Name'}
+                  value={m.displayName}
+                  onChange={(e) => onMemberName(m.key, e.target.value)}
+                />
+              </label>
+            )}
+          </div>
         ))}
       </fieldset>
       <label className="bw-field">

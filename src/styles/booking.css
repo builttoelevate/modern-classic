@@ -1485,6 +1485,45 @@
 }
 @media (max-width: 540px) { .gw__field-row { grid-template-columns: 1fr; } }
 
+/* ---------- Step 6 per-person picker ---------- */
+.gw__person-row {
+  display: grid;
+  gap: 0.5rem;
+  padding: 0.65rem 0;
+  border-top: 1px solid var(--color-border);
+}
+.gw__person-row:first-of-type { border-top: 0; padding-top: 0; }
+.gw__person-num {
+  font-size: 0.66rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--color-gold-deep);
+}
+.gw__person-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+.gw__person-chip {
+  appearance: none;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  padding: 0.4rem 0.85rem;
+  color: var(--color-text-muted);
+  font-family: inherit;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: border-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+}
+.gw__person-chip:hover { border-color: rgba(201, 163, 92, 0.45); color: var(--color-text); }
+.gw__person-chip.is-active {
+  border-color: var(--color-gold);
+  background: rgba(201, 163, 92, 0.10);
+  color: var(--color-gold-light);
+}
+.gw__person-name { margin-top: 0.15rem; }
+
 /* ---------- Step 7: confirm ---------- */
 .gw__confirm {
   background: var(--color-bg-soft);

@@ -19,6 +19,19 @@ export interface MemberDraft {
    * because Square stores per-barber-priced services as N variations
    * (one per barber), so eligibleBarberIds varies by variation. */
   service: Service | null;
+  /** Routing for this member's booking on submit:
+   *   'new'      — type a fresh name; the backend creates a Square
+   *                customer record + links them under the parent
+   *                profile so future group bookings can pick them
+   *                straight from the dropdown.
+   *   'self'     — this member is the parent themselves.
+   *   'existing' — this member is one of the parent's already-linked
+   *                people; uses `existingCustomerId`.
+   * Defaults to 'new'. Step 6 lets the parent flip between these. */
+  who: 'self' | 'existing' | 'new';
+  /** Set when who === 'existing'. Square customer_id of the linked
+   * person the parent picked. */
+  existingCustomerId?: string;
 }
 
 export interface ParentDraft {
@@ -71,6 +84,7 @@ export function makeInitialState(initialSize: 2 | 3 | 4 = 2): GroupWizardState {
       key: memberKey(i),
       displayName: '',
       service: null,
+      who: 'new' as const,
     })),
     mode: null,
     selectedBarber: null,
@@ -89,6 +103,13 @@ export type GroupAction =
   | { type: 'SET_SIZE'; size: 2 | 3 | 4 }
   | { type: 'SET_MEMBER_SERVICE'; key: string; service: Service }
   | { type: 'SET_MEMBER_NAME'; key: string; name: string }
+  | {
+      type: 'SET_MEMBER_WHO';
+      key: string;
+      who: 'self' | 'existing' | 'new';
+      existingCustomerId?: string;
+      displayName?: string;
+    }
   | { type: 'SET_MODE'; mode: GroupMode }
   | { type: 'SET_BARBER'; barber: Barber | null }
   | { type: 'SET_AVAILABLE_SLOTS'; slots: GroupSlot[] | null }
@@ -116,6 +137,7 @@ export function reducer(state: GroupWizardState, action: GroupAction): GroupWiza
             key: memberKey(i),
             displayName: '',
             service: null,
+            who: 'new',
           },
         );
       }
@@ -149,6 +171,22 @@ export function reducer(state: GroupWizardState, action: GroupAction): GroupWiza
         members: state.members.map((m) =>
           m.key === action.key ? { ...m, displayName: action.name } : m,
         ),
+      };
+    }
+
+    case 'SET_MEMBER_WHO': {
+      return {
+        ...state,
+        members: state.members.map((m) => {
+          if (m.key !== action.key) return m;
+          return {
+            ...m,
+            who: action.who,
+            existingCustomerId:
+              action.who === 'existing' ? action.existingCustomerId : undefined,
+            displayName: action.displayName ?? m.displayName,
+          };
+        }),
       };
     }
 
@@ -215,7 +253,13 @@ export function canAdvance(state: GroupWizardState): boolean {
       return state.selectedSlot !== null;
     case 6: {
       const p = state.parent;
-      const allNamed = state.members.every((m) => m.displayName.trim().length > 0);
+      // 'self' and 'existing' rows already have a name pinned to a
+      // real Square customer record; only 'new' rows need a typed
+      // displayName before we can advance.
+      const allNamed = state.members.every((m) => {
+        if (m.who === 'self' || m.who === 'existing') return true;
+        return m.displayName.trim().length > 0;
+      });
       return (
         p.givenName.trim().length > 0 &&
         p.familyName.trim().length > 0 &&
