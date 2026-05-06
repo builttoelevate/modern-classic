@@ -7,12 +7,21 @@
 
 import type { APIRoute } from 'astro';
 import { SquareApiError } from '../../../lib/square/client';
-import { findOrCreateCustomer, getCustomerById } from '../../../lib/square/customers';
+import {
+  createCustomer,
+  findOrCreateCustomer,
+  getCustomerById,
+} from '../../../lib/square/customers';
 import { createBooking } from '../../../lib/square/bookings';
 import { getServices } from '../../../lib/square/catalog';
 import { bookingIdempotencyKey } from '../../../lib/booking/idempotency';
 import { redactEmail } from '../../../lib/booking/log';
 import { getSession } from '../../../lib/auth/middleware';
+import {
+  linkPerson,
+  listLinkedPeople,
+  type LinkedPerson,
+} from '../../../lib/customer/profileLinks';
 import { randomBytes } from 'node:crypto';
 
 export const prerender = false;
@@ -26,6 +35,16 @@ interface MemberAssignment {
   /** ISO UTC start time. For "all-at-once" all members share the same
    * value; for "back-to-back" each is offset by the prior durations. */
   startAtUtc: string;
+  /** Routing for this member's booking:
+   *   - 'self'             → use the parent's Square customerId
+   *   - 'existing'         → use existingCustomerId (must be one of the
+   *                           parent's already-linked people)
+   *   - 'new' (default)    → create a Square customer record for this
+   *                           person + link them under the parent so
+   *                           future group bookings can pick them
+   *                           straight from the dropdown */
+  who?: 'self' | 'existing' | 'new';
+  existingCustomerId?: string;
 }
 interface RequestBody {
   mode: 'all-at-once' | 'back-to-back';
@@ -54,9 +73,17 @@ interface OkResponse {
   /** Booking ids in the same order as the request's assignments. Null
    * entries are members whose Square booking failed; pair with the
    * `failures` array for the per-member reason. */
-  bookings: Array<{ memberKey: string; bookingId: string | null }>;
+  bookings: Array<{
+    memberKey: string;
+    bookingId: string | null;
+    customerId: string;
+  }>;
   failures: BookingFailure[];
-  customerId: string;
+  parentCustomerId: string;
+  /** People we just created + linked under this parent on this
+   * submission. The wizard can use this to confirm the new entries
+   * appeared in the profile. */
+  newlyLinked: LinkedPerson[];
 }
 interface FailResponse {
   ok: false;
@@ -116,6 +143,13 @@ function validate(body: unknown): RequestBody | string {
     if (typeof aa.startAtUtc !== 'string' || Number.isNaN(Date.parse(aa.startAtUtc))) {
       return 'assignment.startAtUtc must be a valid ISO date.';
     }
+    const whoRaw = typeof aa.who === 'string' ? aa.who : '';
+    const who: 'self' | 'existing' | 'new' =
+      whoRaw === 'self' || whoRaw === 'existing' ? whoRaw : 'new';
+    const existingCustomerId =
+      typeof aa.existingCustomerId === 'string' && aa.existingCustomerId.trim()
+        ? aa.existingCustomerId.trim()
+        : undefined;
     assignments.push({
       key: aa.key.trim(),
       displayName: typeof aa.displayName === 'string' ? aa.displayName.trim() : '',
@@ -123,6 +157,8 @@ function validate(body: unknown): RequestBody | string {
       teamMemberId: aa.teamMemberId.trim(),
       durationMinutes: Math.floor(aa.durationMinutes),
       startAtUtc: aa.startAtUtc,
+      who,
+      existingCustomerId,
     });
   }
   if (!b.parent || typeof b.parent !== 'object') return 'parent block required.';
@@ -165,12 +201,16 @@ export const POST: APIRoute = async ({ request }) => {
   // 1. Resolve the parent's Square Customer record. Same priority as
   //    single-booking flow: signed-in session beats typed email; guests
   //    fall through to find-or-create.
-  let resolvedCustomerId: string;
+  let parentCustomerId: string;
+  let parentPhone: string;
+  let parentFamilyName: string;
   try {
     if (session) {
       const verified = await getCustomerById(session.customerId);
       if (verified) {
-        resolvedCustomerId = verified.id;
+        parentCustomerId = verified.id;
+        parentPhone = verified.phone_number?.trim() || v.parent.phone;
+        parentFamilyName = verified.family_name?.trim() || v.parent.familyName;
       } else {
         const found = await findOrCreateCustomer({
           givenName: v.parent.givenName,
@@ -178,7 +218,9 @@ export const POST: APIRoute = async ({ request }) => {
           email: v.parent.email.toLowerCase(),
           phone: v.parent.phone,
         });
-        resolvedCustomerId = found.customer.id;
+        parentCustomerId = found.customer.id;
+        parentPhone = v.parent.phone;
+        parentFamilyName = v.parent.familyName;
       }
     } else {
       const found = await findOrCreateCustomer({
@@ -187,7 +229,9 @@ export const POST: APIRoute = async ({ request }) => {
         email: v.parent.email.toLowerCase(),
         phone: v.parent.phone,
       });
-      resolvedCustomerId = found.customer.id;
+      parentCustomerId = found.customer.id;
+      parentPhone = v.parent.phone;
+      parentFamilyName = v.parent.familyName;
     }
   } catch (err) {
     if (err instanceof SquareApiError) {
@@ -195,6 +239,109 @@ export const POST: APIRoute = async ({ request }) => {
     }
     const detail = err instanceof Error ? err.message : String(err);
     return fail('INTERNAL', detail, 500);
+  }
+
+  // 2. Resolve each member's own Square customerId.
+  //
+  //    - 'self'     → parent's customerId
+  //    - 'existing' → must already be one of the parent's linked
+  //                   people (KV check); use that customerId
+  //    - 'new'      → create a Square customer record (kid's first
+  //                   name + parent's surname + parent's phone, no
+  //                   email) and link them under the parent so the
+  //                   wizard can pick them next time. Skip linking
+  //                   for guest checkouts (no parent profile to
+  //                   link into).
+  //
+  //    Group bookings now spread across N customer records (one per
+  //    member) instead of all stacking under the parent — that's why
+  //    /my-bookings already shows them with "for Tommy" / "for Jake"
+  //    labels and lets the parent cancel each one independently. The
+  //    merge logic on /my-bookings was built for this exact shape
+  //    (Phase 8 linked-people).
+  let existingLinks: LinkedPerson[] = [];
+  if (session) {
+    try {
+      existingLinks = await listLinkedPeople(parentCustomerId);
+    } catch {
+      // Swallow — KV failures shouldn't block bookings; we just won't
+      // be able to validate existing IDs against the link list.
+    }
+  }
+  const existingLinkIds = new Set(existingLinks.map((p) => p.customerId));
+
+  const memberCustomerIds = new Map<string, string>();
+  const newlyLinked: LinkedPerson[] = [];
+  for (const a of v.assignments) {
+    if (a.who === 'self') {
+      memberCustomerIds.set(a.key, parentCustomerId);
+      continue;
+    }
+    if (a.who === 'existing' && a.existingCustomerId) {
+      // Defensive — confirm the id is actually linked to this parent.
+      // Without this check a tampered request could book under any
+      // customer the attacker knew the id of.
+      if (!existingLinkIds.has(a.existingCustomerId)) {
+        return fail(
+          'BAD_LINK',
+          'That linked person is not on your profile.',
+          400,
+        );
+      }
+      memberCustomerIds.set(a.key, a.existingCustomerId);
+      continue;
+    }
+    // Default + 'new': create a Square customer + (if signed in) link.
+    if (!a.displayName) {
+      return fail(
+        'BAD_REQUEST',
+        'Each new member needs a display name.',
+        400,
+      );
+    }
+    try {
+      const created = await createCustomer({
+        givenName: a.displayName,
+        familyName: parentFamilyName,
+        email: '',
+        phone: parentPhone,
+      });
+      memberCustomerIds.set(a.key, created.id);
+      if (session) {
+        try {
+          const link: LinkedPerson = {
+            customerId: created.id,
+            displayName: `${a.displayName} ${parentFamilyName}`.trim(),
+            relationship: undefined,
+            linkedAt: new Date().toISOString(),
+          };
+          await linkPerson(parentCustomerId, link);
+          newlyLinked.push(link);
+        } catch (err) {
+          // Square record exists already — log and continue. Worst
+          // case the customer just doesn't show up in next time's
+          // dropdown; their booking still went through.
+          const detail = err instanceof Error ? err.message : String(err);
+          logGroup({
+            phase: 'kid-link-write-failed',
+            groupId,
+            memberKey: a.key,
+            kidId: created.id,
+            detail,
+          });
+        }
+      }
+    } catch (err) {
+      if (err instanceof SquareApiError) {
+        return fail(
+          'SQUARE_ERROR',
+          `Could not create record for ${a.displayName}: ${err.detail}`,
+          502,
+        );
+      }
+      const detail = err instanceof Error ? err.message : String(err);
+      return fail('INTERNAL', detail, 500);
+    }
   }
 
   // 2. Look up each variation's current `version` from the catalog.
@@ -215,17 +362,29 @@ export const POST: APIRoute = async ({ request }) => {
     }
   }
 
-  // 3. Sequentially create each booking. Idempotency keys are
-  //    deterministic per-(parent email, slot, variation) so a
-  //    double-submit doesn't duplicate; a Square 409 on a later member
-  //    surfaces as a per-member failure rather than failing the whole
-  //    request — partial success is still useful to the customer.
+  // 3. Sequentially create each booking under that member's resolved
+  //    customer id. Idempotency keys mix groupId so a double-submit
+  //    doesn't duplicate; a Square 409 on a later member surfaces as a
+  //    per-member failure rather than failing the whole request —
+  //    partial success is still useful to the customer.
   const bookings: OkResponse['bookings'] = [];
   const failures: BookingFailure[] = [];
   const total = v.assignments.length;
 
   for (let i = 0; i < v.assignments.length; i++) {
     const a = v.assignments[i];
+    const memberCustomerId = memberCustomerIds.get(a.key);
+    if (!memberCustomerId) {
+      failures.push({
+        memberKey: a.key,
+        displayName: a.displayName,
+        code: 'NO_CUSTOMER',
+        detail: "Couldn't resolve a customer record for this member.",
+        slotTaken: false,
+      });
+      bookings.push({ memberKey: a.key, bookingId: null, customerId: '' });
+      continue;
+    }
     const version = versionByVariation.get(a.serviceVariationId);
     if (typeof version !== 'number') {
       failures.push({
@@ -235,7 +394,7 @@ export const POST: APIRoute = async ({ request }) => {
         detail: 'That service is no longer in the Square catalog.',
         slotTaken: false,
       });
-      bookings.push({ memberKey: a.key, bookingId: null });
+      bookings.push({ memberKey: a.key, bookingId: null, customerId: memberCustomerId });
       continue;
     }
 
@@ -248,8 +407,11 @@ export const POST: APIRoute = async ({ request }) => {
       variationLabel: nameByVariation.get(a.serviceVariationId) ?? '',
       groupNote: v.groupNote,
     });
+    // Idempotency key: scoped per-(member customerId, slot, variation)
+    // so each member's booking has its own. Group prefix makes a
+    // double-submit of the whole group safe end-to-end.
     const idempotencyKey = `${groupId}-${i + 1}-${bookingIdempotencyKey({
-      email: v.parent.email,
+      email: `${memberCustomerId}@group.local`,
       startAtUtc: a.startAtUtc,
       serviceVariationId: a.serviceVariationId,
     })}`.slice(0, 191);
@@ -257,7 +419,7 @@ export const POST: APIRoute = async ({ request }) => {
     try {
       const booking = await createBooking({
         startAtUtc: a.startAtUtc,
-        customerId: resolvedCustomerId,
+        customerId: memberCustomerId,
         serviceVariationId: a.serviceVariationId,
         serviceVariationVersion: version,
         teamMemberId: a.teamMemberId,
@@ -265,12 +427,17 @@ export const POST: APIRoute = async ({ request }) => {
         customerNote: note,
         idempotencyKey,
       });
-      bookings.push({ memberKey: a.key, bookingId: booking.id });
+      bookings.push({
+        memberKey: a.key,
+        bookingId: booking.id,
+        customerId: memberCustomerId,
+      });
       logGroup({
         phase: 'member-booked',
         groupId,
         memberKey: a.key,
         bookingId: booking.id,
+        memberCustomerId,
         startAtUtc: a.startAtUtc,
       });
     } catch (err) {
@@ -289,11 +456,16 @@ export const POST: APIRoute = async ({ request }) => {
         detail,
         slotTaken,
       });
-      bookings.push({ memberKey: a.key, bookingId: null });
+      bookings.push({
+        memberKey: a.key,
+        bookingId: null,
+        customerId: memberCustomerId,
+      });
       logGroup({
         phase: 'member-failed',
         groupId,
         memberKey: a.key,
+        memberCustomerId,
         startAtUtc: a.startAtUtc,
         code,
         detail,
@@ -305,11 +477,12 @@ export const POST: APIRoute = async ({ request }) => {
   logGroup({
     phase: 'group-done',
     groupId,
-    customerId: resolvedCustomerId,
+    parentCustomerId,
     email: redactEmail(v.parent.email),
     total,
     succeeded: bookings.filter((b) => b.bookingId !== null).length,
     failures: failures.length,
+    newlyLinked: newlyLinked.length,
   });
 
   return Response.json({
@@ -317,7 +490,8 @@ export const POST: APIRoute = async ({ request }) => {
     groupId,
     bookings,
     failures,
-    customerId: resolvedCustomerId,
+    parentCustomerId,
+    newlyLinked,
   } satisfies OkResponse);
 };
 

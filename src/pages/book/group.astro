@@ -9,6 +9,7 @@ import { getServices } from '../../lib/square/catalog';
 import { getBarbers } from '../../lib/square/team';
 import { findCustomerByEmail } from '../../lib/square/customers';
 import { getSession } from '../../lib/auth/middleware';
+import { listLinkedPeople } from '../../lib/customer/profileLinks';
 import type { Barber, Service } from '../../lib/square/types';
 
 import '../../styles/booking.css';
@@ -23,10 +24,14 @@ try {
 }
 
 let signedInCustomer: { givenName: string; familyName: string; email: string; phone: string } | undefined;
+let bookingForOptions: Array<{ customerId: string; displayName: string; isSelf: boolean }> = [];
 const session = getSession(Astro.request);
 if (session && !loadError) {
   try {
-    const customer = await findCustomerByEmail(session.email);
+    const [customer, kids] = await Promise.all([
+      findCustomerByEmail(session.email),
+      listLinkedPeople(session.customerId).catch(() => []),
+    ]);
     if (customer) {
       signedInCustomer = {
         givenName: customer.given_name?.trim() ?? '',
@@ -34,6 +39,22 @@ if (session && !loadError) {
         email: session.email,
         phone: customer.phone_number?.trim() ?? '',
       };
+      // Self entry first, then any already-linked people. The wizard's
+      // per-member dropdowns render this list so the parent can pick a
+      // saved person instead of typing the name from scratch every
+      // group booking.
+      bookingForOptions = [
+        {
+          customerId: customer.id,
+          displayName: signedInCustomer.givenName || 'Me',
+          isSelf: true,
+        },
+        ...kids.map((k) => ({
+          customerId: k.customerId,
+          displayName: k.displayName,
+          isSelf: false,
+        })),
+      ];
     }
   } catch {
     // Silent — wizard collects details if we can't pre-fill.
@@ -69,6 +90,7 @@ if (session && !loadError) {
           services={services}
           barbers={barbers}
           signedInCustomer={signedInCustomer}
+          bookingForOptions={bookingForOptions}
         />
       )}
       <p class="bw-page__alt">
