@@ -1,51 +1,11 @@
 ---
-// "Shop The Essentials" — flat 4-up product grid. Anchor id remains
-// `#products` so existing nav and in-hero CTAs continue to scroll here.
+// Homepage shop CTA — single button under the "Shop the Essentials"
+// heading that takes visitors to the live Shopify store. Replaces the
+// previous 4-up product grid (clay / powder / spray / oil) per the
+// shop owner's request. Anchor id `#products` is preserved so existing
+// nav and in-hero CTAs continue to scroll here.
 
-const SHOP_BASE = 'https://mdrnclassic.com';
-
-const products = [
-  {
-    name: 'Soft Clay',
-    category: 'Styling',
-    description: 'Versatile definition and texture with a matte finish for thickening and control.',
-    price: '$25',
-    imageUrl: 'https://mdrnclassic.com/cdn/shop/files/3.4ozsoftclay.png?v=1708302533&width=1445',
-    productUrl: `${SHOP_BASE}/products/100ml-soft-clay`,
-    cta: 'Shop Now',
-    alt: 'MDRN Classic 100ml soft clay jar',
-  },
-  {
-    name: 'Texture Powder',
-    category: 'Hair Styling',
-    description: 'A dry styling powder for instant volume and touchable texture with a clean matte finish. No grease. No shine.',
-    price: '$23',
-    imageUrl: 'https://mdrnclassic.com/cdn/shop/files/1_f005e3a1-0fcc-4b12-9891-5910dc26700d.png?v=1707897064&width=1445',
-    productUrl: `${SHOP_BASE}/products/mdrn%E2%84%A2-classic-20g-texture-powder`,
-    cta: 'Shop Now',
-    alt: 'MDRN Classic 20g texture powder jar',
-  },
-  {
-    name: 'Salt Spray',
-    category: 'Texture & Finish',
-    description: 'Beach-textured, undone hair with volume and grip — works on wet or dry hair.',
-    price: '$24',
-    imageUrl: 'https://mdrnclassic.com/cdn/shop/files/2_14233aba-bfed-4b86-8ff6-30a2c9ec6ac0.png?width=1445',
-    productUrl: `${SHOP_BASE}/products/mdrn%E2%84%A2-classic-250ml-salt-spray`,
-    cta: 'Shop Now',
-    alt: 'MDRN Classic 250ml salt spray bottle',
-  },
-  {
-    name: 'Beard Oil',
-    category: 'Beard Care',
-    description: 'Softens the beard, hydrates the skin underneath, and keeps longer growth looking clean.',
-    price: '$22',
-    imageUrl: 'https://mdrnclassic.com/cdn/shop/files/3_b3030692-0a65-460d-87db-367bab5ee98b.png?v=1707897049&width=1445',
-    productUrl: `${SHOP_BASE}/products/mdrn%E2%84%A2-classic-30ml-beard-oil`,
-    cta: 'Shop Now',
-    alt: 'MDRN Classic 30ml beard oil bottle',
-  },
-];
+const SHOP_URL = 'https://mdrnclassic.com';
 ---
 <section id="products" class="shop-ess" aria-labelledby="shop-ess-heading">
   <div class="container">
@@ -53,37 +13,11 @@ const products = [
       <h2 id="shop-ess-heading">
         Shop the <span class="italic-accent">Essentials.</span>
       </h2>
-      <p class="lede" style="text-align:center; margin-inline:auto;">
-        The same products we use in the chair. Take the fresh-cut feeling home with
-        our most popular grooming essentials — handpicked for better texture, cleaner
-        beards, and a premium finishing scent.
-      </p>
     </header>
-
-    <div class="shop-ess__grid">
-      {products.map((p, i) => (
-        <a class="shop-ess__card"
-           href={p.productUrl}
-           target="_blank"
-           rel="noopener noreferrer"
-           data-reveal
-           style={`--reveal-delay: ${i * 80}ms`}>
-          <div class="shop-ess__media">
-            <img src={p.imageUrl} alt={p.alt} loading="lazy" decoding="async" />
-          </div>
-          <div class="shop-ess__body">
-            <p class="shop-ess__category">{p.category}</p>
-            <h3 class="shop-ess__name">{p.name}</h3>
-            <p class="shop-ess__desc">{p.description}</p>
-            <div class="shop-ess__foot">
-              <span class="shop-ess__price">{p.price}</span>
-              <span class="shop-ess__cta">
-                {p.cta} <span class="arrow" aria-hidden="true">→</span>
-              </span>
-            </div>
-          </div>
-        </a>
-      ))}
+    <div class="shop-ess__cta-wrap" data-reveal>
+      <a class="btn shop-ess__cta" href={SHOP_URL} target="_blank" rel="noopener noreferrer">
+        Shop the Store <span class="arrow" aria-hidden="true">→</span>
+      </a>
     </div>
   </div>
 </section>
@@ -94,128 +28,17 @@ const products = [
       radial-gradient(900px 400px at 50% 0%, rgba(201,163,92,0.06), transparent 70%),
       var(--color-bg);
   }
-
-  /* ---------- 4-up product grid ---------- */
-  .shop-ess__grid {
-    display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 1.25rem;
-  }
-
-  .shop-ess__card {
-    display: grid;
-    grid-template-rows: auto 1fr;
-    background: linear-gradient(180deg, var(--color-surface), var(--color-bg-soft));
-    border: 1px solid var(--color-border);
-    border-radius: 2px;
-    overflow: hidden;
-    color: var(--color-text);
-    text-decoration: none;
-    transition: border-color var(--dur) var(--ease),
-                transform var(--dur) var(--ease),
-                box-shadow var(--dur) var(--ease);
-  }
-  .shop-ess__card:hover {
-    border-color: rgba(201, 163, 92, 0.45);
-    transform: translateY(-3px);
-    box-shadow: 0 18px 50px -25px rgba(0, 0, 0, 0.7);
-  }
-
-  .shop-ess__media {
-    position: relative;
-    background:
-      radial-gradient(circle at 50% 50%,
-        rgba(201, 163, 92, 0.10) 0%,
-        rgba(201, 163, 92, 0.04) 28%,
-        transparent 52%),
-      linear-gradient(180deg, #1a1612, #0e0c0a);
-    display: grid;
-    place-items: center;
-    overflow: hidden;
-    aspect-ratio: 4 / 5;
-  }
-  .shop-ess__media img {
-    max-width: 72%;
-    max-height: 72%;
-    width: auto;
-    height: auto;
-    object-fit: contain;
-    transition: transform var(--dur-slow) var(--ease);
-    filter: drop-shadow(0 14px 28px rgba(0, 0, 0, 0.5));
-  }
-  .shop-ess__card:hover .shop-ess__media img { transform: scale(1.04); }
-
-  .shop-ess__body {
-    display: grid;
-    align-content: start;
-    gap: 0.5rem;
-    padding: clamp(0.95rem, 1.6vw, 1.25rem) clamp(1rem, 1.8vw, 1.35rem);
-  }
-  .shop-ess__category {
-    font-family: var(--font-body);
-    font-size: 0.62rem;
-    font-weight: 600;
-    letter-spacing: 0.3em;
-    text-transform: uppercase;
-    color: var(--color-gold-deep);
-    margin: 0;
-  }
-  .shop-ess__name {
-    font-family: var(--font-display);
-    font-weight: 500;
-    letter-spacing: -0.005em;
-    line-height: 1.15;
-    font-size: 1.35rem;
-    font-variation-settings: 'opsz' 100;
-    margin: 0;
-  }
-  .shop-ess__desc {
-    color: var(--color-text-muted);
-    font-size: 0.92rem;
-    line-height: 1.5;
-    margin: 0;
-  }
-  .shop-ess__foot {
+  .shop-ess__cta-wrap {
     display: flex;
-    align-items: baseline;
-    justify-content: space-between;
-    gap: 0.75rem;
-    margin-top: 0.5rem;
+    justify-content: center;
+    margin-top: clamp(1.25rem, 3vw, 2rem);
   }
-  .shop-ess__price {
-    font-family: var(--font-body);
-    font-size: 1.05rem;
-    font-weight: 600;
-    letter-spacing: 0.005em;
-    color: var(--color-gold-light);
-    white-space: nowrap;
-  }
+  /* The section CTA scales a bit larger than the default .btn so it
+     reads as the section's primary action without the visual noise
+     of the prior product grid. */
   .shop-ess__cta {
-    font-size: 0.74rem;
-    font-weight: 600;
-    letter-spacing: 0.18em;
-    text-transform: uppercase;
-    color: var(--color-gold);
-    display: inline-flex;
-    align-items: center;
-    gap: 0.4rem;
-  }
-  .shop-ess__cta .arrow { transition: transform var(--dur) var(--ease); }
-  .shop-ess__card:hover .shop-ess__cta { color: var(--color-gold-light); }
-  .shop-ess__card:hover .shop-ess__cta .arrow { transform: translateX(3px); }
-
-  /* ---------- Responsive ---------- */
-  @media (max-width: 980px) {
-    .shop-ess__grid {
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-    }
-  }
-  @media (max-width: 520px) {
-    .shop-ess__grid {
-      grid-template-columns: 1fr;
-    }
-    .shop-ess__media {
-      aspect-ratio: 4 / 3;
-    }
+    padding: 1rem 2rem;
+    font-size: 0.95rem;
+    letter-spacing: 0.16em;
   }
 </style>
