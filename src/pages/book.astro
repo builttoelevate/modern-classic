@@ -202,15 +202,21 @@ if (rescheduleId && !loadError) {
           signedInCustomer={signedInCustomer}
           bookingForOptions={bookingForOptions}
         />
-        {/* Entry point to the group flow. Tertiary by design — most
-            visits are single appointments; the group path is a
-            different shape (per-person service + scheduling-mode
-            fork) so we send those visitors to a dedicated wizard
-            rather than overloading this one. */}
+        {/* Entry point to the group flow. Styled as a bw-card so it
+            sits visually next to the service list at the bottom of
+            Step 1 — same dark surface, same gold border on hover. */}
         {!reschedule && (
-          <div style="text-align:center; margin-top: 2rem;">
-            <a class="bw-group-cta" href={`${base}/book/group`}>
-              Booking for <strong>2&ndash;4 people</strong>? Use the group flow →
+          <div class="bw bw-group-card-wrap">
+            <a class="bw-card bw-card--group" href={`${base}/book/group`}>
+              <span class="bw-card-name">Group Booking</span>
+              <span class="bw-card-price">2&ndash;4 people &middot; One transaction</span>
+              <span class="bw-card-desc">
+                Book the family or a small crew together. Pick a service for each
+                person, then pick how to schedule &mdash; everyone at once with
+                separate barbers, or back-to-back with one. We&apos;ll only show
+                times the whole group can fit.
+              </span>
+              <span class="bw-card-cta">Open the group flow <span aria-hidden="true">→</span></span>
             </a>
           </div>
         )}

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useReducer, useState } from 'react';
+import { useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import type { Barber, Service } from '../../../lib/square/types';
 import type { GroupSlot } from '../../../lib/booking/groupAvailability';
 import {
@@ -41,6 +41,30 @@ export default function GroupBookingWizard({
   const [state, dispatch] = useReducer(reducer, undefined, () =>
     makeInitialState(2),
   );
+
+  // Scroll the wizard root into view on every step change. Without
+  // this, hitting Continue at the bottom of a long step (e.g. Step 2
+  // with 4 members each picking a service) leaves the user staring at
+  // the buttons of the *previous* step's content area; they have to
+  // manually scroll up to see the next question. Same pattern as the
+  // single-flow BookingWizard: skip the very first render, honor
+  // prefers-reduced-motion.
+  const rootRef = useRef<HTMLDivElement>(null);
+  const lastScrolledStepRef = useRef<number>(state.step);
+  useEffect(() => {
+    if (lastScrolledStepRef.current === state.step) return;
+    lastScrolledStepRef.current = state.step;
+    const reduceMotion =
+      typeof window !== 'undefined' &&
+      typeof window.matchMedia === 'function' &&
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const behavior: ScrollBehavior = reduceMotion ? 'auto' : 'smooth';
+    if (rootRef.current) {
+      rootRef.current.scrollIntoView({ behavior, block: 'start' });
+    } else if (typeof window !== 'undefined') {
+      window.scrollTo({ top: 0, behavior });
+    }
+  }, [state.step]);
 
   // Pre-fill parent block from session, once.
   useEffect(() => {
@@ -169,7 +193,7 @@ export default function GroupBookingWizard({
   const ready = canAdvance(state);
 
   return (
-    <div className="gw">
+    <div className="gw" ref={rootRef}>
       <ol className="gw__steps" aria-label="Group booking steps">
         {STEP_LABELS.map((label, i) => {
           const stepNum = (i + 1) as 1 | 2 | 3 | 4 | 5 | 6 | 7;

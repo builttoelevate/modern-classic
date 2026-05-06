@@ -1569,23 +1569,36 @@
 }
 
 /* ---------- /book entry-point CTA for the group flow ---------- */
-.bw-group-cta {
+/* Wraps the card in the same .bw container so it inherits the wizard's
+   max-width + horizontal padding and lines up with the service list
+   above. */
+.bw-group-card-wrap {
+  margin-top: var(--space-5);
+}
+/* Card variant: same .bw-card styling as the services in Step 1, but
+   rendered as an <a> and scoped via --group so we can layer a small
+   "Open the group flow" CTA at the bottom without colliding with the
+   normal service-card layout. */
+.bw-card.bw-card--group {
+  display: flex;
+  flex-direction: column;
+  text-decoration: none;
+  position: relative;
+}
+.bw-card.bw-card--group .bw-card-cta {
+  margin-top: var(--space-3);
+  font-family: var(--font-body);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--color-gold);
   display: inline-flex;
   align-items: center;
-  gap: 0.45rem;
-  margin-top: 0.85rem;
-  padding: 0.45rem 0.85rem;
-  background: transparent;
-  border: 1px dashed var(--color-border);
-  border-radius: 999px;
-  color: var(--color-text-muted);
-  font-size: 0.85rem;
-  text-decoration: none;
-  transition: border-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+  gap: 0.4rem;
+  align-self: flex-start;
 }
-.bw-group-cta:hover,
-.bw-group-cta:focus-visible {
-  border-color: var(--color-gold);
+.bw-card.bw-card--group:hover .bw-card-cta,
+.bw-card.bw-card--group:focus-visible .bw-card-cta {
   color: var(--color-gold-light);
 }
-.bw-group-cta strong { color: var(--color-text); font-weight: 600; }
