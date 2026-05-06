@@ -4,6 +4,7 @@ import { AuthRequiredError, requireSession, refreshSessionCookie } from '../../.
 import { isAuthConfigured } from '../../../../../lib/auth/session';
 import { SquareApiError } from '../../../../../lib/square/client';
 import { getBooking, cancelBooking } from '../../../../../lib/square/bookings';
+import { listLinkedPeople } from '../../../../../lib/customer/profileLinks';
 import { redactEmail } from '../../../../../lib/booking/log';
 
 export const prerender = false;
@@ -57,7 +58,23 @@ export const POST: APIRoute = async ({ params, request }) => {
     );
   }
 
-  if (!booking.customer_id || booking.customer_id !== session.customerId) {
+  // Ownership check: the booking belongs to the signed-in customer OR
+  // to one of their linked people (kids / family members booked from
+  // the parent's profile, or auto-linked via the group flow). Without
+  // the linked-people branch, the parent couldn't cancel any group
+  // member's booking other than their own — every group member after
+  // the first is under a different Square customer record by design.
+  let allowed = !!booking.customer_id && booking.customer_id === session.customerId;
+  if (!allowed && booking.customer_id) {
+    try {
+      const linked = await listLinkedPeople(session.customerId);
+      allowed = linked.some((p) => p.customerId === booking.customer_id);
+    } catch {
+      // KV hiccup — fall through to the FORBIDDEN response. Better to
+      // refuse than to leak cancellation rights on a transient error.
+    }
+  }
+  if (!allowed) {
     logAction({
       phase: 'cancel-forbidden',
       bookingId: id,
