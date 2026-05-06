@@ -22,26 +22,19 @@ import {
   type WaitlistEntry,
 } from '../../../lib/marketing/waitlistLog';
 import { findMatchingSlot, isWindowExpired } from '../../../lib/marketing/waitlistMatch';
-import { searchAvailability } from '../../../lib/square/availability';
+import {
+  searchAvailabilityChunked,
+  searchWindowFor,
+} from '../../../lib/marketing/waitlistSlotSuggestions';
 import { sendWaitlistOpening } from '../../../lib/email/resend';
 import { formatRelativeSlot } from '../../../lib/availability/timing';
 import { redactEmail } from '../../../lib/booking/log';
 import { SquareApiError } from '../../../lib/square/client';
-import type { AvailabilitySlot } from '../../../lib/square/types';
 
 export const prerender = false;
 
 const SHOP_ADDRESS = '819 Linden Avenue, Zanesville, OH 43701';
 const SHOP_PHONE = '740-297-4462';
-
-/** Square's availability endpoint caps each call at 31 days. We chunk the
- * customer's window into ≤30-day pieces so we never overshoot. */
-const CHUNK_DAYS = 30;
-const DAY_MS = 24 * 60 * 60 * 1000;
-/** Bounded scan in case the cron has been off — never look further out
- * than this from "now" regardless of dateTo. Square only takes bookings
- * a couple of months ahead anyway. */
-const MAX_HORIZON_DAYS = 90;
 
 interface CronOk {
   ok: true;
@@ -87,51 +80,6 @@ function isAuthorized(request: Request): boolean {
   if (!header.toLowerCase().startsWith('bearer ')) return false;
   const supplied = header.slice(7).trim();
   return constantTimeEqual(supplied, expected);
-}
-
-function searchWindowFor(entry: WaitlistEntry, now: Date): { startAt: Date; endAt: Date } | null {
-  // Lower bound: max(now, dateFrom local-midnight). We don't need to
-  // search before "now" since past slots aren't bookable.
-  const nowMs = now.getTime();
-  let startMs = nowMs;
-  if (entry.dateFrom) {
-    const fromMs = Date.parse(`${entry.dateFrom}T00:00:00`);
-    if (Number.isFinite(fromMs) && fromMs > nowMs) startMs = fromMs;
-  }
-  // Upper bound: min(now + MAX_HORIZON_DAYS, dateTo local-end-of-day).
-  let endMs = nowMs + MAX_HORIZON_DAYS * DAY_MS;
-  if (entry.dateTo) {
-    const toMs = Date.parse(`${entry.dateTo}T23:59:59`);
-    if (Number.isFinite(toMs) && toMs < endMs) endMs = toMs;
-  }
-  if (endMs <= startMs) return null;
-  return { startAt: new Date(startMs), endAt: new Date(endMs) };
-}
-
-async function searchAvailabilityChunked(
-  serviceVariationId: string,
-  teamMemberId: string | undefined,
-  startAt: Date,
-  endAt: Date,
-): Promise<AvailabilitySlot[]> {
-  const out: AvailabilitySlot[] = [];
-  let cursor = startAt.getTime();
-  const endMs = endAt.getTime();
-  while (cursor < endMs) {
-    const chunkEnd = Math.min(cursor + CHUNK_DAYS * DAY_MS, endMs);
-    const slots = await searchAvailability({
-      serviceVariationId,
-      teamMemberId,
-      startAt: new Date(cursor),
-      endAt: new Date(chunkEnd),
-    });
-    out.push(...slots);
-    cursor = chunkEnd;
-    // Short-circuit — once we have a candidate, the matcher only needs
-    // the earliest slot. Don't burn extra Square calls.
-    if (out.length > 0) break;
-  }
-  return out;
 }
 
 async function handle(request: Request): Promise<Response> {
@@ -233,12 +181,15 @@ async function handle(request: Request): Promise<Response> {
         continue;
       }
 
-      const slots = await searchAvailabilityChunked(
-        entry.serviceVariationId,
-        entry.teamMemberId ?? undefined,
-        window.startAt,
-        window.endAt,
-      );
+      const slots = await searchAvailabilityChunked({
+        serviceVariationId: entry.serviceVariationId,
+        teamMemberId: entry.teamMemberId ?? undefined,
+        startAt: window.startAt,
+        endAt: window.endAt,
+        // Cron only needs the earliest match; bail out of further chunks
+        // as soon as Square hands us any candidate.
+        stopAfter: 1,
+      });
 
       const match = findMatchingSlot(entry, slots, now);
       if (!match) {
