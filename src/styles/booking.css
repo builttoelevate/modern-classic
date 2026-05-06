@@ -1182,3 +1182,410 @@
      card doesn't reflow when the fetch resolves. */
   min-height: 1.05em;
 }
+
+/* ============================================================
+   Group booking wizard (/book/group)
+   Reuses the existing .bw-btn / .bw-field / link-gold primitives
+   so the group flow inherits the rest of the dark-gold palette.
+   ============================================================ */
+
+.gw {
+  display: grid;
+  gap: var(--space-3);
+  margin-top: var(--space-4);
+}
+.gw__steps {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 0.6rem;
+  padding: 0;
+  margin: 0 0 var(--space-3);
+  font-size: 0.78rem;
+  letter-spacing: 0.06em;
+  color: var(--color-text-dim);
+}
+.gw__step {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.4rem 0.75rem;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  background: var(--color-surface);
+  white-space: nowrap;
+}
+.gw__step.is-active {
+  border-color: var(--color-gold);
+  color: var(--color-gold-light);
+}
+.gw__step.is-done {
+  border-color: rgba(108, 184, 124, 0.35);
+  color: #a4d091;
+}
+.gw__step.is-skipped {
+  opacity: 0.4;
+  text-decoration: line-through;
+}
+.gw__step-num {
+  display: inline-grid;
+  place-items: center;
+  width: 1.4em;
+  height: 1.4em;
+  border-radius: 50%;
+  background: rgba(201, 163, 92, 0.12);
+  color: var(--color-gold-light);
+  font-weight: 700;
+  font-size: 0.78rem;
+}
+.gw__body {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: clamp(1rem, 3vw, 1.75rem);
+}
+.gw__step-body { display: grid; gap: var(--space-3); }
+.gw__step-body h2 {
+  font-family: var(--font-display);
+  margin: 0;
+  font-weight: 500;
+  font-size: clamp(1.4rem, 2.4vw, 1.8rem);
+  line-height: 1.2;
+}
+.gw__lede {
+  color: var(--color-text-muted);
+  margin: 0;
+  line-height: 1.6;
+  max-width: 44rem;
+}
+.gw__nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  justify-content: flex-end;
+  margin-top: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--color-border);
+}
+.gw__nav .bw-btn--ghost { margin-right: auto; }
+.gw__error {
+  color: #f0a37a;
+  margin-top: var(--space-2);
+}
+
+/* ---------- Step 1: size picker ---------- */
+.gw__size-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.75rem;
+}
+@media (max-width: 540px) {
+  .gw__size-grid { grid-template-columns: 1fr; }
+}
+.gw__size {
+  appearance: none;
+  background: var(--color-bg-soft);
+  border: 1px solid var(--color-border);
+  color: var(--color-text);
+  padding: 1.25rem;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  display: grid;
+  gap: 0.4rem;
+  text-align: left;
+  font-family: inherit;
+  transition: border-color var(--dur-fast) var(--ease);
+}
+.gw__size:hover,
+.gw__size.is-active {
+  border-color: var(--color-gold);
+}
+.gw__size-num {
+  font-family: var(--font-display);
+  font-size: 2.4rem;
+  font-weight: 500;
+  line-height: 1;
+  color: var(--color-gold-light);
+}
+.gw__size-label {
+  color: var(--color-text-muted);
+  font-size: 0.92rem;
+  letter-spacing: 0.04em;
+}
+
+/* ---------- Step 2: per-member service ---------- */
+.gw__member-list { display: grid; gap: var(--space-3); }
+.gw__member-row {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: 0.85rem 1rem 1rem;
+  background: var(--color-bg-soft);
+}
+.gw__member-legend {
+  font-size: 0.66rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--color-gold-deep);
+  padding: 0 0.4rem;
+}
+.gw__service-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+.gw__service-card {
+  appearance: none;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: 0.7rem 0.85rem;
+  text-align: left;
+  color: var(--color-text);
+  font-family: inherit;
+  cursor: pointer;
+  display: grid;
+  gap: 0.25rem;
+  transition: border-color var(--dur-fast) var(--ease);
+}
+.gw__service-card:hover { border-color: rgba(201, 163, 92, 0.45); }
+.gw__service-card.is-active { border-color: var(--color-gold); background: var(--color-surface-2); }
+.gw__service-name { font-weight: 600; font-size: 0.96rem; }
+.gw__service-meta { color: var(--color-text-dim); font-size: 0.78rem; }
+
+/* ---------- Step 3: mode ---------- */
+.gw__mode-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+@media (max-width: 720px) { .gw__mode-grid { grid-template-columns: 1fr; } }
+.gw__mode-card {
+  appearance: none;
+  background: var(--color-bg-soft);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: 1.1rem 1.25rem;
+  text-align: left;
+  color: var(--color-text);
+  font-family: inherit;
+  cursor: pointer;
+  display: grid;
+  gap: 0.4rem;
+}
+.gw__mode-card:hover { border-color: var(--color-gold); }
+.gw__mode-eyebrow {
+  font-size: 0.66rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--color-gold-deep);
+}
+.gw__mode-title {
+  font-family: var(--font-display);
+  font-size: 1.15rem;
+  font-weight: 500;
+}
+.gw__mode-desc { color: var(--color-text-muted); font-size: 0.9rem; line-height: 1.5; margin: 0; }
+
+/* ---------- Step 4: barber ---------- */
+.gw__barber-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 0.5rem;
+}
+.gw__barber-card {
+  appearance: none;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: 0.85rem 1rem;
+  text-align: left;
+  color: var(--color-text);
+  font-family: inherit;
+  cursor: pointer;
+  display: grid;
+  gap: 0.2rem;
+  transition: border-color var(--dur-fast) var(--ease);
+}
+.gw__barber-card:hover { border-color: rgba(201, 163, 92, 0.45); }
+.gw__barber-card.is-active { border-color: var(--color-gold); background: var(--color-surface-2); }
+.gw__barber-name { font-family: var(--font-display); font-size: 1.1rem; font-weight: 500; }
+.gw__barber-role { font-size: 0.74rem; color: var(--color-text-dim); letter-spacing: 0.06em; }
+.gw__empty {
+  background: var(--color-bg-soft);
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: 1rem 1.2rem;
+  color: var(--color-text-muted);
+}
+
+/* ---------- Step 5: time ---------- */
+.gw__loading { color: var(--color-text-muted); font-style: italic; }
+.gw__date-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-bottom: 0.75rem;
+}
+.gw__date-chip {
+  appearance: none;
+  background: var(--color-bg-soft);
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  padding: 0.45rem 0.85rem;
+  font-family: inherit;
+  font-size: 0.86rem;
+  color: var(--color-text-muted);
+  cursor: pointer;
+}
+.gw__date-chip:hover { border-color: rgba(201, 163, 92, 0.45); color: var(--color-text); }
+.gw__date-chip.is-active {
+  border-color: var(--color-gold);
+  background: rgba(201, 163, 92, 0.10);
+  color: var(--color-gold-light);
+}
+.gw__slot-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+  gap: 0.5rem;
+}
+.gw__slot {
+  appearance: none;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: 0.55rem 0.7rem;
+  font-family: inherit;
+  color: var(--color-text);
+  cursor: pointer;
+}
+.gw__slot:hover { border-color: rgba(201, 163, 92, 0.45); }
+.gw__slot.is-active { border-color: var(--color-gold); background: var(--color-surface-2); color: var(--color-gold-light); }
+
+/* ---------- Step 6: details ---------- */
+.gw__field-block {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: 0.85rem 1rem 1rem;
+  background: var(--color-bg-soft);
+  display: grid;
+  gap: 0.65rem;
+}
+.gw__field-block legend {
+  font-size: 0.66rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--color-gold-deep);
+  padding: 0 0.4rem;
+}
+.gw__field-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.65rem;
+}
+@media (max-width: 540px) { .gw__field-row { grid-template-columns: 1fr; } }
+
+/* ---------- Step 7: confirm ---------- */
+.gw__confirm {
+  background: var(--color-bg-soft);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: 1rem 1.25rem;
+}
+.gw__confirm-when {
+  font-family: var(--font-display);
+  font-size: 1.15rem;
+  margin: 0 0 0.5rem;
+}
+.gw__confirm-list {
+  list-style: none;
+  margin: 0.5rem 0;
+  padding: 0;
+  display: grid;
+  gap: 0.55rem;
+}
+.gw__confirm-row {
+  padding: 0.5rem 0.75rem;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  font-size: 0.92rem;
+}
+.gw__confirm-sub { color: var(--color-text-dim); font-size: 0.82rem; }
+.gw__confirm-meta { color: var(--color-text-muted); font-size: 0.9rem; margin: 0.6rem 0 0; }
+.gw__confirm-note {
+  margin-top: 0.6rem;
+  padding-left: 0.75rem;
+  border-left: 2px solid var(--color-gold);
+  color: var(--color-text-muted);
+  font-style: italic;
+}
+.gw__policy { color: var(--color-text-dim); font-size: 0.85rem; margin: 0; }
+
+/* ---------- Success ---------- */
+.gw__success {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: clamp(1.5rem, 4vw, 2.25rem);
+  text-align: center;
+  display: grid;
+  gap: 1rem;
+  justify-items: center;
+}
+.gw__success-icon {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  border: 1px solid var(--color-gold);
+  display: grid;
+  place-items: center;
+  font-size: 2rem;
+  color: var(--color-gold);
+}
+.gw__success h2 { margin: 0; }
+.gw__success-failures {
+  list-style: none;
+  padding: 0;
+  margin: 0.5rem 0 0;
+  display: grid;
+  gap: 0.5rem;
+  text-align: left;
+  width: 100%;
+  max-width: 32rem;
+}
+.gw__success-failures li {
+  padding: 0.5rem 0.75rem;
+  background: var(--color-bg-soft);
+  border: 1px solid rgba(220, 80, 60, 0.35);
+  border-radius: var(--radius-sm);
+  font-size: 0.9rem;
+}
+.gw__success-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  justify-content: center;
+}
+
+/* ---------- /book entry-point CTA for the group flow ---------- */
+.bw-group-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin-top: 0.85rem;
+  padding: 0.45rem 0.85rem;
+  background: transparent;
+  border: 1px dashed var(--color-border);
+  border-radius: 999px;
+  color: var(--color-text-muted);
+  font-size: 0.85rem;
+  text-decoration: none;
+  transition: border-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+}
+.bw-group-cta:hover,
+.bw-group-cta:focus-visible {
+  border-color: var(--color-gold);
+  color: var(--color-gold-light);
+}
+.bw-group-cta strong { color: var(--color-text); font-weight: 600; }

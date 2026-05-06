@@ -1,0 +1,89 @@
+---
+export const prerender = false;
+
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import Header from '../../components/Header.astro';
+import Footer from '../../components/Footer.astro';
+import GroupBookingWizard from '../../components/booking/group/GroupBookingWizard.tsx';
+import { getServices } from '../../lib/square/catalog';
+import { getBarbers } from '../../lib/square/team';
+import { findCustomerByEmail } from '../../lib/square/customers';
+import { getSession } from '../../lib/auth/middleware';
+import type { Barber, Service } from '../../lib/square/types';
+
+import '../../styles/booking.css';
+
+let services: Service[] = [];
+let barbers: Barber[] = [];
+let loadError: string | null = null;
+try {
+  [services, barbers] = await Promise.all([getServices(), getBarbers()]);
+} catch (err) {
+  loadError = err instanceof Error ? err.message : String(err);
+}
+
+let signedInCustomer: { givenName: string; familyName: string; email: string; phone: string } | undefined;
+const session = getSession(Astro.request);
+if (session && !loadError) {
+  try {
+    const customer = await findCustomerByEmail(session.email);
+    if (customer) {
+      signedInCustomer = {
+        givenName: customer.given_name?.trim() ?? '',
+        familyName: customer.family_name?.trim() ?? '',
+        email: session.email,
+        phone: customer.phone_number?.trim() ?? '',
+      };
+    }
+  } catch {
+    // Silent — wizard collects details if we can't pre-fill.
+  }
+}
+---
+<BaseLayout
+  title="Group booking — Modern Classic Barbershop"
+  description="Book 2–4 people in one transaction. Father-and-son, brothers, the whole crew before a wedding — all at once with separate barbers, or back-to-back with one."
+>
+  <Header />
+  <main id="main" class="bw-page">
+    <div class="container bw-container">
+      <header class="bw-page__head">
+        <p class="eyebrow">Group booking</p>
+        <h1 class="bw-page__h1">Booking for the family.</h1>
+        <p class="bw-page__lede">
+          Two to four people in one transaction. Pick services, pick how to schedule
+          (everyone at once with different barbers, or one barber back-to-back), pick
+          a time. We'll create one booking per person under your account so the shop
+          knows you're a group.
+        </p>
+      </header>
+      {loadError && (
+        <p class="bw-page__error">
+          Couldn't load services right now. Try again in a moment, or call{' '}
+          <a class="link-gold" href="tel:+17402974462">740-297-4462</a>.
+        </p>
+      )}
+      {!loadError && (
+        <GroupBookingWizard
+          client:load
+          services={services}
+          barbers={barbers}
+          signedInCustomer={signedInCustomer}
+        />
+      )}
+      <p class="bw-page__alt">
+        Just one person? <a class="link-gold" href="/book">Book a single appointment →</a>
+      </p>
+    </div>
+  </main>
+  <Footer />
+</BaseLayout>
+
+<style>
+  .bw-page__alt {
+    text-align: center;
+    margin-top: 2rem;
+    color: var(--color-text-muted);
+    font-size: 0.92rem;
+  }
+</style>
