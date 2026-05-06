@@ -344,11 +344,22 @@ export async function findGroupSlotsBackToBack(
   const out: BackToBackSlot[] = [];
   const limit = Math.max(1, opts.limit ?? 200);
 
-  // Pre-index each variation's slot times for O(1) "does barber have
-  // slot at T" checks during the chain validation.
-  const indexByVariation = new Map<string, Set<string>>();
+  // Pre-index each variation's slot times by parsed millisecond
+  // timestamp keyed to the *original* Square-returned string. We
+  // can't compare via `new Date(ms).toISOString()` against Square's
+  // strings — Square emits without milliseconds (`2026-05-12T15:30:00Z`)
+  // and toISOString always emits with (`...:00.000Z`). String equality
+  // would fail even when the slot is actually bookable. Comparing on
+  // ms-since-epoch sidesteps the format mismatch; storing the original
+  // string lets us echo Square's exact wire format back in segments.
+  const indexByVariation = new Map<string, Map<number, string>>();
   for (const [vid, slots] of fetched) {
-    indexByVariation.set(vid, new Set(slots.map((s) => s.startAtUtc)));
+    const m = new Map<number, string>();
+    for (const s of slots) {
+      const t = new Date(s.startAtUtc).getTime();
+      if (Number.isFinite(t)) m.set(t, s.startAtUtc);
+    }
+    indexByVariation.set(vid, m);
   }
 
   for (const first of firstSlots) {
@@ -366,15 +377,15 @@ export async function findGroupSlotsBackToBack(
     let feasible = true;
     for (let i = 1; i < members.length; i++) {
       const v = resolved[i];
-      const expected = new Date(cursorMs).toISOString();
       const idx = indexByVariation.get(v.id);
-      if (!idx || !idx.has(expected)) {
+      const matchedAt = idx?.get(cursorMs);
+      if (!matchedAt) {
         feasible = false;
         break;
       }
       segments.push({
         memberKey: members[i].key,
-        startAtUtc: expected,
+        startAtUtc: matchedAt,
         serviceVariationId: v.id,
         durationMinutes: v.durationMinutes,
       });
