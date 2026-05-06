@@ -1419,31 +1419,10 @@
   color: var(--color-text-muted);
 }
 
-/* ---------- Step 5: time ---------- */
+/* ---------- Step 5: time ----------
+   Calendar uses the .bw-cal-* classes already defined for the single-
+   booking calendar; only the slot grid below is group-specific. */
 .gw__loading { color: var(--color-text-muted); font-style: italic; }
-.gw__date-strip {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.4rem;
-  margin-bottom: 0.75rem;
-}
-.gw__date-chip {
-  appearance: none;
-  background: var(--color-bg-soft);
-  border: 1px solid var(--color-border);
-  border-radius: 999px;
-  padding: 0.45rem 0.85rem;
-  font-family: inherit;
-  font-size: 0.86rem;
-  color: var(--color-text-muted);
-  cursor: pointer;
-}
-.gw__date-chip:hover { border-color: rgba(201, 163, 92, 0.45); color: var(--color-text); }
-.gw__date-chip.is-active {
-  border-color: var(--color-gold);
-  background: rgba(201, 163, 92, 0.10);
-  color: var(--color-gold-light);
-}
 .gw__slot-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));

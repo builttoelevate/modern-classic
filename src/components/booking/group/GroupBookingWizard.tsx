@@ -595,7 +595,39 @@ function Step4Barber({
   );
 }
 
-// ---------- Step 5: Time picker ----------
+// ---------- Step 5: Time picker (month-grid calendar) ----------
+//
+// Calendar built locally rather than reusing the single-flow Step3
+// because that one is tightly coupled to single-booking state. We
+// only need the visual shell (month nav + day grid) and the rule
+// that days without matching slots are disabled — the slot list
+// itself comes from the GroupSlot[] the API already filtered for
+// joint feasibility.
+const SHOP_TZ_LOCAL = 'America/New_York';
+const TODAY_FMT = new Intl.DateTimeFormat('en-CA', {
+  timeZone: SHOP_TZ_LOCAL,
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+});
+const MONTH_LABELS = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
+];
+const WEEKDAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+function todayKeyShop(): string {
+  return TODAY_FMT.format(new Date());
+}
+function ymdKey(year: number, month: number, day: number): string {
+  return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+}
+function daysInMonth(year: number, month: number): number {
+  return new Date(year, month, 0).getDate();
+}
+function firstWeekday(year: number, month: number): number {
+  return new Date(`${ymdKey(year, month, 1)}T12:00:00Z`).getUTCDay();
+}
+
 function Step5Time({
   loading,
   error,
@@ -620,26 +652,68 @@ function Step5Time({
     }
     return m;
   }, [slots]);
-  const dates = useMemo(() => [...slotsByDate.keys()].sort(), [slotsByDate]);
-  const [activeDate, setActiveDate] = useState<string | null>(
-    dates.length > 0 ? dates[0] : null,
+
+  const validDates = useMemo(
+    () => [...slotsByDate.keys()].sort(),
+    [slotsByDate],
   );
-  // Sync activeDate when slots refresh.
+
+  const todayKey = useMemo(() => todayKeyShop(), []);
+  const initialMonth = useMemo(() => {
+    const seed = validDates[0] ?? todayKey;
+    const [y, m] = seed.split('-').map(Number);
+    return { year: y, month: m };
+  }, [validDates, todayKey]);
+  const [view, setView] = useState(initialMonth);
+  const [activeDate, setActiveDate] = useState<string | null>(
+    validDates.length > 0 ? validDates[0] : null,
+  );
+
   useEffect(() => {
-    if (dates.length === 0) {
+    if (validDates.length === 0) {
       setActiveDate(null);
       return;
     }
-    if (!activeDate || !dates.includes(activeDate)) {
-      setActiveDate(dates[0]);
+    if (!activeDate || !validDates.includes(activeDate)) {
+      setActiveDate(validDates[0]);
+      const [y, m] = validDates[0].split('-').map(Number);
+      setView({ year: y, month: m });
     }
-  }, [dates, activeDate]);
+  }, [validDates, activeDate]);
+
+  // Bound month nav to the range of valid dates we got back: don't let
+  // the customer scroll forever past everything bookable, or back into
+  // months that are entirely in the past.
+  const minMonth = (() => {
+    const [y, m] = (validDates[0] ?? todayKey).split('-').map(Number);
+    return { year: y, month: m };
+  })();
+  const maxMonth = (() => {
+    const [y, m] = (validDates[validDates.length - 1] ?? todayKey)
+      .split('-')
+      .map(Number);
+    return { year: y, month: m };
+  })();
+  const canPrev =
+    view.year > minMonth.year ||
+    (view.year === minMonth.year && view.month > minMonth.month);
+  const canNext =
+    view.year < maxMonth.year ||
+    (view.year === maxMonth.year && view.month < maxMonth.month);
+  function shiftMonth(delta: number) {
+    setView((prev) => {
+      const total = prev.year * 12 + (prev.month - 1) + delta;
+      return { year: Math.floor(total / 12), month: (total % 12) + 1 };
+    });
+  }
 
   if (loading) {
     return (
       <div className="gw__step-body">
         <h2>Finding times that work for the whole group…</h2>
-        <p className="gw__lede">Cross-checking each person's service against the calendar.</p>
+        <p className="gw__lede">
+          Cross-checking each person's service against the calendar.
+        </p>
         <div className="gw__loading">Loading…</div>
       </div>
     );
@@ -658,43 +732,101 @@ function Step5Time({
   if (slots.length === 0) {
     return (
       <div className="gw__step-body">
-        <h2>No matching openings in the next 30 days.</h2>
+        <h2>No matching openings in the next 60 days.</h2>
         <p className="gw__lede">
           Try a different schedule mode or split the group across separate
-          bookings. You can also call us at <a className="link-gold" href="tel:+17402974462">740-297-4462</a>.
+          bookings. You can also call us at{' '}
+          <a className="link-gold" href="tel:+17402974462">740-297-4462</a>.
         </p>
       </div>
     );
   }
 
+  const totalDays = daysInMonth(view.year, view.month);
+  const leadingBlanks = firstWeekday(view.year, view.month);
   const activeSlots = activeDate ? (slotsByDate.get(activeDate) ?? []) : [];
+
   return (
     <div className="gw__step-body">
       <h2>Pick a time</h2>
-      <div className="gw__date-strip">
-        {dates.map((d) => (
+      <div className="bw-cal">
+        <div className="bw-cal-head">
           <button
-            key={d}
             type="button"
-            className={`gw__date-chip ${activeDate === d ? 'is-active' : ''}`}
-            onClick={() => setActiveDate(d)}
-          >
-            {formatDateChip(d)}
-          </button>
-        ))}
-      </div>
-      <div className="gw__slot-grid">
-        {activeSlots.map((slot) => (
+            className="bw-cal-nav"
+            onClick={() => shiftMonth(-1)}
+            disabled={!canPrev}
+            aria-label="Previous month"
+          >‹</button>
+          <div className="bw-cal-title" aria-live="polite">
+            {MONTH_LABELS[view.month - 1]} {view.year}
+          </div>
           <button
-            key={slot.startAtUtc + (slot.mode === 'back-to-back' ? '-btb' : '-aao')}
             type="button"
-            className={`gw__slot ${selected?.startAtUtc === slot.startAtUtc ? 'is-active' : ''}`}
-            onClick={() => onPick(slot)}
-          >
-            {formatTime(slot.startAtUtc)}
-          </button>
-        ))}
+            className="bw-cal-nav"
+            onClick={() => shiftMonth(1)}
+            disabled={!canNext}
+            aria-label="Next month"
+          >›</button>
+        </div>
+
+        <div className="bw-cal-weekdays" aria-hidden="true">
+          {WEEKDAY_LABELS.map((w) => <span key={w}>{w}</span>)}
+        </div>
+
+        <div
+          className="bw-cal-grid"
+          role="grid"
+          aria-label={`${MONTH_LABELS[view.month - 1]} ${view.year}`}
+        >
+          {Array.from({ length: leadingBlanks }, (_, i) => (
+            <span key={`blank-${i}`} className="bw-cal-blank" />
+          ))}
+          {Array.from({ length: totalDays }, (_, i) => {
+            const day = i + 1;
+            const dateKey = ymdKey(view.year, view.month, day);
+            const isPast = dateKey < todayKey;
+            const hasSlots = slotsByDate.has(dateKey);
+            const disabled = isPast || !hasSlots;
+            const isActive = dateKey === activeDate;
+            return (
+              <button
+                key={dateKey}
+                type="button"
+                className={`bw-cal-day ${isActive ? 'is-active' : ''} ${disabled ? 'is-disabled' : ''}`}
+                disabled={disabled}
+                aria-pressed={isActive}
+                onClick={() => setActiveDate(dateKey)}
+                title={
+                  isPast
+                    ? 'In the past'
+                    : !hasSlots
+                      ? 'No openings'
+                      : `${slotsByDate.get(dateKey)?.length ?? 0} times`
+                }
+              >
+                <span className="bw-cal-day-num">{day}</span>
+                {hasSlots && <span className="bw-cal-dot" aria-hidden="true" />}
+              </button>
+            );
+          })}
+        </div>
       </div>
+
+      {activeDate && activeSlots.length > 0 && (
+        <div className="gw__slot-grid">
+          {activeSlots.map((slot) => (
+            <button
+              key={slot.startAtUtc + (slot.mode === 'back-to-back' ? '-btb' : '-aao')}
+              type="button"
+              className={`gw__slot ${selected?.startAtUtc === slot.startAtUtc ? 'is-active' : ''}`}
+              onClick={() => onPick(slot)}
+            >
+              {formatTime(slot.startAtUtc)}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -1018,20 +1150,9 @@ const timeFmt = new Intl.DateTimeFormat('en-US', {
   minute: '2-digit',
   hour12: true,
 });
-const dateChipFmt = new Intl.DateTimeFormat('en-US', {
-  timeZone: SHOP_TZ,
-  weekday: 'short',
-  month: 'short',
-  day: 'numeric',
-});
 function formatLong(utc: string): string {
   return longFmt.format(new Date(utc));
 }
 function formatTime(utc: string): string {
   return timeFmt.format(new Date(utc));
-}
-function formatDateChip(dateKey: string): string {
-  // dateKey is YYYY-MM-DD in shop tz; render as the local-noon to dodge
-  // timezone edge cases for the chip label.
-  return dateChipFmt.format(new Date(`${dateKey}T12:00:00`));
 }

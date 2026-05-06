@@ -11,6 +11,46 @@ import { searchAvailability } from '../square/availability';
 import type { AvailabilitySlot, ServiceVariation } from '../square/types';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+/** Square caps /v2/bookings/availability/search at 31 days per call.
+ * We chunk longer windows into ≤30-day pieces and concatenate the
+ * results so the matcher can search further out without tripping the
+ * API's range limit. */
+const CHUNK_DAYS = 30;
+
+/** Run a single (variation, barber) availability search across an
+ * arbitrary date range, chunking under Square's 31-day per-call cap.
+ * Each chunk's slots are concatenated in order so callers see a flat
+ * list. Failures on any single chunk return [] for that chunk only —
+ * the rest still contribute, which keeps a partial Square hiccup from
+ * blanking the whole picker. */
+async function searchVariationBarber(
+  variationId: string,
+  teamMemberId: string,
+  range: SearchRange,
+): Promise<AvailabilitySlot[]> {
+  const out: AvailabilitySlot[] = [];
+  let cursor = range.startAt.getTime();
+  const endMs = range.endAt.getTime();
+  while (cursor < endMs) {
+    const chunkEnd = Math.min(cursor + CHUNK_DAYS * DAY_MS, endMs);
+    try {
+      const slots = await searchAvailability({
+        serviceVariationId: variationId,
+        teamMemberId,
+        startAt: new Date(cursor),
+        endAt: new Date(chunkEnd),
+      });
+      out.push(...slots);
+    } catch {
+      // Skip this chunk; its absence at worst hides a few days of
+      // openings rather than crashing the wizard. Per-(variation,
+      // barber) failures already get swallowed by Promise.allSettled
+      // upstream — this is the inner per-chunk equivalent.
+    }
+    cursor = chunkEnd;
+  }
+  return out;
+}
 
 /** Each member of the group. The wizard collects N of these (2–4). */
 export interface GroupMember {
@@ -93,12 +133,9 @@ async function fetchSlotMatrix(
   for (const [variationId, barberIds] of variationToBarbers) {
     for (const teamMemberId of barberIds) {
       tasks.push(
-        searchAvailability({
-          serviceVariationId: variationId,
-          teamMemberId,
-          startAt: range.startAt,
-          endAt: range.endAt,
-        }).then((slots) => [`${variationId}|${teamMemberId}`, slots] as const),
+        searchVariationBarber(variationId, teamMemberId, range).then(
+          (slots) => [`${variationId}|${teamMemberId}`, slots] as const,
+        ),
       );
     }
   }
@@ -189,7 +226,7 @@ export async function findGroupSlotsAllAtOnce(
   const range: SearchRange = {
     startAt: opts.startAt ?? new Date(Date.now() + 60 * 60 * 1000),
     endAt: new Date(
-      (opts.startAt ?? new Date()).getTime() + (opts.windowDays ?? 30) * DAY_MS,
+      (opts.startAt ?? new Date()).getTime() + (opts.windowDays ?? 60) * DAY_MS,
     ),
   };
 
@@ -320,22 +357,18 @@ export async function findGroupSlotsBackToBack(
   const range: SearchRange = {
     startAt: opts.startAt ?? new Date(Date.now() + 60 * 60 * 1000),
     endAt: new Date(
-      (opts.startAt ?? new Date()).getTime() + (opts.windowDays ?? 30) * DAY_MS,
+      (opts.startAt ?? new Date()).getTime() + (opts.windowDays ?? 60) * DAY_MS,
     ),
   };
 
   // Fetch the barber's slot list per resolved variation. Same variation
-  // across members results in a deduped fetch.
+  // across members results in a deduped fetch. Chunked so the search
+  // window can run beyond Square's 31-day per-call cap.
   const variationIds = Array.from(new Set(resolved.map((v) => v.id)));
   const fetched = new Map<string, AvailabilitySlot[]>();
   await Promise.all(
     variationIds.map(async (vid) => {
-      const slots = await searchAvailability({
-        serviceVariationId: vid,
-        teamMemberId,
-        startAt: range.startAt,
-        endAt: range.endAt,
-      });
+      const slots = await searchVariationBarber(vid, teamMemberId, range);
       fetched.set(vid, slots);
     }),
   );
