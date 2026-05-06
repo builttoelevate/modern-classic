@@ -4,6 +4,7 @@ import { AuthRequiredError, requireSession, refreshSessionCookie } from '../../.
 import { isAuthConfigured } from '../../../../lib/auth/session';
 import { SquareApiError } from '../../../../lib/square/client';
 import { cancelBooking, createBooking, getBooking } from '../../../../lib/square/bookings';
+import { listLinkedPeople } from '../../../../lib/customer/profileLinks';
 import { redactEmail } from '../../../../lib/booking/log';
 
 export const prerender = false;
@@ -88,7 +89,19 @@ export const POST: APIRoute = async ({ request }) => {
     );
   }
 
-  if (!oldBooking.customer_id || oldBooking.customer_id !== session.customerId) {
+  // Ownership: signed-in customer OR one of their linked people
+  // (kids / group members booked through the parent's profile).
+  let allowed =
+    !!oldBooking.customer_id && oldBooking.customer_id === session.customerId;
+  if (!allowed && oldBooking.customer_id) {
+    try {
+      const linked = await listLinkedPeople(session.customerId);
+      allowed = linked.some((p) => p.customerId === oldBooking.customer_id);
+    } catch {
+      // KV hiccup — refuse rather than leak rescheduling rights.
+    }
+  }
+  if (!allowed) {
     logAction({
       phase: 'reschedule-forbidden',
       bookingId: payload.oldBookingId,
@@ -120,12 +133,27 @@ export const POST: APIRoute = async ({ request }) => {
     .update(`${session.customerId}|${payload.oldBookingId}|${payload.newSlot.startAtUtc}`)
     .digest('hex')}`;
 
+  // Use the ORIGINAL booking's customer_id when creating the
+  // replacement, not session.customerId. Otherwise rescheduling a
+  // linked-person's booking (kid / group member) would move it over
+  // to the parent's customer record, breaking the per-person
+  // grouping on /my-bookings + the booking-note tag. The ownership
+  // check above already proved customer_id is set; the explicit
+  // narrowing keeps TS happy.
+  if (!oldBooking.customer_id) {
+    return Response.json(
+      { ok: false, error: { code: 'INTERNAL', detail: 'Booking has no customer.' } },
+      { status: 500 },
+    );
+  }
+  const newCustomerId = oldBooking.customer_id;
+
   // Step 1: create the new booking. If it fails, the old one is intact.
   let newBookingId: string;
   try {
     const newBooking = await createBooking({
       startAtUtc: payload.newSlot.startAtUtc,
-      customerId: session.customerId,
+      customerId: newCustomerId,
       serviceVariationId: payload.service.variationId,
       serviceVariationVersion: payload.service.version,
       teamMemberId: payload.barber.id,
