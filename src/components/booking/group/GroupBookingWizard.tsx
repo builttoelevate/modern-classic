@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useReducer, useState } from 'react';
-import type { Barber, Service, ServiceVariation } from '../../../lib/square/types';
+import type { Barber, Service } from '../../../lib/square/types';
 import type { GroupSlot } from '../../../lib/booking/groupAvailability';
 import {
   canAdvance,
@@ -76,7 +76,7 @@ export default function GroupBookingWizard({
       members: state.members.map((m) => ({
         key: m.key,
         displayName: m.displayName,
-        serviceVariationId: m.variation!.id,
+        serviceId: m.service!.id,
       })),
       teamMemberId:
         state.mode === 'back-to-back' ? state.selectedBarber!.id : undefined,
@@ -206,8 +206,8 @@ export default function GroupBookingWizard({
             <Step2Services
               members={state.members}
               services={services}
-              onPick={(key, service, variation) =>
-                dispatch({ type: 'SET_MEMBER_SERVICE', key, service, variation })
+              onPick={(key, service) =>
+                dispatch({ type: 'SET_MEMBER_SERVICE', key, service })
               }
             />
           )}
@@ -372,18 +372,14 @@ function Step2Services({
   services,
   onPick,
 }: {
-  members: ReturnType<typeof useReducer>[0] extends infer S
-    ? S extends { members: infer M }
-      ? M
-      : never
-    : never;
+  members: Array<{ key: string; service: Service | null }>;
   services: Service[];
-  onPick: (key: string, service: Service, variation: ServiceVariation) => void;
+  onPick: (key: string, service: Service) => void;
 }) {
-  // The wizard is intentionally single-variation per member. For
-  // services with multiple variations we show the primary (first) so
-  // the picker stays simple — the existing single-flow already covers
-  // edge cases like beard add-ons and longer haircuts.
+  // We pick the SERVICE per member, not a single variation. Square
+  // models per-barber-priced services as N variations (one per barber);
+  // the matcher resolves which specific variation applies once a
+  // barber is paired with the member at slot-pick time.
   return (
     <div className="gw__step-body">
       <h2>What service for each person?</h2>
@@ -391,37 +387,42 @@ function Step2Services({
         Each person can pick their own — or you can pick the same service for everyone.
       </p>
       <div className="gw__member-list">
-        {(members as Array<{ key: string; service: Service | null; variation: ServiceVariation | null }>).map(
-          (m, idx) => (
-            <fieldset key={m.key} className="gw__member-row">
-              <legend className="gw__member-legend">Person {idx + 1}</legend>
-              <div className="gw__service-grid">
-                {services.map((svc) => {
-                  const variation = svc.variations[0];
-                  if (!variation || !variation.availableForBooking) return null;
-                  const active = m.variation?.id === variation.id;
-                  const price =
-                    variation.priceCents !== null
-                      ? `$${(variation.priceCents / 100).toFixed(0)}`
-                      : 'Set at appointment';
-                  return (
-                    <button
-                      key={svc.id}
-                      type="button"
-                      className={`gw__service-card ${active ? 'is-active' : ''}`}
-                      onClick={() => onPick(m.key, svc, variation)}
-                    >
-                      <span className="gw__service-name">{svc.name}</span>
-                      <span className="gw__service-meta">
-                        {variation.durationMinutes} min · {price}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-            </fieldset>
-          ),
-        )}
+        {members.map((m, idx) => (
+          <fieldset key={m.key} className="gw__member-row">
+            <legend className="gw__member-legend">Person {idx + 1}</legend>
+            <div className="gw__service-grid">
+              {services.map((svc) => {
+                const bookable = svc.variations.filter((vv) => vv.availableForBooking);
+                if (bookable.length === 0) return null;
+                const active = m.service?.id === svc.id;
+                // Range-aware price + duration: per-barber pricing means
+                // the same service has different durations / prices per
+                // variation. Show the typical (min) values.
+                const minDuration = Math.min(...bookable.map((v) => v.durationMinutes));
+                const prices = bookable
+                  .map((v) => v.priceCents)
+                  .filter((p): p is number => p !== null);
+                const minPriceLabel =
+                  prices.length > 0
+                    ? `$${(Math.min(...prices) / 100).toFixed(0)}`
+                    : 'Set at appointment';
+                return (
+                  <button
+                    key={svc.id}
+                    type="button"
+                    className={`gw__service-card ${active ? 'is-active' : ''}`}
+                    onClick={() => onPick(m.key, svc)}
+                  >
+                    <span className="gw__service-name">{svc.name}</span>
+                    <span className="gw__service-meta">
+                      {minDuration} min · {minPriceLabel}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </fieldset>
+        ))}
       </div>
     </div>
   );
@@ -432,16 +433,25 @@ function Step3Mode({
   members,
   onPick,
 }: {
-  members: Array<{ key: string; variation: ServiceVariation | null }>;
+  members: Array<{ key: string; service: Service | null }>;
   onPick: (mode: GroupMode) => void;
 }) {
+  // Per-barber-priced services have variations with different durations.
+  // Use the median variation's duration as a "typical" for the rough
+  // total — the precise duration depends on the resolved barber and
+  // surfaces accurately on the confirm screen once a slot is picked.
+  function typicalDuration(s: Service | null): number {
+    if (!s) return 0;
+    const ds = s.variations.map((v) => v.durationMinutes).sort((a, b) => a - b);
+    return ds[Math.floor(ds.length / 2)] ?? 0;
+  }
   const totalDuration = members.reduce(
-    (sum, m) => sum + (m.variation?.durationMinutes ?? 0),
+    (sum, m) => sum + typicalDuration(m.service),
     0,
   );
   const longestDuration = Math.max(
     0,
-    ...members.map((m) => m.variation?.durationMinutes ?? 0),
+    ...members.map((m) => typicalDuration(m.service)),
   );
   return (
     <div className="gw__step-body">
@@ -484,19 +494,25 @@ function Step4Barber({
   selected,
   onPick,
 }: {
-  members: Array<{ key: string; variation: ServiceVariation | null }>;
+  members: Array<{ key: string; service: Service | null }>;
   barbers: Barber[];
   selected: Barber | null;
   onPick: (b: Barber) => void;
 }) {
-  // Only barbers eligible for every member's service can take a
-  // back-to-back group — filter so we don't show options that would
-  // certainly fail availability.
+  // For each member, the union of barbers across every bookable
+  // variation of their picked service. Per-barber-priced services
+  // store one variation per barber, so the union recovers the full
+  // roster (intersected with `availableForBooking`). Then intersect
+  // across all members so a back-to-back barber covers everyone.
   const eligibleIds = members.reduce<Set<string> | null>((acc, m) => {
-    if (!m.variation) return acc;
-    const ids = new Set(m.variation.eligibleTeamMemberIds);
-    if (acc === null) return ids;
-    return new Set([...acc].filter((id) => ids.has(id)));
+    if (!m.service) return acc;
+    const memberIds = new Set<string>();
+    for (const v of m.service.variations) {
+      if (!v.availableForBooking) continue;
+      for (const id of v.eligibleTeamMemberIds) memberIds.add(id);
+    }
+    if (acc === null) return memberIds;
+    return new Set([...acc].filter((id) => memberIds.has(id)));
   }, null);
   const eligibleBarbers = barbers.filter(
     (b) => !eligibleIds || eligibleIds.has(b.id),
@@ -738,7 +754,7 @@ function Step7Confirm({
   onConfirm: () => void;
 }) {
   const s = state as {
-    members: Array<{ key: string; displayName: string; service: Service | null; variation: ServiceVariation | null }>;
+    members: Array<{ key: string; displayName: string; service: Service | null }>;
     selectedSlot: GroupSlot | null;
     selectedBarber: Barber | null;
     parent: { givenName: string; familyName: string; email: string; phone: string };
@@ -851,7 +867,7 @@ function SuccessScreen({
 
 // ---------- Helpers ----------
 function buildAssignments(
-  members: Array<{ key: string; displayName: string; variation: ServiceVariation | null }>,
+  members: Array<{ key: string; displayName: string; service: Service | null }>,
   slot: GroupSlot,
 ) {
   if (slot.mode === 'all-at-once') {

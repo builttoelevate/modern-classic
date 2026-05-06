@@ -21,7 +21,11 @@ export const prerender = false;
 interface MemberRequest {
   key: string;
   displayName: string;
-  serviceVariationId: string;
+  /** The Square service the member picked. The endpoint resolves the
+   * variations array off this so per-barber-priced services (where
+   * Square stores one variation per barber) get the full eligible
+   * roster, not just the first variation's barber. */
+  serviceId: string;
 }
 interface RequestBody {
   mode: 'all-at-once' | 'back-to-back';
@@ -63,14 +67,14 @@ function validate(body: unknown): RequestBody | string {
     if (!m || typeof m !== 'object') return 'Each member must be an object.';
     const mm = m as Record<string, unknown>;
     if (typeof mm.key !== 'string' || !mm.key.trim()) return 'member.key required.';
-    if (typeof mm.serviceVariationId !== 'string' || !mm.serviceVariationId.trim()) {
-      return 'member.serviceVariationId required.';
+    if (typeof mm.serviceId !== 'string' || !mm.serviceId.trim()) {
+      return 'member.serviceId required.';
     }
     const displayName = typeof mm.displayName === 'string' ? mm.displayName.trim() : '';
     members.push({
       key: mm.key.trim(),
       displayName,
-      serviceVariationId: mm.serviceVariationId.trim(),
+      serviceId: mm.serviceId.trim(),
     });
   }
   if (mode === 'back-to-back') {
@@ -117,42 +121,42 @@ export const POST: APIRoute = async ({ request }) => {
     return fail('INTERNAL', detail, 500);
   }
   const activeBarberIds = new Set(barbers.map((b) => b.id));
-  const variationLookup = new Map<string, ReturnType<typeof toMember> | null>();
-  function toMember(svid: string): ReturnType<typeof buildLookup> | null {
-    return buildLookup(svid);
-  }
-  function buildLookup(svid: string) {
-    for (const s of services) {
-      const variation = s.variations.find((vv) => vv.id === svid);
-      if (!variation) continue;
-      const eligible = variation.eligibleTeamMemberIds.filter((id) =>
-        activeBarberIds.has(id),
-      );
-      if (eligible.length === 0) return null;
-      return { variation, eligibleBarberIds: eligible };
-    }
-    return null;
-  }
+  const serviceLookup = new Map(services.map((s) => [s.id, s]));
 
   const groupMembers: GroupMember[] = [];
   for (const m of v.members) {
-    let resolved = variationLookup.get(m.serviceVariationId);
-    if (resolved === undefined) {
-      resolved = toMember(m.serviceVariationId);
-      variationLookup.set(m.serviceVariationId, resolved);
+    const service = serviceLookup.get(m.serviceId);
+    if (!service) {
+      return fail('BAD_SERVICE', `Service ${m.serviceId} not found.`, 422);
     }
-    if (!resolved) {
+    // Filter to bookable variations whose eligible barbers intersect
+    // the active roster — drops Square-side soft-deleted variations
+    // and barbers who left.
+    const variations = service.variations.filter(
+      (vv) =>
+        vv.availableForBooking &&
+        vv.eligibleTeamMemberIds.some((id) => activeBarberIds.has(id)),
+    );
+    if (variations.length === 0) {
       return fail(
-        'BAD_VARIATION',
-        `Service variation ${m.serviceVariationId} is no longer bookable.`,
+        'NO_BOOKABLE_VARIATION',
+        `${service.name} has no bookable variations right now.`,
         422,
       );
+    }
+    // Union of eligible barbers across every variation, intersected
+    // with the active roster.
+    const eligibleSet = new Set<string>();
+    for (const vv of variations) {
+      for (const id of vv.eligibleTeamMemberIds) {
+        if (activeBarberIds.has(id)) eligibleSet.add(id);
+      }
     }
     groupMembers.push({
       key: m.key,
       displayName: m.displayName,
-      variation: resolved.variation,
-      eligibleBarberIds: resolved.eligibleBarberIds,
+      variations,
+      eligibleBarberIds: [...eligibleSet],
     });
   }
 
@@ -174,9 +178,10 @@ export const POST: APIRoute = async ({ request }) => {
       const teamMemberId = v.teamMemberId!;
       for (const m of groupMembers) {
         if (!m.eligibleBarberIds.includes(teamMemberId)) {
+          const svcLabel = m.variations[0]?.name ?? 'service';
           return fail(
             'BARBER_UNQUALIFIED',
-            `Selected barber can't perform ${m.variation.name}.`,
+            `Selected barber can't perform ${svcLabel}.`,
             422,
           );
         }

@@ -18,11 +18,15 @@ export interface GroupMember {
   key: string;
   /** Display name for the booking note (Tommy, Jake, mom, etc.). */
   displayName: string;
-  /** The selected variation. For "any barber"-style services this is
-   * a primary candidate; the assignment step may swap to a per-barber
-   * sibling variation. */
-  variation: ServiceVariation;
-  /** Eligible barbers for this member's service. Always at least one. */
+  /** Every variation of the picked service that this member could
+   * potentially book. Square models "Men's Haircut" as N variations
+   * (one per barber) when prices/durations differ between barbers, so
+   * the eligible barber set is the union across these variations. The
+   * matcher resolves which specific variation to use per (member,
+   * barber) pair at slot-pick time. */
+  variations: ServiceVariation[];
+  /** Union of `eligibleTeamMemberIds` across every variation the
+   * member could book. Always at least one. */
   eligibleBarberIds: string[];
 }
 
@@ -63,6 +67,19 @@ export type GroupSlot = AllAtOnceSlot | BackToBackSlot;
 interface SearchRange {
   startAt: Date;
   endAt: Date;
+}
+
+/** For per-barber services like "Men's Haircut", Square has a separate
+ * variation per barber and each variation lists only that one barber.
+ * So we resolve the variation per (member, barber) pair: for each
+ * member, find the variation in their `variations` list that the given
+ * barber is eligible for. Returns null if no variation matches the
+ * pairing (the barber can't do anything in this member's service). */
+function variationFor(member: GroupMember, teamMemberId: string): ServiceVariation | null {
+  for (const v of member.variations) {
+    if (v.eligibleTeamMemberIds.includes(teamMemberId)) return v;
+  }
+  return null;
 }
 
 /** Pull every per-(variation, barber) slot list we need for the group
@@ -177,11 +194,19 @@ export async function findGroupSlotsAllAtOnce(
   };
 
   // Build the (variation, barber) cross-product we need to query.
+  // For each member, ask Square for slots only on the (variation, barber)
+  // pairings where that barber is actually eligible for that variation —
+  // querying a barber against a variation they can't do returns no slots
+  // and burns an API call.
   const variationToBarbers = new Map<string, Set<string>>();
   for (const m of members) {
-    const set = variationToBarbers.get(m.variation.id) ?? new Set<string>();
-    for (const id of m.eligibleBarberIds) set.add(id);
-    variationToBarbers.set(m.variation.id, set);
+    for (const v of m.variations) {
+      const set = variationToBarbers.get(v.id) ?? new Set<string>();
+      for (const id of v.eligibleTeamMemberIds) {
+        if (m.eligibleBarberIds.includes(id)) set.add(id);
+      }
+      if (set.size > 0) variationToBarbers.set(v.id, set);
+    }
   }
   const matrix = await fetchSlotMatrix(variationToBarbers, range);
 
@@ -201,20 +226,38 @@ export async function findGroupSlotsAllAtOnce(
   // options at the top of each day.
   const sortedTimes = [...candidateTimes].sort();
   for (const t of sortedTimes) {
+    // For each member, the set of barbers free at T is the union over
+    // every variation in m.variations of "barbers with a slot at T for
+    // this variation". A barber is "free for member M at T" if any
+    // qualifying variation has a slot at T.
     const perMemberCandidates: Array<{ memberKey: string; candidates: string[] }> = [];
+    // Track which variation each (member, barber) pair would resolve to —
+    // needed when we materialize the chosen assignment into a concrete
+    // booking.
+    const pairToVariation = new Map<string, ServiceVariation>();
     let feasible = true;
     for (const m of members) {
-      const candidates: string[] = [];
-      for (const barberId of m.eligibleBarberIds) {
-        const slots = matrix.get(`${m.variation.id}|${barberId}`);
-        if (!slots) continue;
-        if (slots.some((s) => s.startAtUtc === t)) candidates.push(barberId);
+      const candidates = new Set<string>();
+      for (const v of m.variations) {
+        for (const barberId of v.eligibleTeamMemberIds) {
+          if (!m.eligibleBarberIds.includes(barberId)) continue;
+          const slots = matrix.get(`${v.id}|${barberId}`);
+          if (!slots) continue;
+          if (slots.some((s) => s.startAtUtc === t)) {
+            candidates.add(barberId);
+            // Record the variation for this (member, barber) pair only
+            // once — first match wins, which for per-barber services is
+            // the only match anyway.
+            const key = `${m.key}|${barberId}`;
+            if (!pairToVariation.has(key)) pairToVariation.set(key, v);
+          }
+        }
       }
-      if (candidates.length === 0) {
+      if (candidates.size === 0) {
         feasible = false;
         break;
       }
-      perMemberCandidates.push({ memberKey: m.key, candidates });
+      perMemberCandidates.push({ memberKey: m.key, candidates: [...candidates] });
     }
     if (!feasible) continue;
 
@@ -226,12 +269,12 @@ export async function findGroupSlotsAllAtOnce(
       startAtUtc: t,
       dateKey: dateKeyFor(t),
       assignments: assignment.map((a) => {
-        const m = members.find((mm) => mm.key === a.memberKey)!;
+        const v = pairToVariation.get(`${a.memberKey}|${a.teamMemberId}`)!;
         return {
           memberKey: a.memberKey,
           teamMemberId: a.teamMemberId,
-          serviceVariationId: m.variation.id,
-          durationMinutes: m.variation.durationMinutes,
+          serviceVariationId: v.id,
+          durationMinutes: v.durationMinutes,
         };
       }),
     });
@@ -261,6 +304,19 @@ export async function findGroupSlotsBackToBack(
 ): Promise<BackToBackSlot[]> {
   if (members.length < 2) return [];
 
+  // Resolve the specific variation each member should use given this
+  // barber. For per-barber services Square has one variation per
+  // barber, so this picks the right one. If any member has no
+  // qualifying variation for the chosen barber, the group can't book
+  // back-to-back with them — return [] so the wizard surfaces "no
+  // openings" rather than fabricating an impossible slot.
+  const resolved: ServiceVariation[] = [];
+  for (const m of members) {
+    const v = variationFor(m, teamMemberId);
+    if (!v) return [];
+    resolved.push(v);
+  }
+
   const range: SearchRange = {
     startAt: opts.startAt ?? new Date(Date.now() + 60 * 60 * 1000),
     endAt: new Date(
@@ -268,9 +324,9 @@ export async function findGroupSlotsBackToBack(
     ),
   };
 
-  // Fetch the barber's slot list per member's variation. Same variation
+  // Fetch the barber's slot list per resolved variation. Same variation
   // across members results in a deduped fetch.
-  const variationIds = Array.from(new Set(members.map((m) => m.variation.id)));
+  const variationIds = Array.from(new Set(resolved.map((v) => v.id)));
   const fetched = new Map<string, AvailabilitySlot[]>();
   await Promise.all(
     variationIds.map(async (vid) => {
@@ -284,7 +340,7 @@ export async function findGroupSlotsBackToBack(
     }),
   );
 
-  const firstSlots = fetched.get(members[0].variation.id) ?? [];
+  const firstSlots = fetched.get(resolved[0].id) ?? [];
   const out: BackToBackSlot[] = [];
   const limit = Math.max(1, opts.limit ?? 200);
 
@@ -297,32 +353,32 @@ export async function findGroupSlotsBackToBack(
 
   for (const first of firstSlots) {
     let cursorMs = new Date(first.startAtUtc).getTime();
-    cursorMs += members[0].variation.durationMinutes * 60_000;
+    cursorMs += resolved[0].durationMinutes * 60_000;
     const segments: BackToBackSlot['segments'] = [
       {
         memberKey: members[0].key,
         startAtUtc: first.startAtUtc,
-        serviceVariationId: members[0].variation.id,
-        durationMinutes: members[0].variation.durationMinutes,
+        serviceVariationId: resolved[0].id,
+        durationMinutes: resolved[0].durationMinutes,
       },
     ];
 
     let feasible = true;
     for (let i = 1; i < members.length; i++) {
-      const m = members[i];
+      const v = resolved[i];
       const expected = new Date(cursorMs).toISOString();
-      const idx = indexByVariation.get(m.variation.id);
+      const idx = indexByVariation.get(v.id);
       if (!idx || !idx.has(expected)) {
         feasible = false;
         break;
       }
       segments.push({
-        memberKey: m.key,
+        memberKey: members[i].key,
         startAtUtc: expected,
-        serviceVariationId: m.variation.id,
-        durationMinutes: m.variation.durationMinutes,
+        serviceVariationId: v.id,
+        durationMinutes: v.durationMinutes,
       });
-      cursorMs += m.variation.durationMinutes * 60_000;
+      cursorMs += v.durationMinutes * 60_000;
     }
     if (!feasible) continue;
 
