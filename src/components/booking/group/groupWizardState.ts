@@ -2,7 +2,7 @@
 // single-booking wizardState.ts but supports per-member service picks
 // and the all-at-once / back-to-back fork.
 
-import type { Barber, Service, ServiceVariation } from '../../../lib/square/types';
+import type { Barber, Service } from '../../../lib/square/types';
 import type { GroupSlot } from '../../../lib/booking/groupAvailability';
 
 export type GroupStep = 1 | 2 | 3 | 4 | 5 | 6 | 7;
@@ -14,9 +14,11 @@ export interface MemberDraft {
   /** Per-person display name — optional during the picker steps,
    * collected on Step 6. */
   displayName: string;
-  /** Picked service + its primary variation. Null until Step 2. */
+  /** Picked service. Null until Step 2. The matcher resolves which
+   * specific variation to use per (member, barber) pair — needed
+   * because Square stores per-barber-priced services as N variations
+   * (one per barber), so eligibleBarberIds varies by variation. */
   service: Service | null;
-  variation: ServiceVariation | null;
 }
 
 export interface ParentDraft {
@@ -69,7 +71,6 @@ export function makeInitialState(initialSize: 2 | 3 | 4 = 2): GroupWizardState {
       key: memberKey(i),
       displayName: '',
       service: null,
-      variation: null,
     })),
     mode: null,
     selectedBarber: null,
@@ -86,7 +87,7 @@ export type GroupAction =
   | { type: 'NEXT' }
   | { type: 'BACK' }
   | { type: 'SET_SIZE'; size: 2 | 3 | 4 }
-  | { type: 'SET_MEMBER_SERVICE'; key: string; service: Service; variation: ServiceVariation }
+  | { type: 'SET_MEMBER_SERVICE'; key: string; service: Service }
   | { type: 'SET_MEMBER_NAME'; key: string; name: string }
   | { type: 'SET_MODE'; mode: GroupMode }
   | { type: 'SET_BARBER'; barber: Barber | null }
@@ -115,7 +116,6 @@ export function reducer(state: GroupWizardState, action: GroupAction): GroupWiza
             key: memberKey(i),
             displayName: '',
             service: null,
-            variation: null,
           },
         );
       }
@@ -135,7 +135,7 @@ export function reducer(state: GroupWizardState, action: GroupAction): GroupWiza
       return {
         ...state,
         members: state.members.map((m) =>
-          m.key === action.key ? { ...m, service: action.service, variation: action.variation } : m,
+          m.key === action.key ? { ...m, service: action.service } : m,
         ),
         // A service swap invalidates downstream availability.
         availableSlots: null,
@@ -206,7 +206,7 @@ export function canAdvance(state: GroupWizardState): boolean {
     case 1:
       return true; // size is always set
     case 2:
-      return state.members.every((m) => m.variation !== null);
+      return state.members.every((m) => m.service !== null);
     case 3:
       return state.mode !== null;
     case 4:
