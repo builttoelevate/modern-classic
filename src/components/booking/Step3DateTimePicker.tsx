@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { AvailabilitySlot, DayOfWeek, Location, ServiceVariation } from '../../lib/square/types';
+import type { AvailabilitySlot, Barber, DayOfWeek, Location, ServiceVariation } from '../../lib/square/types';
 import { WaitlistSheet } from './WaitlistSheet';
 
 interface Props {
@@ -24,6 +24,10 @@ interface Props {
   prefillName?: string;
   prefillEmail?: string;
   prefillPhone?: string;
+  /** Active roster — passed through to the waitlist sheet so the
+   * customer can opt into being notified about ANY of several barbers
+   * (e.g. "let me know if Michael OR Rick has an opening"). */
+  barbers?: Barber[];
 }
 
 const SHOP_TZ = 'America/New_York';
@@ -195,6 +199,7 @@ export function Step3DateTimePicker({
   prefillName,
   prefillEmail,
   prefillPhone,
+  barbers,
 }: Props) {
   const variationKey = variations.map((v) => v.id).join(',');
   const today = useMemo(() => todayInShopTz(), []);
@@ -471,6 +476,11 @@ export function Step3DateTimePicker({
         prefillName={prefillName}
         prefillEmail={prefillEmail}
         prefillPhone={prefillPhone}
+        barberOptions={
+          barbers && barbers.length > 0
+            ? barbers.map((b) => ({ id: b.id, displayName: b.displayName }))
+            : undefined
+        }
       />
 
       {activeDateKey && monthState.status === 'loaded' && activeSlots.length > 0 && (
@@ -502,21 +512,26 @@ export function Step3DateTimePicker({
       )}
 
       {/*
-        Persistent waitlist offer. Stays out of the way unless the customer
-        actually scrolled past the calendar and didn't click anything — at
-        which point a quiet line is more useful than a louder CTA.
+        Persistent waitlist offer. Visible enough that customers who don't
+        find a workable time know it's an option — they pick the barbers
+        they're flexible on and we email them when an opening matches.
       */}
-      <p className="bw-waitlist-hint">
-        Don't see a time that works?{' '}
+      <div className="bw-waitlist-cta" role="region" aria-label="Join the waitlist">
+        <div className="bw-waitlist-cta__copy">
+          <p className="bw-waitlist-cta__lead">Don't see a time that works?</p>
+          <p className="bw-waitlist-cta__body">
+            Join the waitlist and we'll email you the moment an opening
+            matches your barber and timing.
+          </p>
+        </div>
         <button
           type="button"
-          className="bw-waitlist-hint__btn"
+          className="bw-btn bw-waitlist-cta__btn"
           onClick={() => setWaitlistOpen(true)}
         >
-          Join the waitlist
+          Join the waitlist →
         </button>
-        .
-      </p>
+      </div>
     </div>
   );
 }

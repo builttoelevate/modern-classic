@@ -76,6 +76,28 @@ export const POST: APIRoute = async ({ request, clientAddress }) => {
     ? b.teamMemberId.trim().slice(0, 64)
     : null;
 
+  // Multi-pick: customer chose 1+ barbers from the new checkbox group.
+  // Empty / absent = "any barber". Capped at the active roster size to
+  // bound payload growth + KV entry size if anything weird is posted.
+  const MAX_BARBER_PICKS = 16;
+  const teamMemberIdsRaw = Array.isArray(b.teamMemberIds) ? b.teamMemberIds : [];
+  const barberDisplayNamesRaw = Array.isArray(b.barberDisplayNames) ? b.barberDisplayNames : [];
+  const teamMemberIds: string[] = [];
+  const barberDisplayNames: string[] = [];
+  for (let i = 0; i < teamMemberIdsRaw.length && teamMemberIds.length < MAX_BARBER_PICKS; i++) {
+    const id = teamMemberIdsRaw[i];
+    if (typeof id !== 'string' || !id.trim()) continue;
+    const trimmedId = id.trim().slice(0, 64);
+    if (teamMemberIds.includes(trimmedId)) continue;
+    const name = barberDisplayNamesRaw[i];
+    teamMemberIds.push(trimmedId);
+    barberDisplayNames.push(
+      typeof name === 'string' && name.trim()
+        ? name.trim().slice(0, FIELD_LIMITS.barberName)
+        : barberName,
+    );
+  }
+
   // Phase 8 — auto-notify preferences. Validated as a strict YYYY-MM-DD
   // ISO date and a small allow-list of chip keys. All optional so the
   // older clients that don't send them still work.
@@ -204,6 +226,8 @@ export const POST: APIRoute = async ({ request, clientAddress }) => {
         barberName,
         serviceVariationId,
         teamMemberId,
+        teamMemberIds: teamMemberIds.length > 0 ? teamMemberIds : undefined,
+        barberDisplayNames: teamMemberIds.length > 0 ? barberDisplayNames : undefined,
         preferredDate,
         note,
         dateFrom,

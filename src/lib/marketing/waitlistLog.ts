@@ -54,7 +54,16 @@ export interface WaitlistEntry {
   /** Square IDs if we resolved them at submit time — used for the
    * "Schedule" deep-link from admin. May be null on older entries. */
   serviceVariationId: string | null;
+  /** Legacy single-barber pick. Newer entries also populate
+   * teamMemberIds; the cron prefers the array but falls back to
+   * [teamMemberId] when teamMemberIds is absent. */
   teamMemberId: string | null;
+  /** Customer-selected barbers (multi-pick). Empty / absent =
+   * "any barber". Parallel-indexed with barberDisplayNames so the
+   * email + admin can name the specific barber a slot opened with. */
+  teamMemberIds?: string[];
+  /** Display names parallel to teamMemberIds. */
+  barberDisplayNames?: string[];
   preferredDate?: string;
   note?: string;
   submittedAt: string;
@@ -113,6 +122,9 @@ export interface RecordWaitlistInput {
   barberName: string;
   serviceVariationId: string | null;
   teamMemberId: string | null;
+  /** Multi-pick variants. Parallel arrays. Empty/absent = any barber. */
+  teamMemberIds?: string[];
+  barberDisplayNames?: string[];
   preferredDate?: string;
   note?: string;
   /** Phase 8 — structured availability prefs for the auto-notify cron. */
@@ -136,6 +148,8 @@ export async function recordWaitlistEntry(
     barberName: input.barberName,
     serviceVariationId: input.serviceVariationId,
     teamMemberId: input.teamMemberId,
+    teamMemberIds: input.teamMemberIds,
+    barberDisplayNames: input.barberDisplayNames,
     preferredDate: input.preferredDate,
     note: input.note,
     dateFrom: input.dateFrom,
@@ -248,4 +262,23 @@ export async function markWaitlistNotified(
   };
   await redis.set(kEntry(id), updated, { keepTtl: true });
   return updated;
+}
+
+/**
+ * Resolve an entry's barber picks as a list of (id, displayName) pairs.
+ * Returns [] when the customer chose "any barber". Falls back to the
+ * legacy single teamMemberId/barberName pair for entries created before
+ * multi-pick was supported.
+ */
+export function getEntryBarberPicks(entry: WaitlistEntry): Array<{ id: string; displayName: string }> {
+  if (entry.teamMemberIds && entry.teamMemberIds.length > 0) {
+    return entry.teamMemberIds.map((id, i) => ({
+      id,
+      displayName: entry.barberDisplayNames?.[i] ?? entry.barberName,
+    }));
+  }
+  if (entry.teamMemberId) {
+    return [{ id: entry.teamMemberId, displayName: entry.barberName }];
+  }
+  return [];
 }
