@@ -371,11 +371,10 @@ const bookRel = isGhPages ? 'noopener' : '';
   }
 
   /* ---------- Tertiary waitlist trigger ----------
-     Pill-style button with a gold hairline border + subtle dark fill so
-     it scans as a real CTA (not a stray link) while staying visually
-     subordinate to the primary "Book an Appointment" button. Sits inline
-     with the green availability pill on wide screens and stacks below it
-     on narrow. Hovers to a filled-gold pill with dark text. */
+     Filled gold pill — sits inline with the green availability pill on
+     wide screens, stacks below it on narrow. Smaller than the primary
+     "Book an Appointment" button so it doesn't compete, but visually
+     loud enough that customers can't scroll past it. */
   :global(.hero-waitlist-trigger) {
     appearance: none;
     margin: 0;
@@ -383,35 +382,36 @@ const bookRel = isGhPages ? 'noopener' : '';
     display: inline-flex;
     align-items: center;
     gap: 0.5rem;
-    padding: 0.5rem 0.95rem;
-    background: rgba(11, 10, 8, 0.55);
-    border: 1px solid rgba(201, 163, 92, 0.55);
+    padding: 0.55rem 1.05rem;
+    background: var(--color-gold);
+    border: 1px solid var(--color-gold);
     border-radius: 999px;
-    color: var(--color-text);
+    color: #0b0a08;
     font-family: var(--font-body);
-    font-size: 0.86rem;
+    font-size: 0.9rem;
+    font-weight: 600;
     letter-spacing: 0.02em;
     line-height: 1.2;
     text-align: left;
-    backdrop-filter: blur(2px);
+    box-shadow: 0 6px 18px -10px rgba(201, 163, 92, 0.55);
     transition:
       background-color var(--dur) var(--ease),
       border-color var(--dur) var(--ease),
       color var(--dur) var(--ease),
-      box-shadow var(--dur) var(--ease);
+      box-shadow var(--dur) var(--ease),
+      transform var(--dur) var(--ease);
   }
   :global(.hero-waitlist-trigger__icon) {
     flex: 0 0 auto;
-    color: var(--color-gold);
-    transition: color var(--dur) var(--ease);
+    color: #0b0a08;
   }
   :global(.hero-waitlist-trigger__lead) {
-    color: var(--color-text-muted);
+    color: rgba(11, 10, 8, 0.78);
+    font-weight: 500;
   }
   :global(.hero-waitlist-trigger__cta) {
-    color: var(--color-gold);
-    font-weight: 600;
-    transition: color var(--dur) var(--ease);
+    color: #0b0a08;
+    font-weight: 700;
   }
   :global(.hero-waitlist-trigger__arrow) {
     margin-left: 0.25rem;
@@ -420,26 +420,18 @@ const bookRel = isGhPages ? 'noopener' : '';
   }
   :global(.hero-waitlist-trigger:hover),
   :global(.hero-waitlist-trigger:focus-visible) {
-    background: var(--color-gold);
-    border-color: var(--color-gold);
-    color: #0b0a08;
-    box-shadow: 0 8px 22px -14px rgba(201, 163, 92, 0.65);
-  }
-  :global(.hero-waitlist-trigger:hover .hero-waitlist-trigger__icon),
-  :global(.hero-waitlist-trigger:focus-visible .hero-waitlist-trigger__icon),
-  :global(.hero-waitlist-trigger:hover .hero-waitlist-trigger__lead),
-  :global(.hero-waitlist-trigger:focus-visible .hero-waitlist-trigger__lead),
-  :global(.hero-waitlist-trigger:hover .hero-waitlist-trigger__cta),
-  :global(.hero-waitlist-trigger:focus-visible .hero-waitlist-trigger__cta) {
-    color: #0b0a08;
+    background: var(--color-gold-light);
+    border-color: var(--color-gold-light);
+    box-shadow: 0 10px 26px -12px rgba(232, 196, 122, 0.7);
+    transform: translateY(-1px);
   }
   :global(.hero-waitlist-trigger:hover .hero-waitlist-trigger__arrow),
   :global(.hero-waitlist-trigger:focus-visible .hero-waitlist-trigger__arrow) {
     transform: translateX(3px);
   }
   :global(.hero-waitlist-trigger:focus-visible) {
-    outline: 2px solid rgba(201, 163, 92, 0.6);
-    outline-offset: 3px;
+    outline: 2px solid #0b0a08;
+    outline-offset: 2px;
   }
   @media (max-width: 480px) {
     :global(.hero-waitlist-trigger) {
