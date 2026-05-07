@@ -14,7 +14,6 @@ interface Props {
   onConfirm: () => void;
   onEditSlot: () => void;
   onEditCustomer: () => void;
-  onBookAnother: () => void;
   onUpdateContactToggle: (value: boolean) => void;
   rescheduleMode?: boolean;
 }
@@ -52,7 +51,6 @@ export function Step5Confirm({
   customer,
   status,
   onConfirm,
-  onBookAnother,
   onUpdateContactToggle,
   rescheduleMode = false,
 }: Props) {
@@ -162,13 +160,9 @@ export function Step5Confirm({
               View My Bookings
             </a>
             {!rescheduleMode && (
-              <button
-                type="button"
-                className="bw-btn"
-                onClick={onBookAnother}
-              >
+              <a className="bw-btn" href="/my-bookings">
                 Book another
-              </button>
+              </a>
             )}
             {rescheduleMode && (
               <a className="bw-btn" href="/my-bookings">

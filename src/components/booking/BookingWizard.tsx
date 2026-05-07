@@ -486,17 +486,6 @@ export default function BookingWizard({
     });
   };
 
-  const reset = () => {
-    if (rescheduleMode) {
-      // In reschedule mode "Book another" doesn't apply — send the user
-      // back to their bookings page. The success screen also offers a
-      // direct link, but we honor the existing onBookAnother callback.
-      window.location.href = '/my-bookings';
-      return;
-    }
-    dispatch({ type: 'RESET' });
-  };
-
   const teamMemberId = state.anyBarber ? undefined : state.selectedBarber?.id;
 
   const rescheduleStepIndex = (() => {
@@ -663,7 +652,6 @@ export default function BookingWizard({
           onConfirm={submit}
           onEditSlot={() => dispatch({ type: 'GO_TO', step: 3 })}
           onEditCustomer={() => dispatch({ type: 'GO_TO', step: 4 })}
-          onBookAnother={reset}
           rescheduleMode={rescheduleMode}
           onUpdateContactToggle={(value) =>
             dispatch({ type: 'UPDATE_CUSTOMER', patch: { updateContact: value } })

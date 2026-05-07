@@ -92,16 +92,38 @@ export type WizardAction =
 export function reducer(state: WizardState, action: WizardAction): WizardState {
   switch (action.type) {
     case 'SET_SERVICE': {
-      // Reset downstream when service changes.
       const sameService = state.selectedService?.id === action.service.id;
+      if (sameService) {
+        return { ...state, selectedService: action.service, step: 2 };
+      }
+      // New service. If a barber was already chosen (e.g. user came in via
+      // /book?barber={id} from the home page) and is eligible for this
+      // service, keep them and skip Step 2 entirely — otherwise the user
+      // ends up picking the same barber twice.
+      if (state.selectedBarber) {
+        const variation = variationForBarber(action.service, state.selectedBarber.id);
+        if (variation) {
+          return {
+            ...state,
+            selectedService: action.service,
+            selectedVariation: variation,
+            candidateVariations: [variation],
+            anyBarber: false,
+            selectedSlot: null,
+            blockedSlots: [],
+            step: 3,
+          };
+        }
+      }
       return {
         ...state,
         selectedService: action.service,
-        selectedVariation: sameService ? state.selectedVariation : null,
-        selectedBarber: sameService ? state.selectedBarber : null,
-        anyBarber: sameService ? state.anyBarber : false,
-        selectedSlot: sameService ? state.selectedSlot : null,
-        blockedSlots: sameService ? state.blockedSlots : [],
+        selectedVariation: null,
+        selectedBarber: null,
+        anyBarber: false,
+        selectedSlot: null,
+        blockedSlots: [],
+        candidateVariations: [],
         step: 2,
       };
     }
@@ -214,6 +236,16 @@ export function formatPhone(input: string): string {
   if (d.length < 4) return `(${d}`;
   if (d.length < 7) return `(${d.slice(0, 3)}) ${d.slice(3)}`;
   return `(${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6)}`;
+}
+
+export function variationForBarber(service: Service, barberId: string): ServiceVariation | null {
+  if (service.hasPerBarberVariations) {
+    return service.variations.find((v) => v.eligibleTeamMemberIds.includes(barberId)) ?? null;
+  }
+  const v = service.variations[0];
+  if (!v) return null;
+  if (v.eligibleTeamMemberIds.length === 0) return v;
+  return v.eligibleTeamMemberIds.includes(barberId) ? v : null;
 }
 
 export function priceForService(service: Service | null, variation: ServiceVariation | null): string {
