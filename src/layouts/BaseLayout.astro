@@ -21,7 +21,15 @@ const {
   extraSchema,
 } = Astro.props;
 
-const siteUrl = 'https://mdrnclassic.com';
+// The barbershop website lives at modernclassicbarbershop.com. The
+// product Shopify storefront at mdrnclassic.com is a separate site
+// (linked from the shop products section) — using it here as the
+// canonical host caused every page's og:url + <link rel="canonical">
+// to point at the Shopify store, so when a customer pasted the
+// barbershop URL into iMessage / Slack / etc., the preview re-routed
+// to the storefront. Using the actual barbershop hostname keeps
+// shared previews on the right site.
+const siteUrl = 'https://modernclassicbarbershop.com';
 const canonicalUrl = canonical ?? new URL(Astro.url.pathname, siteUrl).toString();
 // Cache-busting suffix for the OG image. iMessage / Slack / Discord cache
 // preview images by URL forever — bump this version when the artwork
