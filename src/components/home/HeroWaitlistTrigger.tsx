@@ -39,6 +39,18 @@ export function HeroWaitlistTrigger({
         className="hero-waitlist-trigger"
         onClick={() => setOpen(true)}
       >
+        <svg
+          className="hero-waitlist-trigger__icon"
+          viewBox="0 0 24 24"
+          width="16"
+          height="16"
+          aria-hidden="true"
+        >
+          <path
+            d="M12 3a1 1 0 0 1 1 1v.6a6 6 0 0 1 5 5.9V14l1.4 2.4a1 1 0 0 1-.9 1.6H5.5a1 1 0 0 1-.9-1.6L6 14v-3.5a6 6 0 0 1 5-5.9V4a1 1 0 0 1 1-1Zm-2 16a2 2 0 0 0 4 0h-4Z"
+            fill="currentColor"
+          />
+        </svg>
         <span className="hero-waitlist-trigger__lead">Need it sooner?</span>
         <span className="hero-waitlist-trigger__cta">
           Join the waitlist
