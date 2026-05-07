@@ -135,17 +135,32 @@ export function slugForService(service: Service): MarketingCopy {
   if (norm.includes('new customer') || norm.includes('first visit') || norm.includes('first-time')) {
     return COPY.find((c) => c.slug === 'new-customer')!;
   }
-  if (norm.includes("men's haircut")) return COPY.find((c) => c.slug === 'mens-haircut')!;
-  if (norm.includes('haircut & beard')) return COPY.find((c) => c.slug === 'haircut-beard')!;
-  if (norm.includes('beard trim')) return COPY.find((c) => c.slug === 'beard-trim-edge')!;
-  if (norm.includes('kids')) return COPY.find((c) => c.slug === 'kids-haircut')!;
-  if (norm.includes('haircut + design') || norm.includes('haircut design')) {
+  // Haircut + Design first so the looser plain-haircut catch-all below
+  // doesn't claim "Haircut+Design ($30-$45)" or any other spacing
+  // variant Square uses (no spaces, en-dash separator, parens, etc).
+  if (/haircut\s*[+&-]\s*design|haircut\s+design/.test(norm)) {
     return COPY.find((c) => c.slug === 'haircut-design')!;
   }
+  if (norm.includes('haircut & beard') || norm.includes('haircut and beard')) {
+    return COPY.find((c) => c.slug === 'haircut-beard')!;
+  }
+  // Kids before the plain-haircut catch-all so "Kids Haircut" doesn't
+  // get bucketed as a men's cut.
+  if (norm.includes('kids')) return COPY.find((c) => c.slug === 'kids-haircut')!;
+  if (norm.includes('beard trim')) return COPY.find((c) => c.slug === 'beard-trim-edge')!;
   if (norm.includes('straight razor') || norm.includes('shave')) {
     return COPY.find((c) => c.slug === 'straight-razor-shave')!;
   }
   if (norm.includes('shampoo')) return COPY.find((c) => c.slug === 'shampoo-style')!;
+  // Plain "Haircut" or "Men's Haircut" — the catch-all for men's cuts.
+  // This MUST come last among the haircut variants so the more specific
+  // checks above (design / kids / beard combo) win first. Without this,
+  // a Square service literally named "Haircut" fell into the unknown
+  // fallback and rendered Square's raw description (which on this
+  // catalog includes the entire cancellation policy wall of text).
+  if (norm.includes('haircut')) {
+    return COPY.find((c) => c.slug === 'mens-haircut')!;
+  }
   // Fallback — unknown service, drop into Style with a high order so it
   // sorts last.
   return {
