@@ -101,6 +101,14 @@ const localBusiness = {
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="generator" content={Astro.generator} />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    {/* Apple touch icon — used by iOS Add-to-Home-Screen and Safari
+        bookmark cards. Without this, iOS auto-generates a generic
+        letter tile from the page title (the "M" on a black square
+        the shop owner saw in iMessage's bookmark dialog). The PNG
+        lives in /public/ and is the same vintage gold-on-black
+        emblem the rest of the site uses. iOS auto-rounds the
+        corners, so the source can stay square. */}
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <link rel="canonical" href={canonicalUrl} />
     <meta name="theme-color" content="#0b0a08" />
     <meta name="color-scheme" content="dark" />
