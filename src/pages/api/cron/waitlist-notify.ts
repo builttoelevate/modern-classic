@@ -16,6 +16,7 @@
 
 import type { APIRoute } from 'astro';
 import {
+  getEntryBarberPicks,
   listActiveWaitlistEntries,
   markWaitlistNotified,
   updateWaitlistStatus,
@@ -30,6 +31,7 @@ import { sendWaitlistOpening } from '../../../lib/email/resend';
 import { formatRelativeSlot } from '../../../lib/availability/timing';
 import { redactEmail } from '../../../lib/booking/log';
 import { SquareApiError } from '../../../lib/square/client';
+import type { AvailabilitySlot } from '../../../lib/square/types';
 
 export const prerender = false;
 
@@ -181,27 +183,48 @@ async function handle(request: Request): Promise<Response> {
         continue;
       }
 
-      const slots = await searchAvailabilityChunked({
-        serviceVariationId: entry.serviceVariationId,
-        teamMemberId: entry.teamMemberId ?? undefined,
-        startAt: window.startAt,
-        endAt: window.endAt,
-        // Cron only needs the earliest match; bail out of further chunks
-        // as soon as Square hands us any candidate.
-        stopAfter: 1,
-      });
+      // Multi-pick: customer may have asked to be notified about any of
+      // several barbers. Search each one's availability, run the matcher,
+      // and pick the earliest match across the whole set. An empty list
+      // (legacy entry with no IDs at all OR explicit "any barber") falls
+      // through to a single search with no team filter.
+      const picks = getEntryBarberPicks(entry);
+      const queries: Array<{ teamMemberId?: string; displayName: string | null }> =
+        picks.length > 0
+          ? picks.map((p) => ({ teamMemberId: p.id, displayName: p.displayName }))
+          : [{ teamMemberId: undefined, displayName: null }];
 
-      const match = findMatchingSlot(entry, slots, now);
-      if (!match) {
+      let bestMatch: { slot: AvailabilitySlot; teamMemberId?: string; displayName: string | null } | null = null;
+      for (const q of queries) {
+        const slots = await searchAvailabilityChunked({
+          serviceVariationId: entry.serviceVariationId,
+          teamMemberId: q.teamMemberId,
+          startAt: window.startAt,
+          endAt: window.endAt,
+          // Cron only needs the earliest match; bail out of further
+          // chunks as soon as Square hands us any candidate.
+          stopAfter: 1,
+        });
+        const m = findMatchingSlot(entry, slots, now);
+        if (!m) continue;
+        if (!bestMatch || m.startAtUtc < bestMatch.slot.startAtUtc) {
+          bestMatch = { slot: m, teamMemberId: q.teamMemberId, displayName: q.displayName };
+        }
+      }
+
+      if (!bestMatch) {
         stats.skipped.noSlotsInWindow++;
         continue;
       }
 
       stats.matched++;
+      const match = bestMatch.slot;
+      const matchedBarberName =
+        bestMatch.displayName ?? entry.barberName;
       const whenLabel = formatRelativeSlot(match.startAtUtc);
       const bookParams = new URLSearchParams();
       if (entry.serviceVariationId) bookParams.set('service', entry.serviceVariationId);
-      if (entry.teamMemberId) bookParams.set('barber', entry.teamMemberId);
+      if (bestMatch.teamMemberId) bookParams.set('barber', bestMatch.teamMemberId);
       const bookUrl = `${origin}/book${bookParams.toString() ? `?${bookParams.toString()}` : ''}`;
 
       if (dryRun) {
@@ -211,6 +234,7 @@ async function handle(request: Request): Promise<Response> {
           email: redactEmail(entry.customerEmail),
           slot: match.startAtUtc,
           whenLabel,
+          matchedBarber: matchedBarberName,
         });
         stats.sent++;
         continue;
@@ -219,7 +243,7 @@ async function handle(request: Request): Promise<Response> {
       const sendResult = await sendWaitlistOpening({
         to: entry.customerEmail,
         customerName: entry.customerName,
-        barberName: entry.barberName,
+        barberName: matchedBarberName,
         serviceName: entry.serviceName,
         whenLabel,
         bookUrl,

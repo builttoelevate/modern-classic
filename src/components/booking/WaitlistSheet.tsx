@@ -73,11 +73,13 @@ export function WaitlistSheet({
   const [name, setName] = useState(prefillName);
   const [email, setEmail] = useState(prefillEmail);
   const [phone, setPhone] = useState(prefillPhone);
-  // Barber selection — only used when `barberOptions` is supplied.
-  // Stored as the team_member_id so we can look up displayName at
-  // submit time without keeping a tuple in state. Empty string =
-  // "Any barber" (default).
-  const [pickedBarberId, setPickedBarberId] = useState<string>('');
+  // Multi-pick barber selection. Customers can opt in to multiple barbers
+  // so they get notified the moment ANY of them has an opening. Empty
+  // array = "any barber works." Pre-checks the wizard-level barber when
+  // we know it (Step 3 in-flow); otherwise starts empty.
+  const [pickedBarberIds, setPickedBarberIds] = useState<string[]>(() =>
+    teamMemberId ? [teamMemberId] : [],
+  );
   // Default the date range to "today through 30 days out" — covers
   // most customers' realistic flexibility window.
   const [dateFrom, setDateFrom] = useState(() => shopDateKey(new Date()));
@@ -114,6 +116,11 @@ export function WaitlistSheet({
   function toggleTime(key: TimeKey) {
     setTimesOfDay((prev) =>
       prev.includes(key) ? prev.filter((t) => t !== key) : [...prev, key],
+    );
+  }
+  function toggleBarber(id: string) {
+    setPickedBarberIds((prev) =>
+      prev.includes(id) ? prev.filter((b) => b !== id) : [...prev, id],
     );
   }
 
@@ -156,14 +163,35 @@ export function WaitlistSheet({
   if (!open) return null;
   if (typeof document === 'undefined') return null;
 
-  // When the dropdown is in play, the customer's selection wins over
-  // the prop default. Empty pickedBarberId = "Any barber".
+  // The multi-pick barber chips render whenever a roster is supplied.
+  // Empty selection = "any barber works." When exactly one barber is
+  // picked, the email + admin record show that barber's name; multi-pick
+  // shows a friendly "Michael, Rick, or Clayton" phrase.
   const showBarberPicker = Array.isArray(barberOptions) && barberOptions.length > 0;
-  const pickedBarber = showBarberPicker && pickedBarberId
-    ? barberOptions!.find((b) => b.id === pickedBarberId) ?? null
-    : null;
-  const effectiveBarberName = pickedBarber?.displayName ?? barberName;
-  const effectiveTeamMemberId = pickedBarber?.id ?? teamMemberId ?? null;
+  const pickedBarbers = showBarberPicker
+    ? (barberOptions ?? []).filter((b) => pickedBarberIds.includes(b.id))
+    : [];
+  function joinNames(names: string[]): string {
+    if (names.length === 0) return 'Any barber';
+    if (names.length === 1) return names[0]!;
+    if (names.length === 2) return `${names[0]} or ${names[1]}`;
+    return `${names.slice(0, -1).join(', ')}, or ${names[names.length - 1]}`;
+  }
+  const effectiveBarberName = showBarberPicker
+    ? joinNames(pickedBarbers.map((b) => b.displayName))
+    : barberName;
+  const effectiveTeamMemberId =
+    pickedBarbers[0]?.id ?? (showBarberPicker ? null : teamMemberId ?? null);
+  const effectiveTeamMemberIds = showBarberPicker
+    ? pickedBarbers.map((b) => b.id)
+    : teamMemberId
+      ? [teamMemberId]
+      : [];
+  const effectiveBarberDisplayNames = showBarberPicker
+    ? pickedBarbers.map((b) => b.displayName)
+    : teamMemberId
+      ? [barberName]
+      : [];
 
   // The hero-level trigger doesn't have a concrete service/barber yet —
   // we pass "Any service" / "Any barber" sentinels through so the admin
@@ -203,6 +231,8 @@ export function WaitlistSheet({
           barberName: effectiveBarberName,
           serviceVariationId,
           teamMemberId: effectiveTeamMemberId,
+          teamMemberIds: effectiveTeamMemberIds,
+          barberDisplayNames: effectiveBarberDisplayNames,
           dateFrom: dateFrom || undefined,
           dateTo: dateTo || undefined,
           daysOfWeek,
@@ -306,21 +336,34 @@ export function WaitlistSheet({
             </div>
 
             {showBarberPicker && (
-              <label className="bw-field">
-                <span className="bw-field__label">Barber</span>
-                <select
-                  className="bw-field__select"
-                  value={pickedBarberId}
-                  onChange={(e) => setPickedBarberId(e.target.value)}
+              <div className="bw-field">
+                <span className="bw-field__label">
+                  Notify me about{' '}
+                  <span className="bw-field__optional">
+                    (pick one or more — leave all off for any barber)
+                  </span>
+                </span>
+                <div
+                  className="bw-chip-row bw-chip-row--barbers"
+                  role="group"
+                  aria-label="Barbers to be notified about"
                 >
-                  <option value="">Any barber</option>
-                  {barberOptions!.map((b) => (
-                    <option key={b.id} value={b.id}>
-                      {b.displayName}
-                    </option>
-                  ))}
-                </select>
-              </label>
+                  {(barberOptions ?? []).map((b) => {
+                    const active = pickedBarberIds.includes(b.id);
+                    return (
+                      <button
+                        key={b.id}
+                        type="button"
+                        className={`bw-chip${active ? ' bw-chip--on' : ''}`}
+                        aria-pressed={active}
+                        onClick={() => toggleBarber(b.id)}
+                      >
+                        {b.displayName}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
             )}
 
             <div className="bw-waitlist__prefs">
