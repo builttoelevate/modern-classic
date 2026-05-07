@@ -41,7 +41,19 @@ const STEP_LABELS = [
   'Confirm',
 ];
 
-const sizeOptions: Array<2 | 3 | 4> = [2, 3, 4];
+/** All sizes the booking spec supports (the matcher caps at 4 anyway).
+ * Step 1 narrows this further at runtime based on how many active
+ * barbers the shop has — see resolveSizeOptions below. */
+const ABSOLUTE_SIZE_OPTIONS: Array<2 | 3 | 4> = [2, 3, 4];
+
+/** Cap the picker at min(4, active-barbers). All-at-once mode requires
+ * N distinct barbers free at the same minute — picking 4 at a 3-barber
+ * shop is always infeasible, so we don't even offer it. If the shop
+ * grows to 4 barbers, the cap auto-bumps; no code change needed. */
+function resolveSizeOptions(barberCount: number): Array<2 | 3 | 4> {
+  const cap = Math.min(4, Math.max(2, barberCount));
+  return ABSOLUTE_SIZE_OPTIONS.filter((n) => n <= cap) as Array<2 | 3 | 4>;
+}
 
 export default function GroupBookingWizard({
   services,
@@ -241,6 +253,7 @@ export default function GroupBookingWizard({
           {state.step === 1 && (
             <Step1Size
               size={state.size}
+              barberCount={barbers.length}
               onPick={(size) => {
                 dispatch({ type: 'SET_SIZE', size });
                 dispatch({ type: 'NEXT' });
@@ -383,19 +396,28 @@ export default function GroupBookingWizard({
 // ---------- Step 1: Size ----------
 function Step1Size({
   size,
+  barberCount,
   onPick,
 }: {
   size: 2 | 3 | 4;
+  barberCount: number;
   onPick: (n: 2 | 3 | 4) => void;
 }) {
+  const options = resolveSizeOptions(barberCount);
+  // The "lede" line tracks the live cap. When it's 4 the description
+  // matches the original copy; when it's lower we add an honest aside
+  // so the customer isn't left wondering why "Four people" is gone.
+  const cap = options[options.length - 1] ?? 4;
+  const lede =
+    cap >= 4
+      ? 'Pick a group size to get started. We support 2 to 4 people in a single group.'
+      : `Pick a group size to get started. We support up to ${cap} per group — that's how many barbers we have on the floor.`;
   return (
     <div className="gw__step-body">
       <h2>How many people are booking together?</h2>
-      <p className="gw__lede">
-        Pick a group size to get started. We support 2 to 4 people in a single group.
-      </p>
+      <p className="gw__lede">{lede}</p>
       <div className="gw__size-grid">
-        {sizeOptions.map((n) => (
+        {options.map((n) => (
           <button
             key={n}
             type="button"

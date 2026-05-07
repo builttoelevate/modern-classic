@@ -72,10 +72,13 @@ if (session && !loadError) {
         <p class="eyebrow">Group booking</p>
         <h1 class="bw-page__h1">Booking for the family.</h1>
         <p class="bw-page__lede">
-          Two to four people in one transaction. Pick services, pick how to schedule
-          (everyone at once with different barbers, or one barber back-to-back), pick
-          a time. We'll create one booking per person under your account so the shop
-          knows you're a group.
+          {barbers.length >= 4
+            ? 'Two to four people in one transaction.'
+            : `Up to ${Math.min(4, Math.max(2, barbers.length))} people in one transaction.`}
+          {' '}
+          Pick services, pick how to schedule (everyone at once with different
+          barbers, or one barber back-to-back), pick a time. We'll create one
+          booking per person under your account so the shop knows you're a group.
         </p>
       </header>
       {loadError && (
@@ -84,7 +87,20 @@ if (session && !loadError) {
           <a class="link-gold" href="tel:+17402974462">740-297-4462</a>.
         </p>
       )}
-      {!loadError && (
+      {/* Defensive: a group booking needs at least 2 barbers on the
+          floor (one each for all-at-once minimum, or one chain for
+          back-to-back with two members). The current shop has 3 so
+          this branch shouldn't trigger in normal operation, but a
+          dropped Square call or an empty roster would otherwise leave
+          the wizard rendering an unusable picker. */}
+      {!loadError && barbers.length < 2 && (
+        <p class="bw-page__error">
+          Group booking is unavailable right now — the shop's barber
+          roster came back short. Try again in a moment, or call{' '}
+          <a class="link-gold" href="tel:+17402974462">740-297-4462</a>.
+        </p>
+      )}
+      {!loadError && barbers.length >= 2 && (
         <GroupBookingWizard
           client:load
           services={services}
