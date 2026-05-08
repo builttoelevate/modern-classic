@@ -4,6 +4,15 @@ const base = import.meta.env.BASE_URL.replace(/\/$/, '');
 const isGhPages = import.meta.env.BASE_URL && import.meta.env.BASE_URL !== '/';
 const bookHref = isGhPages ? 'https://modern-classic.square.site' : `${base}/book`;
 const year = new Date().getFullYear();
+
+// Footer links point to OUR site only. The product Shopify storefront
+// (mdrnclassic.com) is separate — buy buttons on individual product
+// cards link there for checkout, but no nav links should leave our site
+// for what is essentially the same brand.
+//
+// "Shop Products" categories below jump to the matching section on our
+// /shop page. Each anchor matches the heading id Astro generates from
+// p.collection.replace(/\W+/g, '-') in src/pages/shop.astro.
 const cols = [
   {
     title: 'The Shop',
@@ -20,23 +29,18 @@ const cols = [
     title: 'Shop Products',
     links: [
       { label: 'All Products', href: `${base}/shop` },
-      { label: 'Styling', href: 'https://mdrnclassic.com/collections/styling', external: true },
-      { label: 'Texture & Finish', href: 'https://mdrnclassic.com/collections/texture-finish', external: true },
-      { label: 'Shaving', href: 'https://mdrnclassic.com/collections/shaving', external: true },
-      { label: 'Beard Care', href: 'https://mdrnclassic.com/collections/beard-care', external: true },
+      { label: 'Styling', href: `${base}/shop#group-Styling-heading` },
+      { label: 'Texture & Finish', href: `${base}/shop#group-Texture-Finish-heading` },
+      { label: 'Beard Care', href: `${base}/shop#group-Beard-Care-heading` },
+      { label: 'Shaving', href: `${base}/shop#group-Shaving-heading` },
     ],
   },
   {
     title: 'Help',
     links: [
       { label: 'Contact', href: `${base}/visit#contact` },
+      { label: 'FAQs', href: `${base}/#faq` },
       { label: 'Cancellation Policy', href: `${base}/cancellation-policy` },
-      { label: 'FAQs', href: 'https://mdrnclassic.com/pages/faqs', external: true },
-      { label: 'Shipping', href: 'https://mdrnclassic.com/pages/shipping-information', external: true },
-      { label: 'Returns', href: 'https://mdrnclassic.com/pages/returns-exchanges', external: true },
-      { label: 'Wholesale', href: 'https://mdrnclassic.com/pages/wholesale', external: true },
-      { label: 'Privacy', href: 'https://mdrnclassic.com/policies/privacy-policy', external: true },
-      { label: 'Terms', href: 'https://mdrnclassic.com/policies/terms-of-service', external: true },
     ],
   },
 ];

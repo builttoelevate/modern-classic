@@ -18,6 +18,12 @@ const photos = Object.entries(imageModules)
     id: path.split('/').pop()!.replace(/\.jpg$/, ''),
   }))
   .sort((a, b) => a.id.localeCompare(b.id));
+
+// Use our local /book wizard on Vercel/prod; only fall back to the
+// legacy Square site on the gh-pages preview where SSR doesn't exist.
+const base = import.meta.env.BASE_URL.replace(/\/$/, '');
+const isGhPages = import.meta.env.BASE_URL && import.meta.env.BASE_URL !== '/';
+const bookUrl = isGhPages ? 'https://modern-classic.square.site' : `${base}/book`;
 ---
 <BaseLayout
   title="Gallery — Modern Classic Barbershop & Shave Parlor"
@@ -72,7 +78,11 @@ const photos = Object.entries(imageModules)
           <p class="gallery__cta-text">
             <span class="italic-accent">Book now.</span>
           </p>
-          <a class="btn" href="https://modern-classic.square.site" target="_blank" rel="noopener">
+          <a
+            class="btn"
+            href={bookUrl}
+            {...(isGhPages ? { target: '_blank', rel: 'noopener' } : {})}
+          >
             Book a Visit <span class="arrow" aria-hidden="true">→</span>
           </a>
         </div>

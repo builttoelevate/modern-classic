@@ -11,6 +11,12 @@ const all = (await getCollection('products'))
   .sort((a, b) => a.data.order - b.data.order)
   .map((p) => p.data);
 
+// Use our local /book wizard on Vercel/prod; only fall back to the
+// legacy Square site on the gh-pages preview where SSR doesn't exist.
+const base = import.meta.env.BASE_URL.replace(/\/$/, '');
+const isGhPages = import.meta.env.BASE_URL && import.meta.env.BASE_URL !== '/';
+const bookUrl = isGhPages ? 'https://modern-classic.square.site' : `${base}/book`;
+
 // Group products by collection so the page reads like a curated shop floor
 // instead of a flat list.
 const collectionOrder = [
@@ -196,9 +202,16 @@ const itemListSchema = {
           recommend the take-home that matches your hair and beard.
         </p>
         <div class="shop-foot__ctas">
-          <a class="btn" href="https://modern-classic.square.site" target="_blank" rel="noopener">
+          <a
+            class="btn"
+            href={bookUrl}
+            {...(isGhPages ? { target: '_blank', rel: 'noopener' } : {})}
+          >
             Book a Visit <span class="arrow" aria-hidden="true">→</span>
           </a>
+          {/* The "Browse All on Shopify" button is intentionally external —
+              checkout for products lives on the Shopify storefront, and
+              this is the explicit "go buy products" pathway. */}
           <a class="btn btn--ghost" href="https://mdrnclassic.com/collections/all" target="_blank" rel="noopener">
             Browse All on Shopify
           </a>
