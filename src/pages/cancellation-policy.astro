@@ -1,0 +1,253 @@
+---
+export const prerender = true;
+
+import BaseLayout from '../layouts/BaseLayout.astro';
+import Header from '../components/Header.astro';
+import Footer from '../components/Footer.astro';
+
+const base = import.meta.env.BASE_URL.replace(/\/$/, '');
+---
+<BaseLayout
+  title="Cancellation Policy — Modern Classic Barbershop"
+  description="Modern Classic Barbershop cancellation, no-show, and reschedule policy. We ask for 24-hour notice. New clients save a card on file at booking."
+>
+  <Header />
+  <main id="main" class="cp-page">
+    <article class="cp">
+      <header class="cp__head">
+        <p class="cp__eyebrow">Booking policy</p>
+        <h1>Cancellation &amp; No-Show Policy</h1>
+        <p class="cp__lede">
+          Your time is held just for you when you book. Here's exactly how cancellations,
+          reschedules, and no-shows are handled — no surprises.
+        </p>
+      </header>
+
+      <section class="cp__section cp__section--highlight">
+        <h2>The short version</h2>
+        <ul class="cp__short">
+          <li>Cancel or reschedule at least <strong>24 hours</strong> before your appointment — no charge, no questions.</li>
+          <li>Cancel <strong>within 24 hours</strong> of your appointment, or <strong>don't show up</strong>, and the full service price may be charged.</li>
+          <li>For first-time clients, we keep a card on file at booking. The card is only charged if you late-cancel or no-show.</li>
+        </ul>
+      </section>
+
+      <section class="cp__section">
+        <h2>The 24-hour window</h2>
+        <p>
+          A barber's day is built around appointments. When a chair sits empty inside
+          the 24-hour window, there usually isn't enough notice to fill it — that
+          time is gone. The 24-hour rule lets us offer the slot to another client
+          (often someone on the waitlist) when there's enough notice to do so.
+        </p>
+        <p>
+          Outside the 24-hour window, you can cancel or reschedule yourself anytime
+          from <a class="link-gold" href={`${base}/my-bookings`}>My Bookings</a>{' '}
+          — no fee, no questions.
+        </p>
+      </section>
+
+      <section class="cp__section">
+        <h2>First-time clients: card on file</h2>
+        <p>
+          When you book your first appointment with us, we ask for a credit or
+          debit card to be saved on file. This is industry-standard for
+          appointment-based services and protects the shop against last-minute
+          no-shows.
+        </p>
+        <ul class="cp__bullets">
+          <li><strong>You will not be charged at booking.</strong> The card is held only.</li>
+          <li>The card is stored securely with Square (our payment processor). We never see or store your card number.</li>
+          <li>Once you've completed your first visit, you're a returning client — no card on file is required for future bookings.</li>
+        </ul>
+      </section>
+
+      <section class="cp__section">
+        <h2>What triggers a charge</h2>
+        <p>The card on file is only charged in two situations, and both are spelled out clearly before they happen:</p>
+        <ol class="cp__bullets cp__bullets--ordered">
+          <li>
+            <strong>You cancel within 24 hours of your appointment.</strong>{' '}
+            If you go to <a class="link-gold" href={`${base}/my-bookings`}>My Bookings</a>{' '}
+            and cancel inside the 24-hour window, you'll see a clear warning that
+            says your card will be charged the full service price. You have to
+            tap "Yes — cancel &amp; charge" to confirm. Tap "Keep it" and nothing
+            happens.
+          </li>
+          <li>
+            <strong>You don't show up for your appointment.</strong>{' '}
+            If you miss your appointment without cancelling, the shop owner may
+            mark you as a no-show. The card on file is then charged the full
+            service price. This is a manual decision — Michael reviews each
+            no-show before charging.
+          </li>
+        </ol>
+        <p>
+          <strong>There is no automatic billing.</strong> Every charge is a
+          deliberate action — either by you (accepting the late-cancel charge)
+          or by the shop owner (marking a no-show after the fact).
+        </p>
+      </section>
+
+      <section class="cp__section">
+        <h2>Reschedules</h2>
+        <p>
+          Reschedules outside the 24-hour window are free and self-serve — visit{' '}
+          <a class="link-gold" href={`${base}/my-bookings`}>My Bookings</a>{' '}
+          and tap "Reschedule". Inside the 24-hour window, please call the shop
+          at <a class="link-gold" href="tel:+17402974462">740-297-4462</a> so we
+          can work it out together.
+        </p>
+      </section>
+
+      <section class="cp__section">
+        <h2>Refunds &amp; disputes</h2>
+        <p>
+          If you believe a charge was made in error — for example, you cancelled
+          well outside 24 hours and were still charged — call the shop at{' '}
+          <a class="link-gold" href="tel:+17402974462">740-297-4462</a> or email{' '}
+          <a class="link-gold" href="mailto:modernclassicbarbershop@protonmail.com">
+            modernclassicbarbershop@protonmail.com
+          </a>. Refunds are processed through Square and typically reach your
+          card within 5–10 business days.
+        </p>
+      </section>
+
+      <section class="cp__section">
+        <h2>Special circumstances</h2>
+        <p>
+          Life happens. If you're dealing with an emergency, illness, or anything
+          else genuinely outside your control and need to cancel inside the 24-hour
+          window, please call us directly. We'd much rather hear from you and
+          work something out than charge a card.
+        </p>
+      </section>
+
+      <div class="cp__footer">
+        <p>
+          Questions? Call us at{' '}
+          <a class="link-gold" href="tel:+17402974462">740-297-4462</a>{' '}
+          or stop by 819 Linden Avenue, Zanesville.
+        </p>
+        <p class="cp__footer-meta">
+          Last updated: November 2025 ·
+          <a class="link-gold" href={`${base}/book`}>Book an appointment</a>
+        </p>
+      </div>
+    </article>
+  </main>
+  <Footer />
+</BaseLayout>
+
+<style>
+  .cp-page {
+    background: var(--color-bg);
+    color: var(--color-text);
+    min-height: 100vh;
+  }
+  .cp {
+    max-width: 48rem;
+    margin: 0 auto;
+    padding: clamp(2.5rem, 6vw, 5rem) clamp(1.25rem, 4vw, 2rem) clamp(3rem, 8vw, 6rem);
+  }
+
+  .cp__head {
+    margin-bottom: clamp(2rem, 5vw, 3rem);
+    padding-bottom: clamp(1.5rem, 4vw, 2.5rem);
+    border-bottom: 1px solid var(--color-border-soft, var(--color-border));
+  }
+  .cp__eyebrow {
+    font-family: var(--font-body);
+    font-size: 0.78rem;
+    font-weight: 600;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--color-gold);
+    margin: 0 0 0.75rem;
+  }
+  .cp__head h1 {
+    font-family: var(--font-display, Georgia, serif);
+    font-size: clamp(1.85rem, 4.5vw, 2.6rem);
+    font-weight: 400;
+    line-height: 1.15;
+    margin: 0 0 1rem;
+    color: var(--color-text);
+  }
+  .cp__lede {
+    margin: 0;
+    font-size: 1.05rem;
+    line-height: 1.6;
+    color: var(--color-text-muted);
+    max-width: 36rem;
+  }
+
+  .cp__section {
+    margin-top: clamp(2rem, 4vw, 2.75rem);
+  }
+  .cp__section h2 {
+    font-family: var(--font-display, Georgia, serif);
+    font-size: 1.35rem;
+    font-weight: 400;
+    margin: 0 0 0.75rem;
+    color: var(--color-text);
+    letter-spacing: 0.01em;
+  }
+  .cp__section p {
+    margin: 0 0 0.85rem;
+    font-size: 1rem;
+    line-height: 1.65;
+    color: var(--color-text-muted);
+  }
+  .cp__section p:last-child { margin-bottom: 0; }
+  .cp__section strong { color: var(--color-text); }
+
+  .cp__section--highlight {
+    margin-top: clamp(1.5rem, 4vw, 2rem);
+    padding: clamp(1.25rem, 3vw, 1.75rem);
+    background: linear-gradient(180deg, rgba(201, 163, 92, 0.10), rgba(201, 163, 92, 0.04));
+    border: 1px solid var(--color-gold);
+    border-left-width: 3px;
+    border-radius: 4px;
+  }
+  .cp__section--highlight h2 {
+    font-size: 1.15rem;
+    color: var(--color-gold);
+    text-transform: uppercase;
+    letter-spacing: 0.18em;
+    font-family: var(--font-body);
+    font-weight: 600;
+    margin-bottom: 1rem;
+  }
+
+  .cp__short,
+  .cp__bullets {
+    list-style: disc;
+    padding-left: 1.4rem;
+    margin: 0.5rem 0 0;
+    color: var(--color-text-muted);
+    line-height: 1.6;
+  }
+  .cp__bullets--ordered { list-style: decimal; }
+  .cp__short li,
+  .cp__bullets li {
+    margin-bottom: 0.6rem;
+  }
+  .cp__short li:last-child,
+  .cp__bullets li:last-child { margin-bottom: 0; }
+
+  .cp__footer {
+    margin-top: clamp(2.5rem, 5vw, 3.5rem);
+    padding-top: clamp(1.5rem, 4vw, 2rem);
+    border-top: 1px solid var(--color-border-soft, var(--color-border));
+    color: var(--color-text-muted);
+    font-size: 0.95rem;
+    line-height: 1.6;
+  }
+  .cp__footer p { margin: 0 0 0.5rem; }
+  .cp__footer-meta {
+    color: var(--color-text-dim);
+    font-size: 0.85rem;
+    margin-top: 0.75rem;
+  }
+  .cp__footer-meta a { margin-left: 0.4rem; }
+</style>

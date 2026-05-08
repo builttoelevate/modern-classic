@@ -85,9 +85,6 @@ dist
 
 # Gatsby files
 .cache/
-# Comment in the public line in if your project uses Gatsby and not Next.js
-# https://nextjs.org/blog/next-9-1#public-directory-support
-# public
 
 # vuepress build output
 .vuepress/dist
@@ -149,3 +146,18 @@ vite.config.ts.timestamp-*
 modern-classic-fb/
 
 .vercel/
+flyer-shots/
+
+# Local Claude Code state (project-specific session/scheduler files)
+.claude/
+
+# Live Square API tokens — NEVER commit
+square tokens.txt
+square*tokens*.txt
+
+# Local one-off scripts (test seeders, cleanups). Add specific ones
+# back if you decide they belong in the repo.
+scripts/
+
+# Stray output of `less > on` etc.
+on

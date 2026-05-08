@@ -7,11 +7,13 @@ export type BookingPhase =
   | 'use-existing-customer'
   | 'use-session-customer'
   | 'session-customer-missing-fallback'
+  | 'existing-customer-forbidden'
   | 'create-booking'
   | 'success'
   | 'validation-failed'
   | 'square-error'
-  | 'unexpected-error';
+  | 'unexpected-error'
+  | 'marketing-consent';
 
 interface LogPayload {
   phase: BookingPhase;

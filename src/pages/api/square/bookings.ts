@@ -1,10 +1,13 @@
 import type { APIRoute } from 'astro';
 import { SquareApiError } from '../../../lib/square/client';
-import { findOrCreateCustomer, getCustomerById } from '../../../lib/square/customers';
+import { findOrCreateCustomer, getCustomerById, type MarketingConsentDecision } from '../../../lib/square/customers';
 import { createBooking } from '../../../lib/square/bookings';
 import { bookingIdempotencyKey } from '../../../lib/booking/idempotency';
 import { customerInitials, logBooking, redactEmail } from '../../../lib/booking/log';
 import { getSession } from '../../../lib/auth/middleware';
+import { listLinkedPeople } from '../../../lib/customer/profileLinks';
+import { createBookingCardRecord } from '../../../lib/booking/cardIndex';
+import { getCard } from '../../../lib/square/cards';
 import type {
   CreateBookingFailure,
   CreateBookingRequest,
@@ -151,9 +154,51 @@ export const POST: APIRoute = async ({ request }) => {
     //      (no SMS opt-in, missing from /my-bookings).
     //   3. findOrCreateCustomer — true guest checkout, match-by-email.
     let resolvedCustomerId: string;
-    let marketingDecisionLabel: string;
+    // Promise carrying the eventual marketing-consent decision. Resolves
+    // immediately to a noop for branches that don't apply consent (we
+    // only collect it in the guest checkout / new-customer paths). We
+    // race this against createBooking() so the response is ready as soon
+    // as Square confirms the booking — no waiting on the slower CA API.
+    let marketingDecisionPromise: Promise<MarketingConsentDecision> = Promise.resolve({
+      kind: 'noop',
+      reason: 'no-signal',
+    });
     if (payload.existingCustomerId && payload.existingCustomerId.trim().length > 0) {
-      const verified = await getCustomerById(payload.existingCustomerId.trim());
+      const requestedId = payload.existingCustomerId.trim();
+      // existingCustomerId is reserved for the "Booking for" feature
+      // (parent booking on behalf of a linked person). It REQUIRES a
+      // session and the requested id MUST belong to the signed-in
+      // customer themselves OR to one of their linked people. Without
+      // this, an unauthenticated guest could supply any known Square
+      // customer id and book under it.
+      if (!session) {
+        return fail(401, 'UNAUTHENTICATED', 'Booking under an existing customer requires sign-in.');
+      }
+      let permitted = requestedId === session.customerId;
+      if (!permitted) {
+        try {
+          const linked = await listLinkedPeople(session.customerId);
+          permitted = linked.some((p) => p.customerId === requestedId);
+        } catch {
+          // KV outage — refuse rather than leak booking rights on a
+          // transient failure. The signed-in customer can retry.
+          permitted = false;
+        }
+      }
+      if (!permitted) {
+        logBooking({
+          phase: 'existing-customer-forbidden',
+          attemptId,
+          customerInitials: initials,
+          customerId: requestedId,
+        });
+        return fail(
+          403,
+          'FORBIDDEN',
+          'You can only book under your own account or a linked person on your profile.',
+        );
+      }
+      const verified = await getCustomerById(requestedId);
       if (!verified) {
         return Response.json(
           {
@@ -164,7 +209,6 @@ export const POST: APIRoute = async ({ request }) => {
         );
       }
       resolvedCustomerId = verified.id;
-      marketingDecisionLabel = 'noop';
       logBooking({
         phase: 'use-existing-customer',
         attemptId,
@@ -175,7 +219,6 @@ export const POST: APIRoute = async ({ request }) => {
       const verified = await getCustomerById(session.customerId);
       if (verified) {
         resolvedCustomerId = verified.id;
-        marketingDecisionLabel = 'noop';
         logBooking({
           phase: 'use-session-customer',
           attemptId,
@@ -196,14 +239,13 @@ export const POST: APIRoute = async ({ request }) => {
           marketingConsentSource: 'booking_flow_step_4',
         });
         resolvedCustomerId = findOrCreate.customer.id;
-        marketingDecisionLabel = findOrCreate.marketingDecision.kind;
+        marketingDecisionPromise = findOrCreate.marketingDecisionPromise;
         logBooking({
           phase: 'session-customer-missing-fallback',
           attemptId,
           customerEmail: redactEmail(payload.customer.email),
           customerInitials: initials,
           customerId: resolvedCustomerId,
-          marketingDecision: marketingDecisionLabel,
         });
       }
     } else {
@@ -217,7 +259,7 @@ export const POST: APIRoute = async ({ request }) => {
         marketingConsentSource: 'booking_flow_step_4',
       });
       resolvedCustomerId = findOrCreate.customer.id;
-      marketingDecisionLabel = findOrCreate.marketingDecision.kind;
+      marketingDecisionPromise = findOrCreate.marketingDecisionPromise;
 
       logBooking({
         phase: 'find-or-create-customer',
@@ -226,20 +268,39 @@ export const POST: APIRoute = async ({ request }) => {
         customerInitials: initials,
         customerId: resolvedCustomerId,
         marketingConsent: payload.customer.marketingConsent === true,
-        marketingDecision: marketingDecisionLabel,
       });
     }
 
-    const booking = await createBooking({
-      startAtUtc: payload.slot.startAtUtc,
-      customerId: resolvedCustomerId,
-      serviceVariationId: payload.service.variationId,
-      serviceVariationVersion: payload.service.version,
-      teamMemberId: payload.barber.id,
-      durationMinutes: payload.service.durationMinutes,
-      customerNote: payload.customer.note,
-      idempotencyKey,
-    });
+    // Run the booking creation and marketing consent application in
+    // parallel. applyMarketingConsent never throws (failures resolve to
+    // { kind: 'failed' }), so this is safe; the booking is the critical
+    // path and consent is best-effort metadata.
+    const [booking, marketingDecision] = await Promise.all([
+      createBooking({
+        startAtUtc: payload.slot.startAtUtc,
+        customerId: resolvedCustomerId,
+        serviceVariationId: payload.service.variationId,
+        serviceVariationVersion: payload.service.version,
+        teamMemberId: payload.barber.id,
+        durationMinutes: payload.service.durationMinutes,
+        customerNote: payload.customer.note,
+        idempotencyKey,
+      }),
+      marketingDecisionPromise.catch(
+        (err): MarketingConsentDecision => ({
+          kind: 'failed',
+          reason: err instanceof Error ? err.message : String(err),
+        }),
+      ),
+    ]);
+    if (marketingDecision.kind !== 'noop' || marketingDecision.reason !== 'no-signal') {
+      logBooking({
+        phase: 'marketing-consent',
+        attemptId,
+        customerId: resolvedCustomerId,
+        marketingDecision: marketingDecision.kind,
+      });
+    }
 
     logBooking({
       phase: 'success',
@@ -252,6 +313,105 @@ export const POST: APIRoute = async ({ request }) => {
       customerId: resolvedCustomerId,
       durationMs: Date.now() - startedAt,
     });
+
+    // Persist the {booking → card-on-file} mapping when this is a
+    // new-customer booking with a captured card. KV failure must NOT
+    // fail the booking — the appointment already exists in Square; the
+    // worst outcome of a missing index entry is that we can't charge
+    // for a no-show / late-cancel later. Log loudly so it's visible.
+    //
+    // The cardId presence — not the amount — is the trigger here. A
+    // captured card with a zero/negative amount is a bug: someone got
+    // through Step 4.5 without us knowing the price. Write the record
+    // with the price we *do* have (clamped to zero, so a stray no-show
+    // attempt produces an obvious $0 line in the audit log) and shout
+    // about it so admin sees the warning.
+    if (payload.cardOnFile?.cardId) {
+      const amountCents =
+        typeof payload.cardOnFile.amountCents === 'number' && payload.cardOnFile.amountCents > 0
+          ? payload.cardOnFile.amountCents
+          : 0;
+      if (amountCents === 0) {
+        // eslint-disable-next-line no-console
+        console.log(
+          `[BOOK] ${JSON.stringify({
+            ts: new Date().toISOString(),
+            phase: 'card-index-zero-amount',
+            bookingId: booking.id,
+            customerId: resolvedCustomerId,
+            cardId: payload.cardOnFile.cardId,
+            note: 'New-customer booking captured a card but amountCents was missing or non-positive — admin should reach out before relying on the no-show charge for this booking.',
+          })}`,
+        );
+      }
+
+      // Verify the card actually belongs to the resolved customer
+      // BEFORE writing the KV record. Without this, a hostile or buggy
+      // client could pass a cardId that belongs to a different customer
+      // — the KV record would then later try to charge that card "on
+      // behalf of" the wrong person. Square's createPayment would
+      // reject it eventually, but we'd be left with a contaminated
+      // index entry and confusing admin behavior. Better to refuse the
+      // index write up-front and log loudly.
+      let cardOwnershipVerified = false;
+      try {
+        const card = await getCard(payload.cardOnFile.cardId);
+        cardOwnershipVerified = !!card && card.customer_id === resolvedCustomerId;
+        if (!cardOwnershipVerified) {
+          // eslint-disable-next-line no-console
+          console.log(
+            `[BOOK] ${JSON.stringify({
+              ts: new Date().toISOString(),
+              phase: 'card-ownership-mismatch',
+              bookingId: booking.id,
+              customerId: resolvedCustomerId,
+              cardId: payload.cardOnFile.cardId,
+              cardCustomerId: card?.customer_id ?? null,
+              note: 'cardOnFile.cardId does not belong to the resolved customer — refusing to write KV index. Booking succeeded; no card on file for late-cancel/no-show.',
+            })}`,
+          );
+        }
+      } catch (cardErr) {
+        const detail = cardErr instanceof Error ? cardErr.message : String(cardErr);
+        // eslint-disable-next-line no-console
+        console.log(
+          `[BOOK] ${JSON.stringify({
+            ts: new Date().toISOString(),
+            phase: 'card-ownership-check-failed',
+            bookingId: booking.id,
+            customerId: resolvedCustomerId,
+            cardId: payload.cardOnFile.cardId,
+            detail,
+          })}`,
+        );
+      }
+
+      if (cardOwnershipVerified) {
+        try {
+          await createBookingCardRecord({
+            bookingId: booking.id,
+            squareCustomerId: resolvedCustomerId,
+            squareCardId: payload.cardOnFile.cardId,
+            servicePriceCents: amountCents,
+            serviceName: payload.service.name,
+            startAtUtc: booking.start_at,
+          });
+        } catch (kvErr) {
+          const detail = kvErr instanceof Error ? kvErr.message : String(kvErr);
+          // eslint-disable-next-line no-console
+          console.log(
+            `[BOOK] ${JSON.stringify({
+              ts: new Date().toISOString(),
+              phase: 'card-index-write-failed',
+              bookingId: booking.id,
+              customerId: resolvedCustomerId,
+              cardId: payload.cardOnFile.cardId,
+              detail,
+            })}`,
+          );
+        }
+      }
+    }
 
     const success: CreateBookingSuccess = {
       ok: true,

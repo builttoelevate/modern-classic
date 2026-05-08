@@ -160,6 +160,13 @@ Astro.response.headers.append('Set-Cookie', refreshSessionCookie(session));
       </div>
     </div>
 
+    <p class="mb-head__policy">
+      Need to cancel or reschedule? See our
+      <a class="link-gold" href={`${base}/cancellation-policy`}>
+        cancellation &amp; no-show policy
+      </a> &mdash; in short, 24-hour notice avoids any charge.
+    </p>
+
     {loadError ? (
       <div class="mb-empty">
         <p>We couldn't load your bookings right now. Please try again in a moment, or call us at <a class="link-gold" href="tel:+17402974462">740-297-4462</a>.</p>

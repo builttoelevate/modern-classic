@@ -24,6 +24,29 @@ export interface CustomerInfo {
   marketingConsent: boolean;
 }
 
+/** Card-capture step (Step 4.5) — only relevant for new customers. */
+export interface CardCaptureState {
+  /** null = not yet evaluated, true = wizard must show Step 4.5,
+   *  false = customer is returning, skip the step entirely. */
+  required: boolean | null;
+  /** Square customer_id resolved by /api/booking/check-new-customer.
+   *  Used both for /api/booking/save-card AND as existingCustomerId on
+   *  the final POST /api/square/bookings call. */
+  customerId: string | null;
+  /** Saved card_id from /api/booking/save-card. Present after the user
+   *  successfully tokenizes a card on Step 4.5. */
+  cardId: string | null;
+  /** Charge amount in cents — service price snapshot taken at the time
+   *  the card is saved. Used to prefill the policy callout and as the
+   *  charge amount for late-cancel / no-show. */
+  amountCents: number | null;
+  /** Visible last-4 / brand for the post-capture confirmation row. */
+  cardLast4: string | null;
+  cardBrand: string | null;
+  /** Customer ticked the "I understand my card will be charged…" box. */
+  acknowledgedPolicy: boolean;
+}
+
 export interface WizardState {
   step: WizardStep;
   selectedService: Service | null;
@@ -50,6 +73,8 @@ export interface WizardState {
   blockedSlots: string[];
   customer: CustomerInfo;
   status: WizardStatus;
+  /** Phase 8 — card-on-file capture for new customers. */
+  cardCapture: CardCaptureState;
 }
 
 export const initialCustomer: CustomerInfo = {
@@ -60,6 +85,16 @@ export const initialCustomer: CustomerInfo = {
   note: '',
   updateContact: false,
   marketingConsent: false,
+};
+
+export const initialCardCapture: CardCaptureState = {
+  required: null,
+  customerId: null,
+  cardId: null,
+  amountCents: null,
+  cardLast4: null,
+  cardBrand: null,
+  acknowledgedPolicy: false,
 };
 
 export const initialState: WizardState = {
@@ -73,6 +108,7 @@ export const initialState: WizardState = {
   blockedSlots: [],
   customer: initialCustomer,
   status: { kind: 'idle' },
+  cardCapture: initialCardCapture,
 };
 
 export type WizardAction =
@@ -87,6 +123,13 @@ export type WizardAction =
   | { type: 'NEXT' }
   | { type: 'BACK' }
   | { type: 'STATUS'; status: WizardStatus }
+  | { type: 'UPDATE_CARD_CAPTURE'; patch: Partial<CardCaptureState> }
+  /** Wipes every cardCapture field back to its initial value. Used
+   *  when something invalidates the captured card — email/phone change
+   *  (now a different person), or a Booking-for switch to a linked
+   *  person. Without a full reset, a leftover cardId from one customer
+   *  would silently get attached to a different customer's booking. */
+  | { type: 'RESET_CARD_CAPTURE'; required?: boolean | null }
   | { type: 'RESET' };
 
 export function reducer(state: WizardState, action: WizardAction): WizardState {
@@ -197,6 +240,16 @@ export function reducer(state: WizardState, action: WizardAction): WizardState {
       return { ...state, step: (state.step - 1) as WizardStep };
     case 'STATUS':
       return { ...state, status: action.status };
+    case 'UPDATE_CARD_CAPTURE':
+      return { ...state, cardCapture: { ...state.cardCapture, ...action.patch } };
+    case 'RESET_CARD_CAPTURE':
+      return {
+        ...state,
+        cardCapture: {
+          ...initialCardCapture,
+          required: action.required === undefined ? null : action.required,
+        },
+      };
     case 'RESET':
       return initialState;
   }

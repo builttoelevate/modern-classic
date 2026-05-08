@@ -1646,3 +1646,102 @@
 .bw-card.bw-card--group:focus-visible .bw-card-cta {
   color: var(--color-gold-light);
 }
+
+/* ---------- Step 4.5 — new-customer card capture ---------- */
+.bw-cardstep .bw-step-head { margin-bottom: var(--space-4); }
+
+.bw-cardstep-policy {
+  margin-bottom: var(--space-4);
+  padding: var(--space-4);
+  background: linear-gradient(180deg, rgba(201, 163, 92, 0.10), rgba(201, 163, 92, 0.04));
+  border: 1px solid var(--color-gold);
+  border-left-width: 3px;
+  border-radius: var(--radius-sm);
+  color: var(--color-text-muted);
+  font-size: 0.95rem;
+  line-height: 1.55;
+}
+.bw-cardstep-policy strong {
+  display: inline-block;
+  color: var(--color-text);
+  font-family: var(--font-display, Georgia, serif);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  margin-bottom: 0.35rem;
+}
+.bw-cardstep-policy p { margin: 0; }
+.bw-cardstep-policy p strong { display: inline; font-family: inherit; margin: 0; letter-spacing: 0; color: var(--color-text); }
+
+.bw-cardstep-saved {
+  margin-bottom: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  background: rgba(122, 184, 110, 0.08);
+  border: 1px solid rgba(122, 184, 110, 0.35);
+  border-radius: var(--radius-sm);
+  color: var(--color-text);
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: 0.95rem;
+}
+.bw-cardstep-saved__check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  background: rgba(122, 184, 110, 0.25);
+  color: #a4d091;
+  font-weight: 700;
+}
+
+.bw-cardstep-form {
+  margin-bottom: var(--space-4);
+  padding: var(--space-3);
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+}
+.bw-cardstep-form__field {
+  min-height: 54px;
+}
+.bw-cardstep-form__hint {
+  margin: 0.5rem 0 0;
+  color: var(--color-text-muted);
+  font-size: 0.85rem;
+}
+
+.bw-cardstep-ack {
+  display: flex;
+  gap: 0.6rem;
+  align-items: flex-start;
+  margin-bottom: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-muted);
+  font-size: 0.92rem;
+  line-height: 1.5;
+  cursor: pointer;
+}
+.bw-cardstep-ack input { margin-top: 0.2rem; cursor: pointer; }
+
+.bw-policy.bw-policy--charge {
+  border-left-color: var(--color-gold);
+  background: rgba(201, 163, 92, 0.06);
+}
+
+/* ---------- "Read the full policy" CTA inside .bw-policy ---------- */
+.bw-policy__cta {
+  margin-top: 0.6rem;
+  font-size: 0.88rem;
+}
+.bw-policy__cta a { letter-spacing: 0.02em; }
+
+.bw-cardstep-policy__link {
+  margin-top: 0.6rem !important;
+  margin-bottom: 0 !important;
+  font-size: 0.88rem;
+}

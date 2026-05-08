@@ -6,6 +6,7 @@ import { getBarbers } from '../../lib/square/team';
 import { getServices } from '../../lib/square/catalog';
 import { checkBasicAuth } from '../../lib/admin/auth';
 import { SquareApiError } from '../../lib/square/client';
+import { getBookingCardRecords, type BookingCardRecord } from '../../lib/booking/cardIndex';
 import type { Booking } from '../../lib/square/types';
 
 const auth = checkBasicAuth(Astro.request);
@@ -15,6 +16,7 @@ if (!auth.ok) {
 
 let bookings: Booking[] = [];
 let loadError: string | null = null;
+let cardRecords = new Map<string, BookingCardRecord>();
 const barberNames = new Map<string, string>();
 const serviceNames = new Map<string, string>();
 
@@ -29,12 +31,42 @@ try {
   for (const s of services) {
     for (const v of s.variations) serviceNames.set(v.id, s.name);
   }
+  // Hydrate the card-on-file index so we know which rows are eligible
+  // for the "Mark no-show & charge" action. KV failure is non-fatal —
+  // the rows just render without the action button.
+  try {
+    cardRecords = await getBookingCardRecords(bookings.map((b) => b.id));
+  } catch {
+    cardRecords = new Map();
+  }
 } catch (err) {
   if (err instanceof SquareApiError) {
     loadError = `${err.code}: ${err.detail}`;
   } else {
     loadError = err instanceof Error ? err.message : 'Unknown error';
   }
+}
+
+function describeChargeStatus(record: BookingCardRecord | undefined): string {
+  if (!record) return '';
+  if (record.chargeStatus === 'pending') return 'Card on file';
+  if (record.chargeStatus === 'late-cancel')
+    return `Late-cancel charged $${(record.servicePriceCents / 100).toFixed(2)}`;
+  if (record.chargeStatus === 'no-show')
+    return `No-show charged $${(record.servicePriceCents / 100).toFixed(2)}`;
+  if (record.chargeStatus === 'failed')
+    return `Charge failed — ${record.chargeFailureReason ?? 'unknown'}`;
+  return '';
+}
+
+function canChargeNoShow(b: Booking, record: BookingCardRecord | undefined): boolean {
+  if (!record) return false;
+  if (record.chargeStatus !== 'pending' && record.chargeStatus !== 'failed') return false;
+  // Only past appointments. Square doesn't expose a precise no-show
+  // mutation in the Bookings API, so we want at least the slot to have
+  // started before Michael decides someone didn't show up.
+  if (!b.start_at) return false;
+  return new Date(b.start_at).getTime() < Date.now();
 }
 
 function fmt(utc: string | undefined): string {
@@ -142,6 +174,40 @@ const sortedBookings = [...bookings].sort((a, b) => (b.start_at ?? '').localeCom
       .meta { color: var(--dim); font-family: ui-monospace, Menlo, monospace; font-size: 0.8rem; }
       a { color: var(--gold); text-decoration: none; }
       a:hover { text-decoration: underline; }
+
+      .charge-tag {
+        display: inline-block;
+        font-size: 0.78rem;
+        font-weight: 600;
+        letter-spacing: 0.04em;
+        padding: 2px 8px;
+        border-radius: 999px;
+      }
+      .charge-tag--none       { color: var(--dim); }
+      .charge-tag--pending    { background: rgba(201, 163, 92, 0.15); color: var(--gold); }
+      .charge-tag--late-cancel{ background: rgba(122, 184, 110, 0.15); color: #a4d091; }
+      .charge-tag--no-show    { background: rgba(122, 184, 110, 0.15); color: #a4d091; }
+      .charge-tag--failed     { background: rgba(220, 80, 60, 0.15); color: #f0a37a; }
+
+      .charge-btn {
+        display: inline-block;
+        margin-top: 6px;
+        padding: 6px 10px;
+        background: transparent;
+        color: var(--gold);
+        border: 1px solid var(--gold);
+        border-radius: 4px;
+        font-family: inherit;
+        font-size: 0.78rem;
+        font-weight: 600;
+        letter-spacing: 0.04em;
+        cursor: pointer;
+      }
+      .charge-btn:hover:not(:disabled) {
+        background: var(--gold);
+        color: var(--bg);
+      }
+      .charge-btn:disabled { opacity: 0.5; cursor: not-allowed; }
     </style>
   </head>
   <body>
@@ -172,6 +238,7 @@ const sortedBookings = [...bookings].sort((a, b) => (b.start_at ?? '').localeCom
               <th>Service</th>
               <th>Barber</th>
               <th>Customer</th>
+              <th>Card / charge</th>
               <th>Booking</th>
             </tr>
           </thead>
@@ -180,13 +247,34 @@ const sortedBookings = [...bookings].sort((a, b) => (b.start_at ?? '').localeCom
               const seg = b.appointment_segments?.[0];
               const svc = seg ? (serviceNames.get(seg.service_variation_id) ?? '—') : '—';
               const barber = seg ? (barberNames.get(seg.team_member_id) ?? '—') : '—';
+              const record = cardRecords.get(b.id);
+              const chargeLabel = describeChargeStatus(record);
+              const canCharge = canChargeNoShow(b, record);
               return (
-                <tr>
+                <tr data-booking-id={b.id}>
                   <td>{fmt(b.start_at)}</td>
                   <td><span class={`pill ${statusClass(b.status)}`}>{b.status.replace(/_/g, ' ')}</span></td>
                   <td>{svc}</td>
                   <td>{barber}</td>
                   <td class="meta">{b.customer_id ?? '—'}</td>
+                  <td>
+                    {chargeLabel ? (
+                      <span class={`charge-tag charge-tag--${record?.chargeStatus ?? 'none'}`}>{chargeLabel}</span>
+                    ) : (
+                      <span class="charge-tag charge-tag--none">—</span>
+                    )}
+                    {canCharge && (
+                      <button
+                        type="button"
+                        class="charge-btn"
+                        data-charge-action
+                        data-booking-id={b.id}
+                        data-amount-cents={record!.servicePriceCents}
+                      >
+                        Mark no-show &amp; charge ${(record!.servicePriceCents / 100).toFixed(2)}
+                      </button>
+                    )}
+                  </td>
                   <td class="meta">{b.id}</td>
                 </tr>
               );
@@ -195,5 +283,55 @@ const sortedBookings = [...bookings].sort((a, b) => (b.start_at ?? '').localeCom
         </table>
       )}
     </div>
+
+    <script is:inline>
+      (function () {
+        const buttons = document.querySelectorAll('button[data-charge-action]');
+        buttons.forEach((btn) => {
+          btn.addEventListener('click', async () => {
+            const bookingId = btn.getAttribute('data-booking-id');
+            const amountCents = parseInt(btn.getAttribute('data-amount-cents') || '0', 10);
+            if (!bookingId) return;
+            const dollars = (amountCents / 100).toFixed(2);
+            const ok = window.confirm(
+              'Mark this customer NO-SHOW and charge $' + dollars + ' to their card on file?\n\n' +
+              'This will:\n' +
+              '  • Cancel the Square booking\n' +
+              '  • Charge the saved card the full service price\n\n' +
+              'There is no automatic refund — refunds are handled in Square.',
+            );
+            if (!ok) return;
+            btn.disabled = true;
+            const originalLabel = btn.textContent;
+            btn.textContent = 'Charging…';
+            try {
+              const res = await fetch('/api/admin/bookings/no-show-charge', {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ bookingId: bookingId }),
+              });
+              const data = await res.json();
+              if (!res.ok || !data.ok) {
+                window.alert('Failed: ' + ((data && data.error && data.error.detail) || res.statusText));
+                btn.disabled = false;
+                btn.textContent = originalLabel;
+                return;
+              }
+              if (data.chargeFailed) {
+                window.alert('Booking cancelled, but card charge failed:\n' + data.chargeFailed.detail + '\n\nYou may need to contact the customer or retry from Square.');
+              } else {
+                window.alert('No-show charge complete. Square payment id: ' + (data.paymentId || '(n/a)'));
+              }
+              window.location.reload();
+            } catch (err) {
+              window.alert('Network error — try again.');
+              btn.disabled = false;
+              btn.textContent = originalLabel;
+            }
+          });
+        });
+      })();
+    </script>
   </body>
 </html>

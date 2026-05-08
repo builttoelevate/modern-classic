@@ -218,6 +218,12 @@ export const POST: APIRoute = async ({ request }) => {
         });
         parentCustomerId = found.customer.id;
         parentPhone = v.parent.phone;
+        // Group flow doesn't expose a marketing-consent toggle; the
+        // promise resolves to a noop and we don't need to wait on it.
+        // The remaining group work (per-member createBooking calls)
+        // takes long enough that the background promise will finish
+        // before the response is sent.
+        void found.marketingDecisionPromise;
       }
     } else {
       const found = await findOrCreateCustomer({
@@ -228,6 +234,7 @@ export const POST: APIRoute = async ({ request }) => {
       });
       parentCustomerId = found.customer.id;
       parentPhone = v.parent.phone;
+      void found.marketingDecisionPromise;
     }
   } catch (err) {
     if (err instanceof SquareApiError) {

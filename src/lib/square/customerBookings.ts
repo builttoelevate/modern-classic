@@ -9,6 +9,7 @@ import { squareFetch } from './client';
 import { MODERN_CLASSIC_LOCATION_ID } from './locations';
 import { getServices } from './catalog';
 import { getBarbers } from './team';
+import { getBookingCardRecords } from '../booking/cardIndex';
 import type {
   Barber,
   Booking,
@@ -44,6 +45,13 @@ export interface BookingDetail {
    * rather than the signed-in customer themselves, the linked person's
    * display name. The /my-bookings UI uses this to tag the row "for X". */
   bookingFor?: string;
+  /** When true, this booking was created with a card on file (the
+   *  customer was new at booking time). Drives the late-cancel charge
+   *  warning modal in My Bookings. */
+  hasCardOnFile?: boolean;
+  /** Charge amount in cents the customer would owe if they late-cancel
+   *  or no-show. Only set when hasCardOnFile === true. */
+  chargeAmountCents?: number;
 }
 
 export interface CustomerBookings {
@@ -212,6 +220,24 @@ export async function getCustomerBookings(customerId: string): Promise<CustomerB
 
   upcoming.sort((a, b) => new Date(a.startAtUtc).getTime() - new Date(b.startAtUtc).getTime());
   past.sort((a, b) => new Date(b.startAtUtc).getTime() - new Date(a.startAtUtc).getTime());
+
+  // Hydrate card-on-file flags for upcoming bookings only — past ones
+  // don't drive any UI that depends on the card. KV failure must not
+  // blank the bookings list; just leave the flags unset.
+  if (upcoming.length > 0) {
+    try {
+      const cardRecords = await getBookingCardRecords(upcoming.map((u) => u.id));
+      for (const u of upcoming) {
+        const r = cardRecords.get(u.id);
+        if (r && r.chargeStatus === 'pending') {
+          u.hasCardOnFile = true;
+          u.chargeAmountCents = r.servicePriceCents;
+        }
+      }
+    } catch {
+      // Silent — UI falls back to "call the shop" within 24h.
+    }
+  }
 
   return { upcoming, past };
 }

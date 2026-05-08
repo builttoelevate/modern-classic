@@ -232,6 +232,20 @@
   flex-wrap: wrap;
 }
 
+/* Late-cancel-with-charge variant — same layout, gold-highlighted to
+   make it visually distinct from the "we'll just cancel for free" copy
+   so a returning customer doesn't accidentally hit the wrong screen. */
+.mb-card__confirm--charge {
+  padding: 0.85rem 1rem;
+  border-left: 3px solid var(--color-gold, #c9a35c);
+  background: rgba(201, 163, 92, 0.08);
+  border-radius: 4px;
+}
+.mb-card__confirm--charge p strong { color: var(--color-text); }
+.mb-card__confirm-question {
+  font-weight: 600;
+}
+
 .mb-action-wrap { position: relative; display: inline-block; }
 
 .mb-btn {
@@ -749,3 +763,16 @@
   display: grid;
   gap: 1rem;
 }
+
+/* ---------- Cancellation-policy nudge in /my-bookings header ---------- */
+.mb-head__policy {
+  margin: -0.5rem 0 1.5rem;
+  padding: 0.7rem 1rem;
+  background: var(--color-surface-2, rgba(255,255,255,0.03));
+  border-left: 2px solid var(--color-gold, #c9a35c);
+  border-radius: 4px;
+  color: var(--color-text-muted);
+  font-size: 0.9rem;
+  line-height: 1.55;
+}
+.mb-head__policy a { font-weight: 500; }

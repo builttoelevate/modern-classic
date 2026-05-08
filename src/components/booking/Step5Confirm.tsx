@@ -16,6 +16,10 @@ interface Props {
   onEditCustomer: () => void;
   onUpdateContactToggle: (value: boolean) => void;
   rescheduleMode?: boolean;
+  /** When set, the customer captured a card on file in Step 4.5. We
+   *  surface it on the summary so they know what's being held, and we
+   *  swap the cancellation copy for the charge-aware version. */
+  cardOnFile?: { brand: string | null; last4: string | null } | null;
 }
 
 interface CustomerLookupResponse {
@@ -53,6 +57,7 @@ export function Step5Confirm({
   onConfirm,
   onUpdateContactToggle,
   rescheduleMode = false,
+  cardOnFile = null,
 }: Props) {
   const [existingContact, setExistingContact] = useState<{ phone?: string; givenName?: string; familyName?: string } | null>(null);
   const [calendarSheetOpen, setCalendarSheetOpen] = useState(false);
@@ -160,7 +165,7 @@ export function Step5Confirm({
               View My Bookings
             </a>
             {!rescheduleMode && (
-              <a className="bw-btn" href="/my-bookings">
+              <a className="bw-btn" href="/book">
                 Book another
               </a>
             )}
@@ -275,11 +280,40 @@ export function Step5Confirm({
         </div>
       )}
 
-      <div className="bw-policy">
-        <strong>Cancellation policy.</strong> We ask for 24-hour notice for cancellations or
-        reschedules. No-shows may be charged the full service price. To change this booking,
-        call us at <a className="link-gold" href="tel:+17402974462">740-297-4462</a>.
-      </div>
+      {cardOnFile && (
+        <div className="bw-summary-row">
+          <span className="bw-summary-label">Card on file</span>
+          <span className="bw-summary-value">
+            {cardOnFile.brand ?? 'Card'} ending in {cardOnFile.last4 ?? '••••'}
+          </span>
+        </div>
+      )}
+
+      {cardOnFile ? (
+        <div className="bw-policy bw-policy--charge">
+          <strong>First-time visitor cancellation policy.</strong> Your card is held only.
+          You will <strong>not</strong> be charged today. If you no-show or cancel within
+          24 hours of your appointment, your card will be charged the full service price.
+          To cancel earlier, use <a className="link-gold" href="/my-bookings">My Bookings</a>{' '}
+          or call us at <a className="link-gold" href="tel:+17402974462">740-297-4462</a>.
+          <div className="bw-policy__cta">
+            <a className="link-gold" href="/cancellation-policy" target="_blank" rel="noopener">
+              Read the full cancellation policy →
+            </a>
+          </div>
+        </div>
+      ) : (
+        <div className="bw-policy">
+          <strong>Cancellation policy.</strong> We ask for 24-hour notice for cancellations or
+          reschedules. No-shows may be charged the full service price. To change this booking,
+          call us at <a className="link-gold" href="tel:+17402974462">740-297-4462</a>.
+          <div className="bw-policy__cta">
+            <a className="link-gold" href="/cancellation-policy" target="_blank" rel="noopener">
+              Read the full cancellation policy →
+            </a>
+          </div>
+        </div>
+      )}
 
       {status.kind === 'error' && (
         <div className="bw-error" role="alert">

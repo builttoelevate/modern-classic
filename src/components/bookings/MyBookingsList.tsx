@@ -17,6 +17,12 @@ interface BookingsApiResponse {
 interface CancelApiResponse {
   ok: boolean;
   error?: { code: string; detail: string };
+  /** Echoed back when ok=true and the cancellation was inside the 24h
+   *  window with a card on file — carries the charge result so the UI
+   *  can show the right toast (success vs. card-declined). */
+  charge?:
+    | { ok: true; amountCents: number }
+    | { ok: false; detail: string };
 }
 
 type Tab = 'upcoming' | 'past';
@@ -48,20 +54,41 @@ export default function MyBookingsList({ initial, basePath }: Props) {
     }
   };
 
-  const handleCancel = async (booking: BookingDetail) => {
+  const handleCancel = async (booking: BookingDetail, acceptCharge: boolean) => {
     setBusyId(booking.id);
     try {
       // Content-Type: application/json keeps Astro's CSRF protection from
       // treating this bodyless POST as a cross-site form submission.
+      // When the user is inside the 24h window AND has a card on file,
+      // BookingCard sets acceptCharge=true after they tap the
+      // "Yes — cancel & charge" button on the warning modal. The server
+      // refuses any late-cancel that doesn't carry that flag.
       const res = await fetch(`/api/square/bookings/${encodeURIComponent(booking.id)}/cancel`, {
         method: 'POST',
         credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ acceptCharge }),
       });
       const data = (await res.json()) as CancelApiResponse;
       if (data.ok) {
-        setToast('Appointment cancelled.');
+        if (data.charge?.ok === true) {
+          setToast(
+            `Appointment cancelled. Card charged $${(data.charge.amountCents / 100).toFixed(2)}.`,
+          );
+        } else if (data.charge && data.charge.ok === false) {
+          setToast(
+            `Cancelled, but card charge failed: ${data.charge.detail}. The shop will follow up.`,
+          );
+        } else {
+          setToast('Appointment cancelled.');
+        }
         await refresh();
+      } else if (data.error?.code === 'CANCEL_REQUIRES_CHARGE_ACCEPT') {
+        // Should not reach here in normal use — BookingCard surfaces
+        // its modal before calling onCancel with acceptCharge=true.
+        // Fall through with a generic prompt so a stale tab doesn't
+        // silently swallow the click.
+        setToast('Within 24 hours — confirm the charge to cancel.');
       } else if (data.error?.code === 'TOO_LATE_TO_CANCEL') {
         setToast('Within 24 hours — please call the shop at 740-297-4462.');
         await refresh();
@@ -72,7 +99,7 @@ export default function MyBookingsList({ initial, basePath }: Props) {
       setToast('Network error. Please try again.');
     } finally {
       setBusyId(null);
-      setTimeout(() => setToast(null), 5000);
+      setTimeout(() => setToast(null), 7000);
     }
   };
 

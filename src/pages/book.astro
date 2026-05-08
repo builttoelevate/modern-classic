@@ -107,7 +107,24 @@ if (rescheduleId && !loadError) {
 
   try {
     const booking = await getBooking(rescheduleId);
-    if (!booking.customer_id || booking.customer_id !== session.customerId) {
+    // Ownership: signed-in customer themselves, OR one of their linked
+    // people (kids / group members). Mirrors the same check on the
+    // /api/square/bookings/reschedule endpoint — without this, parents
+    // see "doesn't belong to your account" when trying to reschedule a
+    // kid's booking from /my-bookings even though the API would accept
+    // the same action.
+    let allowed =
+      !!booking.customer_id && booking.customer_id === session.customerId;
+    if (!allowed && booking.customer_id) {
+      try {
+        const linked = await listLinkedPeople(session.customerId);
+        allowed = linked.some((p) => p.customerId === booking.customer_id);
+      } catch {
+        // KV hiccup — fall through to the deny branch below rather than
+        // leak rescheduling rights on a transient error.
+      }
+    }
+    if (!allowed) {
       rescheduleError = 'This booking does not belong to your account.';
     } else {
       const startMs = new Date(booking.start_at).getTime();

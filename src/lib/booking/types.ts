@@ -48,10 +48,27 @@ export interface CreateBookingRequest {
    * directly — skips the find-or-create-customer pass entirely. Used by
    * the "Booking for" selector so a parent booking on behalf of a child
    * (a real, separate Square Customer record) doesn't accidentally get
-   * the parent's record reused. The endpoint validates that the id
-   * exists before booking.
+   * the parent's record reused. Also set by the new-customer card-capture
+   * flow (Step 4.5), where /api/booking/check-new-customer has already
+   * created/located the customer record before the card was saved.
+   * The endpoint validates that the id exists before booking.
    */
   existingCustomerId?: string;
+  /**
+   * Card-on-file id from /api/booking/save-card. Only present for new
+   * customers who completed the card-capture step. When present, the
+   * booking endpoint persists a {bookingId → cardId} record in our KV
+   * store so the late-cancel and no-show charge flows can later look it
+   * up. Returning customers never send this.
+   */
+  cardOnFile?: {
+    cardId: string;
+    /** Charge amount in cents — the price they'd pay for the booking.
+     *  For VARIABLE_PRICING services we fall back to the service's min
+     *  price. The wizard computes this from the same Service / Variation
+     *  it already has loaded. */
+    amountCents: number;
+  };
 }
 
 export interface CreateBookingSuccess {

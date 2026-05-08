@@ -5,6 +5,7 @@ import { Step2BarberPicker } from './Step2BarberPicker';
 import { Step3DateTimePicker } from './Step3DateTimePicker';
 import { Step4CustomerInfo } from './Step4CustomerInfo';
 import { Step5Confirm } from './Step5Confirm';
+import { Step45CardCapture } from './Step45CardCapture';
 import {
   initialState as defaultInitialState,
   reducer,
@@ -75,6 +76,36 @@ function estimatedTimeRemaining(step: WizardStep): string {
     5: '15 sec',
   };
   return map[step];
+}
+
+function priceCentsForBooking(
+  service: Service | null,
+  variation: ServiceVariation | null,
+): number {
+  // Fixed-price variation: use it directly. Variable-price (or unknown):
+  // fall back to the service's max so the no-show charge represents the
+  // worst-case exposure rather than something arbitrarily small. If we
+  // somehow have nothing, fall back to $45 (Modern Classic's typical
+  // standard cut). The card-capture form surfaces this number in the
+  // policy callout so the customer always knows the ceiling.
+  if (variation?.priceCents !== null && variation?.priceCents !== undefined) {
+    return variation.priceCents;
+  }
+  if (service?.maxPriceCents !== null && service?.maxPriceCents !== undefined) {
+    return service.maxPriceCents;
+  }
+  if (service?.minPriceCents !== null && service?.minPriceCents !== undefined) {
+    return service.minPriceCents;
+  }
+  return 4500;
+}
+
+function priceDisplayForBooking(
+  service: Service | null,
+  variation: ServiceVariation | null,
+): string {
+  const cents = priceCentsForBooking(service, variation);
+  return `$${(cents / 100).toFixed(0)}`;
 }
 
 function buildPreselectInitialState(
@@ -233,6 +264,20 @@ export default function BookingWizard({
         },
       };
     }
+    // Anyone we already know is a returning customer can skip the
+    // new-customer card-capture check entirely:
+    //   - Reschedule mode: the booking is being moved, the customer
+    //     existed before today.
+    //   - Signed-in customer: they have an authenticated session, so
+    //     they've booked at some point in the past.
+    // Guest checkout stays cardCapture.required = null so the wizard
+    // fires /api/booking/check-new-customer on entry to Step 5.
+    if (reschedule || signedInCustomer) {
+      base = {
+        ...base,
+        cardCapture: { ...base.cardCapture, required: false },
+      };
+    }
     return base;
   }, [reschedule, preselect, services, barbers, signedInCustomer]);
   const [state, dispatch] = useReducer(reducer, initialState);
@@ -293,6 +338,117 @@ export default function BookingWizard({
       dispatch({ type: 'GO_TO', step: 3 });
     }
   }, [state.step, rescheduleMode, state.selectedSlot, state.selectedVariation, state.status.kind]);
+
+  // "Booking for" linked person: the parent (signed in) is paying / on
+  // file, so we never card-capture the linked person even if their own
+  // Square record has no booking history yet. Pin cardCapture.required
+  // to false the moment the parent flips the selector to a non-self
+  // option, and back to whatever it was when they switch back.
+  //
+  // We do a FULL reset (not just required:false) because the user may
+  // already have captured a card under their own name and we don't
+  // want that cardId leaking into a booking now intended for a kid.
+  const bookingForLockedReturning = !!selectedBookingFor && !selectedBookingFor.isSelf;
+  useEffect(() => {
+    if (bookingForLockedReturning && state.cardCapture.required !== false) {
+      dispatch({ type: 'RESET_CARD_CAPTURE', required: false });
+    }
+  }, [bookingForLockedReturning, state.cardCapture.required]);
+
+  // Step 5 entry — fire /api/booking/check-new-customer once we have
+  // the customer's email + phone, unless we already know they're
+  // returning (reschedule, signed-in, booking-for-linked-person). Reset
+  // when the customer's email/phone changes (Step 4 edits) so we don't
+  // serve a stale verdict if they swap to a different account.
+  const customerEmail = state.customer.email.trim().toLowerCase();
+  const customerPhoneDigits = digits(state.customer.phone);
+  const checkSentRef = useRef<string | null>(null);
+  useEffect(() => {
+    // Different email/phone = different person → cardCapture verdict,
+    // customerId, AND any captured card all belong to the previous
+    // person. Wipe the whole substate. Without a full reset, a stale
+    // cardId would still be present after the new check-new-customer
+    // run sets a new customerId — and showCardCapture's
+    // !state.cardCapture.cardId guard would short-circuit, sending the
+    // OLD card_id alongside the NEW customer_id to the booking endpoint.
+    checkSentRef.current = null;
+    if (!rescheduleMode && !signedInCustomer && !bookingForLockedReturning) {
+      dispatch({ type: 'RESET_CARD_CAPTURE' });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [customerEmail, customerPhoneDigits]);
+
+  useEffect(() => {
+    if (state.step !== 5) return;
+    if (rescheduleMode || signedInCustomer || bookingForLockedReturning) return;
+    if (state.cardCapture.required !== null) return;
+    if (!/^\S+@\S+\.\S+$/.test(customerEmail)) return;
+    if (customerPhoneDigits.length < 10) return;
+    if (!state.customer.givenName.trim() || !state.customer.familyName.trim()) return;
+    const key = `${customerEmail}|${customerPhoneDigits}`;
+    if (checkSentRef.current === key) return;
+    checkSentRef.current = key;
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch('/api/booking/check-new-customer', {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            email: customerEmail,
+            phone: customerPhoneDigits,
+            givenName: state.customer.givenName.trim(),
+            familyName: state.customer.familyName.trim(),
+          }),
+        });
+        const body = (await res.json()) as
+          | { ok: true; newCustomer: boolean; customerId: string }
+          | { ok: false; error: { code: string; detail: string } };
+        if (cancelled) return;
+        if (!res.ok || !body.ok) {
+          // Fail-soft: if the check itself errors, treat as returning.
+          // The cancellation policy keeps its existing "call the shop"
+          // behavior; better than blocking the booking entirely.
+          dispatch({
+            type: 'UPDATE_CARD_CAPTURE',
+            patch: { required: false, customerId: null },
+          });
+          return;
+        }
+        dispatch({
+          type: 'UPDATE_CARD_CAPTURE',
+          patch: {
+            required: body.newCustomer,
+            customerId: body.customerId,
+            amountCents: priceCentsForBooking(state.selectedService, state.selectedVariation),
+          },
+        });
+      } catch {
+        if (cancelled) return;
+        dispatch({
+          type: 'UPDATE_CARD_CAPTURE',
+          patch: { required: false, customerId: null },
+        });
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    state.step,
+    rescheduleMode,
+    signedInCustomer,
+    bookingForLockedReturning,
+    state.cardCapture.required,
+    customerEmail,
+    customerPhoneDigits,
+    state.customer.givenName,
+    state.customer.familyName,
+    state.selectedService,
+    state.selectedVariation,
+  ]);
 
   // Signed-in customers with a complete contact record on file skip the
   // Details step too — same auto-advance pattern as reschedule mode.
@@ -387,6 +543,20 @@ export default function BookingWizard({
       const overrideName = selectedBookingFor && !selectedBookingFor.isSelf
         ? selectedBookingFor.displayName.split(' ')
         : null;
+      // For a guest checkout we do NOT send existingCustomerId — the
+      // server will findOrCreate by email and pick up the same record
+      // check-new-customer resolved (it matches by email too). This
+      // closes a hole where a hostile guest could supply any known
+      // Square customerId and book under it. The "Booking for" linked-
+      // person path is the only legit reason to send the field, and
+      // that path has its own server-side ownership check.
+      const cardOnFilePayload =
+        state.cardCapture.required && state.cardCapture.cardId && state.cardCapture.amountCents
+          ? {
+              cardId: state.cardCapture.cardId,
+              amountCents: state.cardCapture.amountCents,
+            }
+          : undefined;
       const payload = {
         service: {
           variationId: state.selectedVariation.id,
@@ -410,6 +580,7 @@ export default function BookingWizard({
           marketingConsent: overrideCustomerId ? false : state.customer.marketingConsent,
         },
         existingCustomerId: overrideCustomerId,
+        cardOnFile: cardOnFilePayload,
       };
 
       try {
@@ -488,6 +659,16 @@ export default function BookingWizard({
 
   const teamMemberId = state.anyBarber ? undefined : state.selectedBarber?.id;
 
+  // True when the wizard is on Step 5 but the new-customer card has not
+  // yet been captured — in that case render the card form instead of
+  // the confirm summary. Once cardCapture.cardId is set, we fall
+  // through to the normal Step 5 confirm UI.
+  const showCardCapture =
+    state.step === 5 &&
+    state.cardCapture.required === true &&
+    !state.cardCapture.cardId &&
+    !!state.cardCapture.customerId;
+
   const rescheduleStepIndex = (() => {
     // For the progress bar: in reschedule mode we only show steps 3 and 5.
     if (state.step === 3) return 1;
@@ -498,17 +679,24 @@ export default function BookingWizard({
   // so "STEP X of 4" is honest. Step 5 (Confirm) becomes "Step 4".
   const skippedDetailsLabels = ['Service', 'Barber', 'Time', 'Confirm'];
   const skippedStepIndex = state.step === 5 ? 4 : state.step;
-  const totalSteps = rescheduleMode ? 2 : skipDetailsStep ? 4 : 5;
+  // Card-capture inserts a virtual extra step between Details and
+  // Confirm — only count it when the wizard knows it's required.
+  const cardStepCount = state.cardCapture.required === true ? 1 : 0;
+  const totalSteps = (rescheduleMode ? 2 : skipDetailsStep ? 4 : 5) + cardStepCount;
   const currentStep = rescheduleMode
     ? rescheduleStepIndex
     : skipDetailsStep
-      ? skippedStepIndex
-      : state.step;
+      ? skippedStepIndex + (showCardCapture ? 1 : 0)
+      : showCardCapture
+        ? 5
+        : state.step + (state.step === 5 ? cardStepCount : 0);
   const stepLabel = rescheduleMode
     ? RESCHEDULE_STEP_LABELS[rescheduleStepIndex - 1]
-    : skipDetailsStep
-      ? skippedDetailsLabels[skippedStepIndex - 1] ?? STEP_LABELS[state.step - 1]
-      : STEP_LABELS[state.step - 1];
+    : showCardCapture
+      ? 'Card'
+      : skipDetailsStep
+        ? skippedDetailsLabels[skippedStepIndex - 1] ?? STEP_LABELS[state.step - 1]
+        : STEP_LABELS[state.step - 1];
 
   return (
     <div className="bw" ref={wizardRootRef}>
@@ -641,7 +829,33 @@ export default function BookingWizard({
         />
       )}
 
-      {state.step === 5 && state.selectedService && state.selectedVariation && state.selectedSlot && (
+      {showCardCapture && state.cardCapture.customerId && (
+        <Step45CardCapture
+          customerId={state.cardCapture.customerId}
+          cardholderName={`${state.customer.givenName} ${state.customer.familyName}`.trim()}
+          servicePriceDisplay={priceDisplayForBooking(state.selectedService, state.selectedVariation)}
+          acknowledgedPolicy={state.cardCapture.acknowledgedPolicy}
+          onAcknowledgeChange={(value) =>
+            dispatch({ type: 'UPDATE_CARD_CAPTURE', patch: { acknowledgedPolicy: value } })
+          }
+          onSaved={({ cardId, cardLast4, cardBrand }) =>
+            dispatch({
+              type: 'UPDATE_CARD_CAPTURE',
+              patch: {
+                cardId,
+                cardLast4: cardLast4 ?? null,
+                cardBrand: cardBrand ?? null,
+                amountCents:
+                  state.cardCapture.amountCents ??
+                  priceCentsForBooking(state.selectedService, state.selectedVariation),
+              },
+            })
+          }
+          existingCard={null}
+        />
+      )}
+
+      {state.step === 5 && !showCardCapture && state.selectedService && state.selectedVariation && state.selectedSlot && (
         <Step5Confirm
           service={state.selectedService}
           variation={state.selectedVariation}
@@ -657,6 +871,14 @@ export default function BookingWizard({
           onUpdateContactToggle={(value) =>
             dispatch({ type: 'UPDATE_CUSTOMER', patch: { updateContact: value } })
           }
+          cardOnFile={
+            state.cardCapture.required && state.cardCapture.cardId
+              ? {
+                  brand: state.cardCapture.cardBrand,
+                  last4: state.cardCapture.cardLast4,
+                }
+              : null
+          }
         />
       )}
 
@@ -667,14 +889,21 @@ export default function BookingWizard({
             className="bw-btn bw-btn--ghost"
             disabled={state.status.kind === 'submitting' || (rescheduleMode && state.step <= 3)}
             onClick={() => {
-              if (rescheduleMode && state.step === 5) {
+              // Step 4 (Details) is auto-skipped for both reschedule mode and
+              // signed-in customers with complete contact on file. A plain BACK
+              // from Step 5 in those cases would land on Step 4 — the skip
+              // effect would immediately bounce forward to Step 5 again,
+              // trapping the user. Jump straight to Step 3 instead.
+              if ((rescheduleMode || skipDetailsStep) && state.step === 5) {
                 dispatch({ type: 'GO_TO', step: 3 });
               } else {
                 dispatch({ type: 'BACK' });
               }
             }}
           >
-            {rescheduleMode && state.step === 5 ? '← Pick a different time' : '← Back'}
+            {(rescheduleMode || skipDetailsStep) && state.step === 5
+              ? '← Pick a different time'
+              : '← Back'}
           </button>
           <span className="bw-nav-spacer" />
           {!rescheduleMode && state.step === 4 && (

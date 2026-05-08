@@ -165,16 +165,27 @@ export interface FindOrCreateResult {
   created: boolean;
   /** When matched and form data differs from the existing record. */
   contactDiff: { phone?: string; givenName?: string; familyName?: string } | null;
-  /** What we did with the marketing consent flag, if anything. */
-  marketingDecision: MarketingConsentDecision;
+  /**
+   * Marketing consent application is intentionally NOT awaited here — it
+   * runs against Square's Custom Attributes API which can be slow to
+   * propagate for newly-created customers, and a consent write failure
+   * never blocks the booking. The caller can await this promise in
+   * parallel with createBooking() so the response time is max(booking,
+   * consent), not booking + consent. Always resolves; never rejects.
+   */
+  marketingDecisionPromise: Promise<MarketingConsentDecision>;
 }
 
 export async function findOrCreateCustomer(input: CustomerInput): Promise<FindOrCreateResult> {
   const existing = await findCustomerByEmail(input.email);
   if (!existing) {
     const created = await createCustomer(input);
-    const decision = await applyMarketingConsent(created.id, input, true);
-    return { customer: created, created: true, contactDiff: null, marketingDecision: decision };
+    return {
+      customer: created,
+      created: true,
+      contactDiff: null,
+      marketingDecisionPromise: applyMarketingConsent(created.id, input, true),
+    };
   }
 
   const diff = computeDiff(existing, input);
@@ -188,12 +199,11 @@ export async function findOrCreateCustomer(input: CustomerInput): Promise<FindOr
     });
   }
 
-  const decision = await applyMarketingConsent(customer.id, input, false);
   return {
     customer,
     created: false,
     contactDiff: diff && !input.updateContact ? diff : null,
-    marketingDecision: decision,
+    marketingDecisionPromise: applyMarketingConsent(customer.id, input, false),
   };
 }
 
@@ -223,9 +233,14 @@ async function applyMarketingConsent(
     if (isNewCustomer) {
       if (formConsent === true) {
         const now = new Date().toISOString();
-        await setAttributeWithRetry(customerId, MARKETING_CONSENT_KEY, true);
-        await setAttributeWithRetry(customerId, MARKETING_CONSENTED_AT_KEY, now);
-        await setAttributeWithRetry(customerId, MARKETING_CONSENT_SOURCE_KEY, source);
+        // Run the three attribute writes in parallel — they're
+        // independent of one another, and Square's CA API was the
+        // single biggest blocker on booking response time.
+        await Promise.all([
+          setAttributeWithRetry(customerId, MARKETING_CONSENT_KEY, true),
+          setAttributeWithRetry(customerId, MARKETING_CONSENTED_AT_KEY, now),
+          setAttributeWithRetry(customerId, MARKETING_CONSENT_SOURCE_KEY, source),
+        ]);
         return { kind: 'set', consent: true, consentedAt: now, source };
       }
       // For new customers we record an explicit false so the field is set
@@ -245,11 +260,14 @@ async function applyMarketingConsent(
     }
 
     const now = new Date().toISOString();
-    await setAttributeWithRetry(customerId, MARKETING_CONSENT_KEY, true);
+    const writes: Array<Promise<void>> = [
+      setAttributeWithRetry(customerId, MARKETING_CONSENT_KEY, true),
+      setAttributeWithRetry(customerId, MARKETING_CONSENT_SOURCE_KEY, source),
+    ];
     if (!current.consentedAt) {
-      await setAttributeWithRetry(customerId, MARKETING_CONSENTED_AT_KEY, now);
+      writes.push(setAttributeWithRetry(customerId, MARKETING_CONSENTED_AT_KEY, now));
     }
-    await setAttributeWithRetry(customerId, MARKETING_CONSENT_SOURCE_KEY, source);
+    await Promise.all(writes);
     return { kind: 'set', consent: true, consentedAt: now, source };
   } catch (err) {
     // Never let a consent write fail the booking. Log it and move on —
@@ -284,9 +302,9 @@ async function setAttributeWithRetry(
   customerId: string,
   key: string,
   value: string | boolean | null,
-  attempts = 4,
+  attempts = 3,
 ): Promise<void> {
-  let delay = 600;
+  let delay = 400;
   for (let i = 1; i <= attempts; i++) {
     try {
       await setCustomAttribute(customerId, key, value);
