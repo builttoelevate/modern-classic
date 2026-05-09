@@ -57,6 +57,19 @@ function digits(s: string): string {
   return (s ?? '').replace(/\D/g, '');
 }
 
+// Without these the Square Web Payments SDK can't render the card form,
+// so Step 4.5 dead-ends with "Card capture is not configured." When that
+// happens we bypass the card-on-file requirement and let the booking go
+// through anyway — better to take the booking than turn the customer
+// away. Auto-restores once both env vars are populated on Vercel.
+function isCardCaptureConfigured(): boolean {
+  const appId =
+    (import.meta.env.PUBLIC_SQUARE_APPLICATION_ID as string | undefined) ?? '';
+  const locationId =
+    (import.meta.env.PUBLIC_SQUARE_LOCATION_ID as string | undefined) ?? '';
+  return appId.trim().length > 0 && locationId.trim().length > 0;
+}
+
 export const POST: APIRoute = async ({ request }) => {
   let payload: RequestBody;
   try {
@@ -78,6 +91,18 @@ export const POST: APIRoute = async ({ request }) => {
   }
   if (!givenName || !familyName) {
     return fail(400, 'BAD_REQUEST', 'First and last name are required.');
+  }
+
+  const cardCaptureConfigured = isCardCaptureConfigured();
+  if (!cardCaptureConfigured) {
+    // eslint-disable-next-line no-console
+    console.log(
+      `[BOOK] ${JSON.stringify({
+        ts: new Date().toISOString(),
+        phase: 'card-capture-bypassed-not-configured',
+        customerEmail: redactEmail(email),
+      })}`,
+    );
   }
 
   try {
@@ -116,7 +141,7 @@ export const POST: APIRoute = async ({ request }) => {
       );
       const body: SuccessResponse = {
         ok: true,
-        newCustomer: true,
+        newCustomer: cardCaptureConfigured,
         customerId: created.id,
       };
       return Response.json(body, { status: 200 });
@@ -166,7 +191,7 @@ export const POST: APIRoute = async ({ request }) => {
     );
     const body: SuccessResponse = {
       ok: true,
-      newCustomer: true,
+      newCustomer: cardCaptureConfigured,
       customerId: reuseId,
     };
     return Response.json(body, { status: 200 });
