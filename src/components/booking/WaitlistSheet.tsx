@@ -20,6 +20,14 @@ interface Props {
    * `barberName` prop as fixed display text — the existing behavior
    * for the in-flow Step 3 trigger that already knows the barber. */
   barberOptions?: Array<{ id: string; displayName: string }>;
+  /** Same idea as `barberOptions` but for services. The hero trigger
+   * fires before the customer has picked a service, so without this the
+   * entry would land in KV with no `serviceVariationId` and the hourly
+   * cron would skip it as `noVariation` (never auto-emailing). When
+   * provided, the sheet renders a required <select> and uses the picked
+   * option's id/name in place of the `serviceName` / `serviceVariationId`
+   * props. `id` is the bookable serviceVariationId. */
+  serviceOptions?: Array<{ id: string; name: string }>;
 }
 
 interface WaitlistApiResponse {
@@ -69,10 +77,15 @@ export function WaitlistSheet({
   prefillEmail = '',
   prefillPhone = '',
   barberOptions,
+  serviceOptions,
 }: Props) {
   const [name, setName] = useState(prefillName);
   const [email, setEmail] = useState(prefillEmail);
   const [phone, setPhone] = useState(prefillPhone);
+  // Service selection. When `serviceOptions` is provided, the picker
+  // drives `effectiveServiceVariationId` / `effectiveServiceName` below;
+  // otherwise we use the props (in-flow Step 3 trigger path).
+  const [pickedServiceId, setPickedServiceId] = useState<string>('');
   // Multi-pick barber selection. Customers can opt in to multiple barbers
   // so they get notified the moment ANY of them has an opening. Empty
   // array = "any barber works." Pre-checks the wizard-level barber when
@@ -163,6 +176,21 @@ export function WaitlistSheet({
   if (!open) return null;
   if (typeof document === 'undefined') return null;
 
+  // The service select renders whenever a non-empty roster is supplied
+  // (hero path). When omitted (in-flow Step 3 path), the props
+  // serviceName / serviceVariationId already describe a concrete service
+  // the customer just looked at, so no picker is needed.
+  const showServicePicker = Array.isArray(serviceOptions) && serviceOptions.length > 0;
+  const pickedService = showServicePicker
+    ? (serviceOptions ?? []).find((s) => s.id === pickedServiceId) ?? null
+    : null;
+  const effectiveServiceName = showServicePicker
+    ? pickedService?.name ?? serviceName
+    : serviceName;
+  const effectiveServiceVariationId = showServicePicker
+    ? pickedService?.id ?? null
+    : serviceVariationId;
+
   // The multi-pick barber chips render whenever a roster is supplied.
   // Empty selection = "any barber works." When exactly one barber is
   // picked, the email + admin record show that barber's name; multi-pick
@@ -199,23 +227,32 @@ export function WaitlistSheet({
   // user-facing copy reads naturally instead of "a Any service opening
   // with Any barber matches".
   const isFlexibleBarber = /^any\b/i.test(effectiveBarberName);
-  const isFlexibleService = /^any\b/i.test(serviceName);
+  const isFlexibleService = /^any\b/i.test(effectiveServiceName);
   const matchPhrase = (() => {
     if (isFlexibleBarber && isFlexibleService) return 'an opening that fits';
     if (isFlexibleBarber) return (
-      <>a <strong>{serviceName}</strong> opening</>
+      <>a <strong>{effectiveServiceName}</strong> opening</>
     );
     if (isFlexibleService) return (
       <>an opening with <strong>{effectiveBarberName}</strong></>
     );
     return (
-      <>a <strong>{serviceName}</strong> opening with <strong>{effectiveBarberName}</strong></>
+      <>a <strong>{effectiveServiceName}</strong> opening with <strong>{effectiveBarberName}</strong></>
     );
   })();
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (status === 'submitting') return;
+    // When the service picker is shown, the customer must pick one — without
+    // it the cron has no `serviceVariationId` to query Square against and
+    // skips the entry as `noVariation`, which would silently break the
+    // "we'll email you the moment a spot opens" promise.
+    if (showServicePicker && !pickedServiceId) {
+      setStatus('error');
+      setErrorMsg('Please pick a service.');
+      return;
+    }
     setStatus('submitting');
     setErrorMsg(null);
     try {
@@ -227,9 +264,9 @@ export function WaitlistSheet({
           name: name.trim(),
           email: email.trim(),
           phone: phone.trim(),
-          serviceName,
+          serviceName: effectiveServiceName,
           barberName: effectiveBarberName,
-          serviceVariationId,
+          serviceVariationId: effectiveServiceVariationId,
           teamMemberId: effectiveTeamMemberId,
           teamMemberIds: effectiveTeamMemberIds,
           barberDisplayNames: effectiveBarberDisplayNames,
@@ -334,6 +371,27 @@ export function WaitlistSheet({
                 />
               </label>
             </div>
+
+            {showServicePicker && (
+              <label className="bw-field">
+                <span className="bw-field__label">Service</span>
+                <select
+                  className="bw-field__select"
+                  required
+                  value={pickedServiceId}
+                  onChange={(e) => setPickedServiceId(e.target.value)}
+                >
+                  <option value="" disabled>
+                    Pick a service…
+                  </option>
+                  {(serviceOptions ?? []).map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
 
             {showBarberPicker && (
               <div className="bw-field">

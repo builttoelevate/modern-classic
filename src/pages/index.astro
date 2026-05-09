@@ -36,6 +36,7 @@ import {
 import { getSession } from '../lib/auth/middleware';
 import { getCustomerBookings } from '../lib/square/customerBookings';
 import { getBarbers } from '../lib/square/team';
+import { getServicesCached } from '../lib/catalog/liveServices';
 import { findUsualCombo } from '../lib/booking/usual';
 import type { AvailabilitySlot } from '../lib/square/types';
 
@@ -60,6 +61,28 @@ try {
   }));
 } catch {
   waitlistBarberOptions = [];
+}
+
+// Live service catalog — passed through to the hero waitlist trigger so
+// the WaitlistSheet renders a required service <select>. Without a
+// concrete serviceVariationId on the entry, the hourly waitlist-notify
+// cron has nothing to query Square against and skips the customer as
+// `noVariation` — silently breaking the auto-notify promise. Mirrors
+// Step1ServicePicker: hides the legacy VIC item id, picks the first
+// bookable variation per service. `id` is the bookable
+// serviceVariationId (matches the shape /api/waitlist + cron expect).
+const HIDDEN_WAITLIST_ITEM_IDS = new Set<string>(['REEU27HVQBIP27KEI47RI73V']);
+let waitlistServiceOptions: Array<{ id: string; name: string }> = [];
+try {
+  const services = await getServicesCached();
+  for (const s of services) {
+    if (HIDDEN_WAITLIST_ITEM_IDS.has(s.id)) continue;
+    const v =
+      s.variations.find((vv) => vv.availableForBooking) ?? s.variations[0];
+    if (v) waitlistServiceOptions.push({ id: v.id, name: s.name });
+  }
+} catch {
+  waitlistServiceOptions = [];
 }
 
 try {
@@ -113,7 +136,11 @@ try {
   <Header />
   <TrustStrip />
   <main id="main">
-    <Hero availability={availability} waitlistBarberOptions={waitlistBarberOptions} />
+    <Hero
+      availability={availability}
+      waitlistBarberOptions={waitlistBarberOptions}
+      waitlistServiceOptions={waitlistServiceOptions}
+    />
     <QuickActions />
     <Barbers />
     <GalleryPreview />

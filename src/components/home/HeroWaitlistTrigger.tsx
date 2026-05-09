@@ -13,6 +13,11 @@ interface Props {
   /** Active barber roster — when provided, the WaitlistSheet shows a
    * dropdown defaulting to "Any barber" so the customer can pick. */
   barberOptions?: Array<{ id: string; displayName: string }>;
+  /** Live service catalog — when provided, the WaitlistSheet renders a
+   * required service select. Without this the entry would land in KV
+   * with no serviceVariationId and the hourly cron would skip it as
+   * `noVariation`, breaking the auto-notify promise. */
+  serviceOptions?: Array<{ id: string; name: string }>;
 }
 
 /**
@@ -29,6 +34,7 @@ export function HeroWaitlistTrigger({
   barberName,
   teamMemberId = null,
   barberOptions,
+  serviceOptions,
 }: Props) {
   const [open, setOpen] = useState(false);
 
@@ -66,6 +72,7 @@ export function HeroWaitlistTrigger({
         teamMemberId={teamMemberId}
         serviceVariationId={null}
         barberOptions={barberOptions}
+        serviceOptions={serviceOptions}
       />
     </>
   );
