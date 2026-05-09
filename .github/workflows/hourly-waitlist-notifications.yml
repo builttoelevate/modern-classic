@@ -38,7 +38,7 @@ jobs:
             --silent \
             --show-error \
             --location \
-            --max-time 60 \
+            --max-time 180 \
             --request GET \
             --header "Authorization: Bearer ${WAITLIST_NOTIFY_SECRET}" \
             --write-out "\nHTTP %{http_code} in %{time_total}s\n" \

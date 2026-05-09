@@ -11,6 +11,7 @@ import {
   getWaitlistEntry,
   markWaitlistNotified,
   updateWaitlistStatus,
+  type WaitlistEntry,
 } from '../../../../lib/marketing/waitlistLog';
 import { sendWaitlistOpening } from '../../../../lib/email/resend';
 import { formatRelativeSlot } from '../../../../lib/availability/timing';
@@ -35,6 +36,23 @@ function fail(code: string, detail: string, status: number): Response {
 function logAdmin(payload: Record<string, unknown>): void {
   // eslint-disable-next-line no-console
   console.log(`[ADMIN] ${JSON.stringify({ ts: new Date().toISOString(), ...payload })}`);
+}
+
+/**
+ * Resolve the barber name to show in the email for the slot the admin
+ * picked. When the customer multi-picked barbers, `entry.barberName` is
+ * the joined "Michael, Rick, or Clayton" phrase — the wrong thing to
+ * show for a specific slot. Look up the parallel barberDisplayNames
+ * array by the slot's teamMemberId. Falls back to entry.barberName for
+ * legacy entries or when the id isn't in the entry's pick list.
+ */
+function resolveBarberName(entry: WaitlistEntry, teamMemberId: string | undefined): string {
+  if (teamMemberId && entry.teamMemberIds && entry.barberDisplayNames) {
+    const idx = entry.teamMemberIds.indexOf(teamMemberId);
+    const name = idx >= 0 ? entry.barberDisplayNames[idx] : undefined;
+    if (name && name.trim()) return name;
+  }
+  return entry.barberName;
 }
 
 function validate(body: unknown): NotifyBody | string {
@@ -101,7 +119,7 @@ export const POST: APIRoute = async ({ request }) => {
     const result = await sendWaitlistOpening({
       to: entry.customerEmail,
       customerName: entry.customerName,
-      barberName: entry.barberName,
+      barberName: resolveBarberName(entry, teamMemberId),
       serviceName: entry.serviceName,
       whenLabel,
       bookUrl,

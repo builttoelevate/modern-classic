@@ -86,7 +86,8 @@ export interface WaitlistEntry {
    * day-of-week is acceptable. Sundays excluded — shop is closed. */
   daysOfWeek?: string[];
   /** Subset of ['morning','afternoon','evening']. Bands: morning < 12,
-   * afternoon 12–17, evening ≥ 17. Empty/absent = any time. */
+   * afternoon 12–15, evening ≥ 15 (matches WaitlistSheet TIME_OPTIONS
+   * sub-labels and waitlistMatch.bandFor). Empty/absent = any time. */
   timesOfDay?: string[];
 
   /** Notify bookkeeping — set by the cron once we email the customer

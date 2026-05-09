@@ -1,10 +1,11 @@
 // Phase 8 — auto-notify waitlist cron.
 //
-// Runs every 30 min (vercel.json — cron entry added in a follow-up
-// commit per the verification plan). For each active waitlist entry,
-// fetches Square availability for that entry's (service, barber)
-// combo across the customer's date window, runs the pure
-// findMatchingSlot() filter, and emails them via Resend the moment
+// Runs hourly via .github/workflows/hourly-waitlist-notifications.yml
+// (Vercel Hobby caps cron at daily, so GitHub Actions drives the schedule
+// and hits this endpoint with WAITLIST_NOTIFY_SECRET). For each active
+// waitlist entry, fetches Square availability for that entry's
+// (service, barber) combo across the customer's date window, runs the
+// pure findMatchingSlot() filter, and emails them via Resend the moment
 // a slot appears that matches their preferences.
 //
 // Anti-spam: matcher enforces a 12-hour per-entry cooldown plus
