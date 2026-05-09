@@ -58,6 +58,15 @@ interface RetailListResponse {
 
 const REGULAR_PRODUCT_TYPE = 'REGULAR';
 
+// Specific products to hide from the retail surface (currently the
+// /my-bookings recommendations widget). Matched by the rendered
+// displayName so the exclusion list stays readable. Add an entry here
+// to remove a product from the site without touching the Square catalog.
+const HIDDEN_DISPLAY_NAMES = new Set<string>([
+  "Straight Razor — Michael's Line",
+  "Beard Bundle — Michael's Line",
+]);
+
 function parseAssociatedBarber(name: string): {
   code: AssociatedBarberCode;
   exclude: boolean;
@@ -132,10 +141,13 @@ function toProduct(item: CatalogItemRetail): Product | null {
     .map((c) => c.name?.trim() ?? '')
     .filter((s) => s.length > 0);
 
+  const displayName = displayNameWithLine(name, code);
+  if (HIDDEN_DISPLAY_NAMES.has(displayName)) return null;
+
   return {
     id: item.id,
     name,
-    displayName: displayNameWithLine(name, code),
+    displayName,
     priceCents,
     ecomUri: data.ecom_uri,
     imageUrl: data.ecom_image_uris?.[0],
