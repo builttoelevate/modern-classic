@@ -13,10 +13,6 @@
     {
       "path": "/api/cron/review-requests",
       "schedule": "0 14 * * *"
-    },
-    {
-      "path": "/api/cron/waitlist-notify",
-      "schedule": "0 * * * *"
     }
   ]
 }

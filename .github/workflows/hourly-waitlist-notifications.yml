@@ -1,0 +1,45 @@
+name: Hourly waitlist notifications
+
+# Vercel Hobby only allows daily cron schedules, so we trigger the
+# /api/cron/waitlist-notify endpoint hourly from GitHub Actions instead.
+# Schedule runs are best-effort — Actions can be delayed by several
+# minutes during high load on the Actions runners; that's acceptable
+# for a waitlist notifier.
+
+on:
+  schedule:
+    - cron: "0 * * * *"
+  workflow_dispatch: {}
+
+jobs:
+  notify:
+    name: Hit /api/cron/waitlist-notify
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Trigger production waitlist-notify
+        env:
+          PRODUCTION_URL: ${{ secrets.PRODUCTION_URL }}
+          WAITLIST_NOTIFY_SECRET: ${{ secrets.WAITLIST_NOTIFY_SECRET }}
+        run: |
+          set -euo pipefail
+          if [ -z "${PRODUCTION_URL}" ]; then
+            echo "PRODUCTION_URL secret is not set" >&2
+            exit 1
+          fi
+          if [ -z "${WAITLIST_NOTIFY_SECRET}" ]; then
+            echo "WAITLIST_NOTIFY_SECRET secret is not set" >&2
+            exit 1
+          fi
+          # Strip a trailing slash so we don't send //api/...
+          BASE="${PRODUCTION_URL%/}"
+          curl \
+            --fail-with-body \
+            --silent \
+            --show-error \
+            --location \
+            --max-time 60 \
+            --request GET \
+            --header "Authorization: Bearer ${WAITLIST_NOTIFY_SECRET}" \
+            --write-out "\nHTTP %{http_code} in %{time_total}s\n" \
+            "${BASE}/api/cron/waitlist-notify"
