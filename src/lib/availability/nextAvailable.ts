@@ -14,7 +14,7 @@ import { isWithinDays } from './timing';
 import { slugForService } from '../catalog/liveServices';
 
 const CACHE_TTL_SECONDS = 600;
-const SEARCH_WINDOW_DAYS = 14;
+const SEARCH_WINDOW_DAYS = 90;
 const WITHIN_DAYS_THRESHOLD = 7;
 
 function searchEnd(): Date {
