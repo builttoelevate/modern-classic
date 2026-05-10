@@ -1,11 +1,33 @@
 import type { APIRoute } from 'astro';
-import { sendWaitlistRequest } from '../../lib/email/resend';
+import { sendWaitlistConfirmation, sendWaitlistRequest } from '../../lib/email/resend';
 import { redactEmail } from '../../lib/booking/log';
 import { recordWaitlistEntry } from '../../lib/marketing/waitlistLog';
 
 export const prerender = false;
 
 const SHOP_INBOX = 'modernclassicbarbershop@protonmail.com';
+const SHOP_ADDRESS = '819 Linden Avenue, Zanesville, OH 43701';
+const SHOP_PHONE = '740-297-4462';
+
+// Pretty-print [dateFrom, dateTo] for the customer's thank-you email.
+// Both YYYY-MM-DD strings (validated upstream). Returns empty when
+// neither end is set so the template can suppress the line entirely.
+function formatWindow(dateFrom: string | undefined, dateTo: string | undefined): string {
+  if (!dateFrom && !dateTo) return '';
+  const fmt = (iso: string): string =>
+    new Intl.DateTimeFormat('en-US', {
+      timeZone: 'America/New_York',
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+    }).format(new Date(`${iso}T12:00:00`));
+  if (dateFrom && dateTo) {
+    return dateFrom === dateTo ? fmt(dateFrom) : `${fmt(dateFrom)} – ${fmt(dateTo)}`;
+  }
+  if (dateFrom) return `From ${fmt(dateFrom)}`;
+  if (dateTo) return `Through ${fmt(dateTo)}`;
+  return '';
+}
 const RATE_LIMIT_SECONDS = 60;
 const lastSubmittedAt = new Map<string, number>();
 
@@ -239,6 +261,31 @@ export const POST: APIRoute = async ({ request, clientAddress }) => {
       const detail = err instanceof Error ? err.message : String(err);
       logWaitlist({ phase: 'kv-write-failed', email: redactEmail(email), detail });
     }
+
+    // Customer thank-you. Non-fatal — the shop already has the request
+    // (email sent above + KV record), and the form has its own success
+    // state, so a missing acknowledgment email shouldn't surface as an
+    // error to the customer.
+    try {
+      const confirmResult = await sendWaitlistConfirmation({
+        to: email,
+        customerName: name,
+        serviceName,
+        barberName,
+        windowLabel: formatWindow(dateFrom, dateTo),
+        shopAddress: SHOP_ADDRESS,
+        shopPhone: SHOP_PHONE,
+      });
+      logWaitlist({
+        phase: 'confirmation-sent',
+        email: redactEmail(email),
+        messageId: confirmResult.id,
+      });
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : String(err);
+      logWaitlist({ phase: 'confirmation-send-failed', email: redactEmail(email), detail });
+    }
+
     return Response.json({ ok: true });
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err);
