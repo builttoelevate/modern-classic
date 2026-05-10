@@ -39,7 +39,7 @@ const MONTH_LABELS = ['January', 'February', 'March', 'April', 'May', 'June',
 // Don't let the user navigate forward forever — Square stops returning
 // availability beyond Michael's configured booking horizon anyway. Three
 // months of forward navigation is plenty for a barbershop.
-const MAX_MONTHS_FORWARD = 3;
+const MAX_MONTHS_FORWARD = 12;
 
 interface YearMonth {
   year: number;

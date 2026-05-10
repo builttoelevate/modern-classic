@@ -202,10 +202,14 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 // Square caps GET /v2/bookings start_at range at 31 days. Walk in 30-day
 // windows to fetch a wider history.
 const WINDOW_DAYS = 30;
-// 6 windows back + 2 windows forward = ~6 months past + ~2 months future.
-// Plenty for the customer portal; keeps to ≤8 parallel API calls.
+// 6 windows back + 13 windows forward = ~6 months past + ~1 year future.
+// The forward count tracks the customer-facing booking horizon
+// (see MAX_MONTHS_FORWARD in Step3DateTimePicker); without it, a
+// booking made 6+ months out would be invisible on /my-bookings until
+// it drifts inside the window. 19 parallel API calls per portal load
+// — still well under Square's 700/min rate limit.
 const PAST_WINDOWS = 6;
-const FUTURE_WINDOWS = 2;
+const FUTURE_WINDOWS = 13;
 
 async function fetchBookingsWindow(
   customerId: string,

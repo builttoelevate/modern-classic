@@ -22,7 +22,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 /** Bounded scan in case the cron has been off — never look further out
  * than this from "now" regardless of dateTo. Square only takes bookings
  * a couple of months ahead anyway. */
-const MAX_HORIZON_DAYS = 90;
+const MAX_HORIZON_DAYS = 365;
 
 /**
  * Resolve the [startAt, endAt] window we should ask Square about for a

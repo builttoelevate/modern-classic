@@ -226,7 +226,7 @@ export async function findGroupSlotsAllAtOnce(
   const range: SearchRange = {
     startAt: opts.startAt ?? new Date(Date.now() + 60 * 60 * 1000),
     endAt: new Date(
-      (opts.startAt ?? new Date()).getTime() + (opts.windowDays ?? 90) * DAY_MS,
+      (opts.startAt ?? new Date()).getTime() + (opts.windowDays ?? 365) * DAY_MS,
     ),
   };
 
@@ -357,7 +357,7 @@ export async function findGroupSlotsBackToBack(
   const range: SearchRange = {
     startAt: opts.startAt ?? new Date(Date.now() + 60 * 60 * 1000),
     endAt: new Date(
-      (opts.startAt ?? new Date()).getTime() + (opts.windowDays ?? 90) * DAY_MS,
+      (opts.startAt ?? new Date()).getTime() + (opts.windowDays ?? 365) * DAY_MS,
     ),
   };
 
