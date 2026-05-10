@@ -4,7 +4,9 @@ import type { GroupSlot } from '../../../lib/booking/groupAvailability';
 import {
   canAdvance,
   makeInitialState,
+  makeStateFromPreset,
   reducer,
+  type GroupBookingPreset,
   type GroupMode,
 } from './groupWizardState';
 
@@ -28,6 +30,11 @@ interface Props {
    * can pick saved names instead of typing every time. Empty/length-1
    * (just self) hides the dropdown and we fall back to plain inputs. */
   bookingForOptions?: BookingForOption[];
+  /** Re-book preset coming in from /my-bookings → "Book whole group
+   *  again". When present, the wizard skips ahead to the Time step
+   *  (or the Barber step if the original back-to-back barber is no
+   *  longer eligible) with everything pre-selected. */
+  preset?: GroupBookingPreset;
 }
 
 const SHOP_TZ = 'America/New_York';
@@ -60,10 +67,13 @@ export default function GroupBookingWizard({
   barbers,
   signedInCustomer,
   bookingForOptions,
+  preset,
 }: Props) {
   const savedPeople = bookingForOptions ?? [];
   const [state, dispatch] = useReducer(reducer, undefined, () =>
-    makeInitialState(2),
+    preset
+      ? makeStateFromPreset({ preset, services, barbers, savedPeople })
+      : makeInitialState(2),
   );
 
   // Scroll the wizard root into view on every step change. Without
@@ -90,9 +100,12 @@ export default function GroupBookingWizard({
     }
   }, [state.step]);
 
-  // Pre-fill parent block from session, once.
+  // Pre-fill parent block from session, once. Runs even when a preset
+  // jumped us past Step 1 (rebook flow) so the signed-in customer's
+  // details land in the parent block instead of greeting them with an
+  // empty form on Step 6.
   useEffect(() => {
-    if (signedInCustomer && state.step === 1 && state.parent.email === '') {
+    if (signedInCustomer && state.parent.email === '') {
       dispatch({
         type: 'SET_PARENT',
         patch: {

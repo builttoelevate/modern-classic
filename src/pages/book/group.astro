@@ -10,9 +10,15 @@ import { getBarbers } from '../../lib/square/team';
 import { findCustomerByEmail } from '../../lib/square/customers';
 import { getSession } from '../../lib/auth/middleware';
 import { listLinkedPeople } from '../../lib/customer/profileLinks';
+import { decodeGroupPreset } from '../../lib/booking/wizardPreselect';
+import type { GroupBookingPreset } from '../../components/booking/group/groupWizardState';
 import type { Barber, Service } from '../../lib/square/types';
 
 import '../../styles/booking.css';
+
+const presetRaw = new URL(Astro.request.url).searchParams.get('preset');
+const preset: GroupBookingPreset | undefined =
+  (presetRaw && decodeGroupPreset(presetRaw)) || undefined;
 
 let services: Service[] = [];
 let barbers: Barber[] = [];
@@ -107,6 +113,7 @@ if (session && !loadError) {
           barbers={barbers}
           signedInCustomer={signedInCustomer}
           bookingForOptions={bookingForOptions}
+          preset={preset}
         />
       )}
       <p class="bw-page__alt">
