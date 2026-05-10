@@ -867,6 +867,7 @@ export default function BookingWizard({
           onConfirm={submit}
           onEditSlot={() => dispatch({ type: 'GO_TO', step: 3 })}
           onEditCustomer={() => dispatch({ type: 'GO_TO', step: 4 })}
+          onBookAnother={() => dispatch({ type: 'START_ANOTHER_BOOKING' })}
           rescheduleMode={rescheduleMode}
           onUpdateContactToggle={(value) =>
             dispatch({ type: 'UPDATE_CUSTOMER', patch: { updateContact: value } })
