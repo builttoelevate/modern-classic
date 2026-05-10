@@ -1,7 +1,11 @@
 ---
 export const prerender = false;
 
-import { findCustomerByEmail, findCustomerByPhone } from '../../lib/square/customers';
+import {
+  findCustomerByEmail,
+  findCustomersByPhone,
+  getCustomerById,
+} from '../../lib/square/customers';
 import { getCustomerBookings, type CustomerBookings } from '../../lib/square/customerBookings';
 import { getBarbers } from '../../lib/square/team';
 import { getBookingCardRecords, type BookingCardRecord } from '../../lib/booking/cardIndex';
@@ -16,6 +20,7 @@ if (!auth.ok) {
 
 const url = new URL(Astro.request.url);
 const rawQuery = (url.searchParams.get('q') ?? '').trim();
+const focusId = (url.searchParams.get('id') ?? '').trim();
 
 function looksLikeEmail(s: string): boolean {
   return /^\S+@\S+\.\S+$/.test(s.trim());
@@ -33,8 +38,25 @@ let bookings: CustomerBookings | null = null;
 let bookingsError: string | null = null;
 let cardRecords = new Map<string, BookingCardRecord>();
 let barbers: Array<{ id: string; displayName: string }> = [];
+// When a phone lookup hits multiple records (test accounts, pre-dedup
+// duplicates), we render a chooser so the operator can see all of them
+// at once. The single-record path stays the dominant case.
+let phoneMatches: Customer[] = [];
 
-if (rawQuery) {
+if (focusId) {
+  // ?id=... is the direct-fetch path, set when the operator clicks
+  // "Manage" from the multi-match list. Skip search entirely.
+  try {
+    customer = await getCustomerById(focusId);
+    if (!customer) notFound = true;
+  } catch (err) {
+    if (err instanceof SquareApiError) {
+      searchError = `${err.code}: ${err.detail}`;
+    } else {
+      searchError = err instanceof Error ? err.message : 'Lookup failed.';
+    }
+  }
+} else if (rawQuery) {
   const isEmail = looksLikeEmail(rawQuery);
   const isPhone = !isEmail && looksLikePhone(rawQuery);
   try {
@@ -42,12 +64,17 @@ if (rawQuery) {
       customer = await findCustomerByEmail(rawQuery);
       lookupMethod = 'email';
     } else if (isPhone) {
-      customer = await findCustomerByPhone(rawQuery);
+      const matches = await findCustomersByPhone(rawQuery);
       lookupMethod = 'phone';
+      if (matches.length > 1) {
+        phoneMatches = matches;
+      } else if (matches.length === 1) {
+        customer = matches[0];
+      }
     } else {
       searchError = "That doesn't look like an email or a phone number.";
     }
-    if (!searchError && !customer) notFound = true;
+    if (!searchError && !customer && phoneMatches.length === 0) notFound = true;
   } catch (err) {
     if (err instanceof SquareApiError) {
       searchError = `${err.code}: ${err.detail}`;
@@ -470,6 +497,40 @@ const defaultRescheduleDate = tomorrowInNyDate();
         color: var(--muted);
         font-size: 0.85rem;
       }
+
+      .danger-zone {
+        margin-top: 32px;
+        padding: 18px 20px;
+        border: 1px solid rgba(220, 80, 60, 0.4);
+        background: rgba(220, 80, 60, 0.04);
+        border-radius: 8px;
+      }
+      .danger-zone h3 {
+        margin: 0 0 8px;
+        color: #f0a37a;
+        font-family: Georgia, serif;
+        font-weight: 400;
+        font-size: 1rem;
+      }
+      .danger-btn {
+        margin-top: 8px;
+        padding: 9px 16px;
+        background: transparent;
+        color: #f0a37a;
+        border: 1px solid rgba(220, 80, 60, 0.6);
+        font-weight: 700;
+        font-size: 0.78rem;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        border-radius: 4px;
+        cursor: pointer;
+        font-family: inherit;
+      }
+      .danger-btn:hover:not(:disabled) {
+        background: rgba(220, 80, 60, 0.6);
+        color: var(--bg);
+      }
+      .danger-btn:disabled { opacity: 0.5; cursor: not-allowed; }
     </style>
   </head>
   <body>
@@ -507,9 +568,45 @@ const defaultRescheduleDate = tomorrowInNyDate();
 
       {notFound && (
         <p class="empty">
-          No customer found for <strong>{rawQuery}</strong>. Try the other field — e.g. if you
-          searched the email and it's not in Square, search the phone instead.
+          No customer found for <strong>{rawQuery || focusId}</strong>. Try the other field — e.g.
+          if you searched the email and it's not in Square, search the phone instead.
         </p>
+      )}
+
+      {phoneMatches.length > 1 && (
+        <div class="card">
+          <h2>{phoneMatches.length} customers share this phone</h2>
+          <p class="sub">
+            Phone <strong>{rawQuery}</strong> matches multiple records. Pick one to manage.
+            If they're duplicates, manage one to update or delete the other.
+          </p>
+          <table class="bookings">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Email</th>
+                <th>Created</th>
+                <th>ID</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {phoneMatches.map((c) => (
+                <tr>
+                  <td>{`${c.given_name ?? ''} ${c.family_name ?? ''}`.trim() || '(no name)'}</td>
+                  <td>{c.email_address || <span class="meta">— no email —</span>}</td>
+                  <td>{fmtTimestamp(c.created_at)}</td>
+                  <td class="meta">{c.id}</td>
+                  <td>
+                    <a href={`/admin/customers?q=${encodeURIComponent(rawQuery)}&id=${encodeURIComponent(c.id)}`}>
+                      Manage →
+                    </a>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
 
       {customer && (
@@ -709,6 +806,33 @@ const defaultRescheduleDate = tomorrowInNyDate();
                   </tbody>
                 </table>
               )}
+
+              <div class="danger-zone">
+                <h3>Danger zone</h3>
+                {bookings.upcoming.length + bookings.past.length > 0 ? (
+                  <p class="helper">
+                    Delete is disabled — this customer has {bookings.upcoming.length} upcoming
+                    and {bookings.past.length} past booking(s) on file. Cancel any upcoming
+                    bookings first, then we still keep the record for audit history.
+                  </p>
+                ) : (
+                  <>
+                    <p class="helper">
+                      No bookings on file. You can hard-delete this Square record. There is
+                      no undo — the record is gone from Square.
+                    </p>
+                    <button
+                      type="button"
+                      class="danger-btn"
+                      data-delete-customer
+                      data-customer-id={customer.id}
+                    >
+                      Delete this customer
+                    </button>
+                    <p class="row-status" id="delete-status" hidden></p>
+                  </>
+                )}
+              </div>
             </>
           )}
         </div>
@@ -1013,6 +1137,59 @@ const defaultRescheduleDate = tomorrowInNyDate();
             }
           });
         });
+
+        // Hard-delete the customer record. Two-step: confirm via prompt
+        // asking the operator to retype the customer id, then POST.
+        const deleteBtn = document.querySelector('[data-delete-customer]');
+        if (deleteBtn) {
+          deleteBtn.addEventListener('click', async () => {
+            const customerId = deleteBtn.dataset.customerId;
+            const status = document.getElementById('delete-status');
+            const setDeleteStatus = (msg, kind) => {
+              if (!status) return;
+              status.textContent = msg || '';
+              status.className = 'row-status ' + (kind || '');
+              status.hidden = !msg;
+            };
+            if (!customerId) return;
+            const typed = window.prompt(
+              'This will hard-delete the Square customer record. There is no undo.\n\n' +
+              'To confirm, paste the customer id below:\n\n' + customerId,
+            );
+            if (typed === null) return; // cancelled
+            if (typed.trim() !== customerId) {
+              setDeleteStatus('Confirmation id did not match — delete cancelled.', 'error');
+              return;
+            }
+            deleteBtn.disabled = true;
+            const original = deleteBtn.textContent;
+            deleteBtn.textContent = 'Deleting…';
+            setDeleteStatus('', '');
+            try {
+              const res = await fetch('/api/admin/delete-customer', {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ customerId, confirmId: customerId }),
+              });
+              const data = await res.json();
+              if (!res.ok || !data.ok) {
+                setDeleteStatus((data && data.error && data.error.detail) || 'Delete failed.', 'error');
+                deleteBtn.disabled = false;
+                deleteBtn.textContent = original;
+                return;
+              }
+              setDeleteStatus('Customer deleted. Returning to lookup…', 'ok');
+              setTimeout(() => {
+                window.location.href = '/admin/customers';
+              }, 800);
+            } catch (err) {
+              setDeleteStatus('Network error. Try again.', 'error');
+              deleteBtn.disabled = false;
+              deleteBtn.textContent = original;
+            }
+          });
+        }
 
         // No-show charge on a past booking — reuses the existing endpoint
         // /admin/bookings already calls.

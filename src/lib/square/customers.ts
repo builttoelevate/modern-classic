@@ -89,12 +89,22 @@ export async function findCustomerByEmail(email: string): Promise<Customer | nul
  * usable account.
  */
 export async function findCustomerByPhone(phone: string): Promise<Customer | null> {
-  const e164 = normalizePhone(phone);
-  if (!e164) return null;
+  const all = await findCustomersByPhone(phone);
+  return pickBestPhoneMatch(all);
+}
 
-  // Square's phone exact filter expects E.164 format. We pull up to 20
-  // exact matches so we can see every sibling sharing the number — not
-  // just whichever Square decided to return first.
+/**
+ * Returns every customer record whose phone matches (after digit-only
+ * normalization on the trailing 10 digits). Used by the admin lookup
+ * page to surface duplicates so the operator can see and merge them —
+ * the singular findCustomerByPhone hides duplicates by design (it's
+ * called by sign-in, which only ever needs one).
+ */
+export async function findCustomersByPhone(phone: string): Promise<Customer[]> {
+  const e164 = normalizePhone(phone);
+  if (!e164) return [];
+  const targetTail = e164.replace(/\D/g, '').slice(-10);
+
   const exact = await squareFetch<SearchCustomersResponse>('/v2/customers/search', {
     method: 'POST',
     body: {
@@ -103,9 +113,7 @@ export async function findCustomerByPhone(phone: string): Promise<Customer | nul
     },
   });
   const exactMatches = exact.customers ?? [];
-  if (exactMatches.length > 0) {
-    return pickBestPhoneMatch(exactMatches);
-  }
+  if (exactMatches.length > 0) return exactMatches;
 
   const fuzzy = await squareFetch<SearchCustomersResponse>('/v2/customers/search', {
     method: 'POST',
@@ -114,13 +122,10 @@ export async function findCustomerByPhone(phone: string): Promise<Customer | nul
       limit: 20,
     },
   });
-  const targetTail = e164.replace(/\D/g, '').slice(-10);
-  const fuzzyMatches = (fuzzy.customers ?? []).filter((c) => {
+  return (fuzzy.customers ?? []).filter((c) => {
     const candidateTail = (c.phone_number ?? '').replace(/\D/g, '').slice(-10);
     return candidateTail.length > 0 && candidateTail === targetTail;
   });
-  if (fuzzyMatches.length === 0) return null;
-  return pickBestPhoneMatch(fuzzyMatches);
 }
 
 function pickBestPhoneMatch(matches: Customer[]): Customer | null {
@@ -153,6 +158,18 @@ export async function getCustomerById(id: string): Promise<Customer | null> {
   if (!id) return null;
   const res = await squareFetch<RetrieveCustomerResponse>(`/v2/customers/${id}`);
   return res.customer ?? null;
+}
+
+/**
+ * Hard-delete a customer record. Square's DELETE /v2/customers/{id} is
+ * idempotent and returns an empty body on success. The caller is
+ * responsible for upstream guards (e.g. blocking delete when the
+ * customer has bookings on file) — this function will happily delete
+ * any record the API accepts.
+ */
+export async function deleteCustomer(id: string): Promise<void> {
+  if (!id) throw new Error('deleteCustomer: id is required');
+  await squareFetch<unknown>(`/v2/customers/${id}`, { method: 'DELETE' });
 }
 
 export async function createCustomer(input: CustomerInput): Promise<Customer> {
@@ -206,7 +223,31 @@ export interface FindOrCreateResult {
 }
 
 export async function findOrCreateCustomer(input: CustomerInput): Promise<FindOrCreateResult> {
-  const existing = await findCustomerByEmail(input.email);
+  // Look up by email AND phone in parallel. Email is the stronger
+  // signal (phone numbers get reassigned, emails generally don't), so
+  // when both hit different records we prefer the email match. Phone
+  // is the fallback that closes the dedup gap: if a phone-only record
+  // exists (booked at the chair without an email), the next booking
+  // with that phone — which DOES carry an email — folds into that
+  // record instead of minting a sibling. Without this fallback we'd
+  // recreate the "Ben test" / "Bill" duplicate pattern on every
+  // phone-only-then-online conversion.
+  const [byEmail, byPhone] = await Promise.all([
+    findCustomerByEmail(input.email),
+    findCustomerByPhone(input.phone).catch(() => null),
+  ]);
+
+  // Phone reassignment guard: if we matched by phone and the existing
+  // record has a *different* email, treat the booker as a new person
+  // and create a fresh record. Reusing in that case would route the
+  // booking confirmation to the previous owner of the number.
+  const existingEmail = (byPhone?.email_address ?? '').trim().toLowerCase();
+  const inputEmailLc = input.email.trim().toLowerCase();
+  const phoneMatchHasDifferentEmail =
+    !!byPhone && !!existingEmail && existingEmail !== inputEmailLc;
+
+  const existing = byEmail ?? (phoneMatchHasDifferentEmail ? null : byPhone);
+
   if (!existing) {
     const created = await createCustomer(input);
     return {
@@ -217,14 +258,18 @@ export async function findOrCreateCustomer(input: CustomerInput): Promise<FindOr
     };
   }
 
+  const matchedByPhoneOnly = !byEmail;
+  const shouldBackfillEmail =
+    matchedByPhoneOnly && !(existing.email_address ?? '').trim() && !!inputEmailLc;
   const diff = computeDiff(existing, input);
 
   let customer = existing;
-  if (diff && input.updateContact) {
+  if ((diff && input.updateContact) || shouldBackfillEmail) {
     customer = await updateCustomer(existing.id, {
-      givenName: diff.givenName !== undefined ? input.givenName : undefined,
-      familyName: diff.familyName !== undefined ? input.familyName : undefined,
-      phone: diff.phone !== undefined ? input.phone : undefined,
+      givenName: diff?.givenName !== undefined && input.updateContact ? input.givenName : undefined,
+      familyName: diff?.familyName !== undefined && input.updateContact ? input.familyName : undefined,
+      phone: diff?.phone !== undefined && input.updateContact ? input.phone : undefined,
+      email: shouldBackfillEmail ? input.email : undefined,
     });
   }
 
