@@ -437,6 +437,20 @@ const defaultRescheduleDate = tomorrowInNyDate();
       .charge-tag--no-show { background: rgba(122, 184, 110, 0.15); color: #a4d091; }
       .charge-tag--failed { background: rgba(220, 80, 60, 0.15); color: #f0a37a; }
 
+      .group-badge {
+        display: inline-block;
+        margin-left: 6px;
+        padding: 1px 7px;
+        font-size: 0.68rem;
+        font-weight: 600;
+        letter-spacing: 0.04em;
+        color: var(--gold);
+        background: rgba(201, 163, 92, 0.1);
+        border: 1px solid rgba(201, 163, 92, 0.45);
+        border-radius: 999px;
+        white-space: nowrap;
+      }
+
       .resched-row {
         background: var(--surface-2);
       }
@@ -700,7 +714,15 @@ const defaultRescheduleDate = tomorrowInNyDate();
                       return [
                         <tr data-booking-id={b.id} data-booking-version={b.version} data-service-id={b.serviceVariationId} data-service-version={b.serviceVariationVersion} data-duration={b.durationMinutes} data-barber-id={b.barberId}>
                           <td>{b.startAtLocal}</td>
-                          <td>{b.serviceName} <span class="meta">· {b.priceDisplay}</span></td>
+                          <td>
+                            {b.serviceName} <span class="meta">· {b.priceDisplay}</span>
+                            {b.groupId && (
+                              <span class="group-badge" title={b.groupId}>
+                                Group {b.groupPosition}/{b.groupTotal}
+                                {b.groupMode === 'back-to-back' ? ' · back-to-back' : ' · all-at-once'}
+                              </span>
+                            )}
+                          </td>
                           <td>{b.barberName}</td>
                           <td>
                             {chargeLabel ? (
@@ -774,7 +796,14 @@ const defaultRescheduleDate = tomorrowInNyDate();
                         <tr data-booking-id={b.id}>
                           <td>{b.startAtLocal}</td>
                           <td><span class={`pill ${statusPillClass(b.status)}`}>{b.status.replace(/_/g, ' ')}</span></td>
-                          <td>{b.serviceName}</td>
+                          <td>
+                            {b.serviceName}
+                            {b.groupId && (
+                              <span class="group-badge" title={b.groupId}>
+                                Group {b.groupPosition}/{b.groupTotal}
+                              </span>
+                            )}
+                          </td>
                           <td>{b.barberName}</td>
                           <td>
                             {chargeLabel ? (

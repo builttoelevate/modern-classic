@@ -127,6 +127,52 @@
   .mb-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
+.mb-group {
+  background: rgba(201, 163, 92, 0.05);
+  border: 1px solid rgba(201, 163, 92, 0.32);
+  border-radius: var(--radius-lg);
+  padding: clamp(0.9rem, 2vw, 1.1rem);
+  display: grid;
+  gap: 0.85rem;
+}
+@media (min-width: 720px) {
+  /* On the 2-col grid, let a group span the full row so its members
+     can sit side-by-side under the same banner. */
+  .mb-group { grid-column: 1 / -1; }
+}
+.mb-group__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.25rem 0.75rem;
+  padding: 0 0.15rem;
+}
+.mb-group__title {
+  font-family: var(--font-display);
+  font-size: 1rem;
+  color: var(--color-gold-light);
+  letter-spacing: 0.02em;
+}
+.mb-group__mode {
+  font-family: inherit;
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
+  letter-spacing: 0.04em;
+}
+.mb-group__hint {
+  font-size: 0.78rem;
+  color: var(--color-text-dim);
+  letter-spacing: 0.02em;
+}
+.mb-group__members {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: 1fr;
+}
+@media (min-width: 720px) {
+  .mb-group__members { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
 .mb-card {
   background: var(--color-surface);
   border: 1px solid var(--color-border);

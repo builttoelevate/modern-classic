@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import type { BookingDetail, CustomerBookings } from '../../lib/square/customerBookings';
 import { BookingCard } from './BookingCard';
 
@@ -116,6 +116,62 @@ export default function MyBookingsList({ initial, basePath }: Props) {
     window.location.href = `${basePath}/book?${params.toString()}`;
   };
 
+  // Walk the list once, gathering bookings that share a groupId into a
+  // single visual container while leaving solo bookings as-is. The
+  // container is purely presentational — each booking inside still owns
+  // its own cancel/reschedule actions and its own Square id, so a
+  // customer can drop one half of a back-to-back without touching the
+  // other.
+  const renderList = (
+    list: BookingDetail[],
+    variant: 'upcoming' | 'past',
+  ): ReactNode[] => {
+    const seenGroupIds = new Set<string>();
+    const out: ReactNode[] = [];
+    for (const b of list) {
+      if (b.groupId) {
+        if (seenGroupIds.has(b.groupId)) continue;
+        seenGroupIds.add(b.groupId);
+        const members = list
+          .filter((x) => x.groupId === b.groupId)
+          .sort((a, c) => (a.groupPosition ?? 0) - (c.groupPosition ?? 0));
+        if (members.length > 1) {
+          out.push(
+            <BookingGroup key={`group-${b.groupId}`} members={members}>
+              {members.map((m) => (
+                <BookingCard
+                  key={m.id}
+                  booking={m}
+                  variant={variant}
+                  onCancel={handleCancel}
+                  onReschedule={handleReschedule}
+                  onBookAgain={handleBookAgain}
+                  busy={busyId === m.id}
+                />
+              ))}
+            </BookingGroup>,
+          );
+          continue;
+        }
+        // Single visible member of a group (e.g. a linked person whose
+        // booking has been pruned by the lookback window): fall through
+        // and render as a normal solo card.
+      }
+      out.push(
+        <BookingCard
+          key={b.id}
+          booking={b}
+          variant={variant}
+          onCancel={handleCancel}
+          onReschedule={handleReschedule}
+          onBookAgain={handleBookAgain}
+          busy={busyId === b.id}
+        />,
+      );
+    }
+    return out;
+  };
+
   return (
     <div className="mb-list">
       {toast && (
@@ -172,19 +228,7 @@ export default function MyBookingsList({ initial, basePath }: Props) {
               </a>
             </div>
           ) : (
-            <div className="mb-grid">
-              {bookings.upcoming.map((b) => (
-                <BookingCard
-                  key={b.id}
-                  booking={b}
-                  variant="upcoming"
-                  onCancel={handleCancel}
-                  onReschedule={handleReschedule}
-                  onBookAgain={handleBookAgain}
-                  busy={busyId === b.id}
-                />
-              ))}
-            </div>
+            <div className="mb-grid">{renderList(bookings.upcoming, 'upcoming')}</div>
           )}
         </section>
       )}
@@ -199,22 +243,43 @@ export default function MyBookingsList({ initial, basePath }: Props) {
           {bookings.past.length === 0 ? (
             <p className="mb-empty mb-empty--minor">No past appointments yet.</p>
           ) : (
-            <div className="mb-grid">
-              {bookings.past.map((b) => (
-                <BookingCard
-                  key={b.id}
-                  booking={b}
-                  variant="past"
-                  onCancel={handleCancel}
-                  onReschedule={handleReschedule}
-                  onBookAgain={handleBookAgain}
-                  busy={false}
-                />
-              ))}
-            </div>
+            <div className="mb-grid">{renderList(bookings.past, 'past')}</div>
           )}
         </section>
       )}
+    </div>
+  );
+}
+
+// Visual container for the members of a group booking. Renders a small
+// header naming the group ("Group of 2 · Back-to-back" or "all at once")
+// and a tinted frame so members read as a unit, while still leaving
+// each child card fully independent for cancel/reschedule.
+function BookingGroup({
+  members,
+  children,
+}: {
+  members: BookingDetail[];
+  children: ReactNode;
+}): JSX.Element {
+  const total = members[0]?.groupTotal ?? members.length;
+  const mode = members[0]?.groupMode;
+  const modeLabel =
+    mode === 'all-at-once' ? 'All at once' : mode === 'back-to-back' ? 'Back-to-back' : null;
+  return (
+    <div
+      className="mb-group"
+      role="group"
+      aria-label={`Group of ${total} appointments${modeLabel ? `, ${modeLabel.toLowerCase()}` : ''}`}
+    >
+      <header className="mb-group__head">
+        <span className="mb-group__title">
+          Group of {total}
+          {modeLabel ? <span className="mb-group__mode"> · {modeLabel}</span> : null}
+        </span>
+        <span className="mb-group__hint">Each appointment can be cancelled or rescheduled separately.</span>
+      </header>
+      <div className="mb-group__members">{children}</div>
     </div>
   );
 }
