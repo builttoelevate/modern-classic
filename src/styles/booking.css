@@ -681,6 +681,20 @@
   color: var(--color-text-dim);
 }
 .bw-chip--on .bw-chip__sub { color: var(--color-gold); }
+.bw-chip:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+  color: var(--color-text-dim);
+}
+.bw-chip:disabled:hover {
+  border-color: var(--color-border);
+  color: var(--color-text-dim);
+}
+.bw-field--hint {
+  color: var(--color-text-dim);
+  font-size: 0.85rem;
+  font-style: italic;
+}
 
 /* ---------- Form ---------- */
 .bw-form {
