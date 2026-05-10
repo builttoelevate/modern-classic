@@ -1,0 +1,608 @@
+---
+export const prerender = false;
+
+import { getBarberSession, refreshBarberSessionCookie } from '../../lib/auth/barberMiddleware';
+import { getAccount } from '../../lib/barber/accountStore';
+import { listBookings } from '../../lib/square/bookings';
+import { getBarbers } from '../../lib/square/team';
+import { getServices } from '../../lib/square/catalog';
+import { getCustomerById } from '../../lib/square/customers';
+import {
+  listWaitlistEntries,
+  getEntryBarberPicks,
+  type WaitlistEntry,
+} from '../../lib/marketing/waitlistLog';
+import { SquareApiError } from '../../lib/square/client';
+import type { Booking, Customer } from '../../lib/square/types';
+import '../../styles/barber.css';
+
+const base = import.meta.env.BASE_URL.replace(/\/$/, '');
+
+const session = getBarberSession(Astro.request);
+if (!session) {
+  return new Response(null, {
+    status: 302,
+    headers: { Location: `${base}/barber/sign-in` },
+  });
+}
+
+// If the account is flagged must-change-password, route through the
+// change-password page before showing the dashboard. Anyone with a
+// fresh password lands here directly.
+const account = await getAccount(session.barberId);
+if (!account) {
+  // Account was removed by admin while session was live — clear & bounce.
+  return new Response(null, {
+    status: 302,
+    headers: { Location: `${base}/barber/sign-in` },
+  });
+}
+if (account.mustChangePassword) {
+  return new Response(null, {
+    status: 302,
+    headers: { Location: `${base}/barber/change-password` },
+  });
+}
+
+const SHOP_TZ = 'America/New_York';
+const TERMINAL = new Set<Booking['status']>([
+  'CANCELLED_BY_CUSTOMER',
+  'CANCELLED_BY_SELLER',
+  'NO_SHOW',
+  'DECLINED',
+]);
+
+function shopDateKey(date: Date = new Date()): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: SHOP_TZ,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(date);
+}
+
+function shopMidnightUtcFor(y: number, m: number, d: number): Date {
+  let utc = new Date(Date.UTC(y, m - 1, d, 0, 0, 0));
+  for (let i = 0; i < 2; i++) {
+    const ps = new Intl.DateTimeFormat('en-US', {
+      timeZone: SHOP_TZ,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    }).formatToParts(utc);
+    const g = (t: string) => ps.find((p) => p.type === t)?.value ?? '0';
+    const localAsUtc = Date.UTC(
+      Number(g('year')),
+      Number(g('month')) - 1,
+      Number(g('day')),
+      Number(g('hour') === '24' ? '00' : g('hour')),
+      Number(g('minute')),
+      0,
+    );
+    const target = Date.UTC(y, m - 1, d, 0, 0, 0);
+    const diff = target - localAsUtc;
+    if (diff === 0) break;
+    utc = new Date(utc.getTime() + diff);
+  }
+  return utc;
+}
+
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+const todayKey = shopDateKey();
+const tomorrowKey = shopDateKey(new Date(Date.now() + 86_400_000));
+const requestedDate = Astro.url.searchParams.get('date');
+const filterDateKey = requestedDate && ISO_DATE.test(requestedDate) ? requestedDate : todayKey;
+const [dy, dm, dd] = filterDateKey.split('-').map(Number);
+const startUtc = shopMidnightUtcFor(dy, dm, dd);
+const endUtc = shopMidnightUtcFor(dy, dm, dd + 1);
+
+let bookings: Booking[] = [];
+let customers = new Map<string, Customer>();
+let loadError: string | null = null;
+const barberNames = new Map<string, string>();
+const serviceNames = new Map<string, string>();
+let waitlist: WaitlistEntry[] = [];
+
+try {
+  const [list, barbers, services, allWaitlist] = await Promise.all([
+    listBookings({ startAtMin: startUtc.toISOString(), startAtMax: endUtc.toISOString(), limit: 200 }),
+    getBarbers(),
+    getServices(),
+    listWaitlistEntries({ limit: 200 }).catch(() => [] as WaitlistEntry[]),
+  ]);
+  bookings = list.bookings
+    .filter((b) => !TERMINAL.has(b.status))
+    .filter((b) => b.appointment_segments?.[0]?.team_member_id === session.barberId);
+  for (const b of barbers) barberNames.set(b.id, b.displayName);
+  for (const s of services) {
+    for (const v of s.variations) serviceNames.set(v.id, s.name);
+  }
+
+  // Waitlist filter: keep entries where this barber appears in the
+  // customer's picks. Entries with no pick (any barber) are also shown
+  // because anyone in the shop could pick them up. Active statuses
+  // only — booked and archived shouldn't clutter the day view.
+  waitlist = allWaitlist
+    .filter((e) => e.status === 'new' || e.status === 'contacted')
+    .filter((e) => {
+      const picks = getEntryBarberPicks(e);
+      if (picks.length === 0) return true;
+      return picks.some((p) => p.id === session.barberId);
+    });
+
+  const customerIds = Array.from(
+    new Set(bookings.map((b) => b.customer_id).filter(Boolean) as string[]),
+  );
+  const customerEntries = await Promise.all(
+    customerIds.map(async (id) => {
+      try {
+        const c = await getCustomerById(id);
+        return c ? ([id, c] as const) : null;
+      } catch {
+        return null;
+      }
+    }),
+  );
+  customers = new Map(customerEntries.filter((e): e is readonly [string, Customer] => e !== null));
+} catch (err) {
+  if (err instanceof SquareApiError) {
+    loadError = `${err.code}: ${err.detail}`;
+  } else {
+    loadError = err instanceof Error ? err.message : 'Unknown error';
+  }
+}
+
+interface Row {
+  bookingId: string;
+  bookingVersion: number;
+  startUtc: Date;
+  startLocal: string;
+  startInputValue: string;
+  service: string;
+  customerName: string;
+  customerPhone: string;
+  customerPhoneE164: string;
+  customerEmail: string;
+  note: string;
+  status: Booking['status'];
+}
+
+const inputFmt = new Intl.DateTimeFormat('en-CA', {
+  timeZone: SHOP_TZ,
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+  hour: '2-digit',
+  minute: '2-digit',
+  hour12: false,
+});
+
+function toInputValue(utc: Date): string {
+  // datetime-local needs "YYYY-MM-DDTHH:mm" in the user's local clock,
+  // which here means the shop's local clock — that's the picker barbers
+  // will reason about. The reschedule API converts back to UTC using
+  // the same SHOP_TZ.
+  const parts = inputFmt.formatToParts(utc);
+  const g = (t: string) => parts.find((p) => p.type === t)?.value ?? '';
+  const hour = g('hour') === '24' ? '00' : g('hour');
+  return `${g('year')}-${g('month')}-${g('day')}T${hour}:${g('minute')}`;
+}
+
+const rows: Row[] = bookings
+  .map((b) => {
+    const seg = b.appointment_segments?.[0];
+    const c = b.customer_id ? customers.get(b.customer_id) : undefined;
+    const startUtc = new Date(b.start_at);
+    const phoneRaw = c?.phone_number?.trim() ?? '';
+    return {
+      bookingId: b.id,
+      bookingVersion: b.version,
+      startUtc,
+      startLocal: new Intl.DateTimeFormat('en-US', {
+        timeZone: SHOP_TZ,
+        hour: 'numeric',
+        minute: '2-digit',
+        hour12: true,
+      }).format(startUtc),
+      startInputValue: toInputValue(startUtc),
+      service: seg ? (serviceNames.get(seg.service_variation_id) ?? '—') : '—',
+      customerName: c
+        ? `${c.given_name ?? ''} ${c.family_name ?? ''}`.trim() || '—'
+        : '—',
+      customerPhone: phoneRaw,
+      customerPhoneE164: phoneRaw.replace(/[^0-9+]/g, ''),
+      customerEmail: c?.email_address?.trim() ?? '',
+      note: b.customer_note?.trim() ?? '',
+      status: b.status,
+    };
+  })
+  .sort((a, b) => a.startUtc.getTime() - b.startUtc.getTime());
+
+const fmtDate = new Intl.DateTimeFormat('en-US', {
+  timeZone: SHOP_TZ,
+  weekday: 'long',
+  month: 'long',
+  day: 'numeric',
+});
+
+const isToday = filterDateKey === todayKey;
+const isTomorrow = filterDateKey === tomorrowKey;
+const dateHeading = isToday ? 'Today' : isTomorrow ? 'Tomorrow' : fmtDate.format(startUtc);
+const dateSubLabel = fmtDate.format(startUtc);
+
+function formatPhone(raw: string): string {
+  const d = raw.replace(/[^0-9]/g, '');
+  if (d.length === 11 && d.startsWith('1')) {
+    return `(${d.slice(1, 4)}) ${d.slice(4, 7)}-${d.slice(7)}`;
+  }
+  if (d.length === 10) {
+    return `(${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6)}`;
+  }
+  return raw;
+}
+
+function statusClass(status: string): string {
+  if (status === 'ACCEPTED') return 'ok';
+  if (status === 'PENDING') return 'pending';
+  return 'cancelled';
+}
+
+interface WaitlistRow {
+  id: string;
+  customerName: string;
+  customerPhone: string;
+  customerPhoneE164: string;
+  customerEmail: string;
+  serviceName: string;
+  preferredDate?: string;
+  daysOfWeek: string[];
+  timesOfDay: string[];
+  note: string;
+  adminNote: string;
+  status: 'new' | 'contacted';
+  submittedAt: string;
+}
+
+const waitlistRows: WaitlistRow[] = waitlist
+  .map((e): WaitlistRow => ({
+    id: e.id,
+    customerName: e.customerName,
+    customerPhone: e.customerPhone,
+    customerPhoneE164: (e.customerPhone || '').replace(/[^0-9+]/g, ''),
+    customerEmail: e.customerEmail,
+    serviceName: e.serviceName,
+    preferredDate: e.preferredDate,
+    daysOfWeek: e.daysOfWeek ?? [],
+    timesOfDay: e.timesOfDay ?? [],
+    note: e.note ?? '',
+    adminNote: e.adminNote ?? '',
+    status: e.status === 'contacted' ? 'contacted' : 'new',
+    submittedAt: e.submittedAt,
+  }))
+  .sort((a, b) => b.submittedAt.localeCompare(a.submittedAt));
+
+const displayName = barberNames.get(session.barberId) ?? session.username;
+
+// Sliding refresh on each authed render.
+Astro.response.headers.append('Set-Cookie', refreshBarberSessionCookie(session));
+---
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>Your chair — Modern Classic</title>
+  </head>
+  <body class="bb-page">
+    <div class="bb-wrap">
+      <header class="bb-head">
+        <div>
+          <p class="bb-eyebrow">Welcome back</p>
+          <h1>{displayName}'s chair</h1>
+        </div>
+        <nav class="bb-head__nav">
+          <a href={`${base}/barber/account`}>Account</a>
+          <button type="button" class="bb-link" id="signout-btn">Sign out</button>
+        </nav>
+      </header>
+
+      <form class="bb-filters" method="get" action="/barber/dashboard">
+        <div class="bb-filters__quick">
+          <a
+            class={`bb-chip ${isToday ? 'is-active' : ''}`}
+            href={`${base}/barber/dashboard?date=${todayKey}`}
+          >Today</a>
+          <a
+            class={`bb-chip ${isTomorrow ? 'is-active' : ''}`}
+            href={`${base}/barber/dashboard?date=${tomorrowKey}`}
+          >Tomorrow</a>
+        </div>
+        <label class="bb-field bb-field--inline">
+          <span class="bb-field__label">Date</span>
+          <input type="date" name="date" value={filterDateKey} />
+        </label>
+        <button type="submit" class="bb-btn bb-btn--ghost">Show</button>
+      </form>
+
+      {loadError && <p class="bb-err">Couldn't load: {loadError}</p>}
+
+      <section>
+        <h2>
+          {dateHeading}
+          <span class="bb-sub">
+            {!isToday && !isTomorrow ? '' : `${dateSubLabel} · `}
+            {rows.length} {rows.length === 1 ? 'appointment' : 'appointments'}
+          </span>
+        </h2>
+        {rows.length === 0 ? (
+          <p class="bb-empty">No appointments scheduled.</p>
+        ) : (
+          <ul class="bb-list">
+            {rows.map((r) => (
+              <li class="bb-card" data-booking-id={r.bookingId}>
+                <div class="bb-card__row">
+                  <span class="bb-card__time">{r.startLocal}</span>
+                  <span class={`bb-pill bb-pill--${statusClass(r.status)}`}>
+                    {r.status.replace(/_/g, ' ')}
+                  </span>
+                </div>
+                <div class="bb-card__customer">
+                  <strong>{r.customerName}</strong>
+                  <div class="bb-card__contact">
+                    {r.customerPhone && (
+                      <>
+                        <a class="bb-card__phone" href={`tel:${r.customerPhoneE164}`}>
+                          {formatPhone(r.customerPhone)}
+                        </a>
+                        <a
+                          class="bb-btn bb-btn--ghost bb-btn--sm"
+                          href={`sms:${r.customerPhoneE164}`}
+                        >
+                          Text customer
+                        </a>
+                      </>
+                    )}
+                  </div>
+                </div>
+                <dl class="bb-card__details">
+                  <div><dt>Service</dt><dd>{r.service}</dd></div>
+                  {r.note && <div><dt>Note</dt><dd>{r.note}</dd></div>}
+                  {r.customerEmail && <div><dt>Email</dt><dd>{r.customerEmail}</dd></div>}
+                </dl>
+                <div class="bb-card__actions">
+                  <button type="button" class="bb-btn bb-btn--ghost" data-cancel-btn>Cancel</button>
+                  <button type="button" class="bb-btn bb-btn--ghost" data-reschedule-btn>Reschedule</button>
+                </div>
+                <div class="bb-card__reschedule" data-reschedule-panel hidden>
+                  <label class="bb-field bb-field--inline">
+                    <span class="bb-field__label">New date &amp; time</span>
+                    <input
+                      type="datetime-local"
+                      data-reschedule-input
+                      value={r.startInputValue}
+                      step="900"
+                    />
+                  </label>
+                  <div class="bb-card__reschedule-actions">
+                    <button type="button" class="bb-btn bb-btn--ghost" data-reschedule-cancel>Back</button>
+                    <button type="button" class="bb-btn" data-reschedule-submit>Save</button>
+                  </div>
+                </div>
+                <p class="bb-card__msg" data-msg hidden></p>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      <section>
+        <h2>
+          Waitlist
+          <span class="bb-sub">
+            {waitlistRows.length} {waitlistRows.length === 1 ? 'entry' : 'entries'}
+          </span>
+        </h2>
+        {waitlistRows.length === 0 ? (
+          <p class="bb-empty">No active waitlist entries for you.</p>
+        ) : (
+          <ul class="bb-list">
+            {waitlistRows.map((w) => (
+              <li class="bb-card">
+                <div class="bb-card__row">
+                  <strong>{w.customerName}</strong>
+                  <span class={`bb-pill bb-pill--${w.status === 'contacted' ? 'pending' : 'ok'}`}>
+                    {w.status}
+                  </span>
+                </div>
+                <div class="bb-card__contact">
+                  {w.customerPhone && (
+                    <>
+                      <a class="bb-card__phone" href={`tel:${w.customerPhoneE164}`}>
+                        {formatPhone(w.customerPhone)}
+                      </a>
+                      <a
+                        class="bb-btn bb-btn--ghost bb-btn--sm"
+                        href={`sms:${w.customerPhoneE164}`}
+                      >
+                        Text customer
+                      </a>
+                    </>
+                  )}
+                </div>
+                <dl class="bb-card__details">
+                  <div><dt>Service</dt><dd>{w.serviceName}</dd></div>
+                  {w.preferredDate && <div><dt>Preferred</dt><dd>{w.preferredDate}</dd></div>}
+                  {w.daysOfWeek.length > 0 && <div><dt>Days</dt><dd>{w.daysOfWeek.join(', ')}</dd></div>}
+                  {w.timesOfDay.length > 0 && <div><dt>Times</dt><dd>{w.timesOfDay.join(', ')}</dd></div>}
+                  {w.note && <div><dt>Note</dt><dd>{w.note}</dd></div>}
+                  {w.adminNote && <div><dt>Shop note</dt><dd>{w.adminNote}</dd></div>}
+                  {w.customerEmail && <div><dt>Email</dt><dd>{w.customerEmail}</dd></div>}
+                </dl>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+    </div>
+
+    <script is:inline define:vars={{ tz: SHOP_TZ }}>
+      (function () {
+        const SHOP_TZ = tz;
+
+        // Convert a datetime-local string ("YYYY-MM-DDTHH:mm") interpreted
+        // in the shop tz to a UTC ISO string for the API. Matches the
+        // localDateToUtc logic in lib/square/availability.ts.
+        function shopLocalToUtcIso(local) {
+          const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/.exec(local);
+          if (!m) return null;
+          const [, y, mo, d, h, mi] = m.map(Number);
+          let utc = new Date(Date.UTC(y, mo - 1, d, h, mi, 0));
+          for (let i = 0; i < 2; i++) {
+            const ps = new Intl.DateTimeFormat('en-US', {
+              timeZone: SHOP_TZ,
+              year: 'numeric',
+              month: '2-digit',
+              day: '2-digit',
+              hour: '2-digit',
+              minute: '2-digit',
+              hour12: false,
+            }).formatToParts(utc);
+            const g = (t) => Number((ps.find((p) => p.type === t) || {}).value || 0);
+            const localAsUtc = Date.UTC(
+              g('year'),
+              g('month') - 1,
+              g('day'),
+              g('hour') === 24 ? 0 : g('hour'),
+              g('minute'),
+              0,
+            );
+            const target = Date.UTC(y, mo - 1, d, h, mi, 0);
+            const diff = target - localAsUtc;
+            if (diff === 0) break;
+            utc = new Date(utc.getTime() + diff);
+          }
+          return utc.toISOString();
+        }
+
+        function showMsg(card, text, isError) {
+          const el = card.querySelector('[data-msg]');
+          if (!el) return;
+          el.textContent = text;
+          el.hidden = false;
+          el.dataset.kind = isError ? 'error' : 'info';
+        }
+
+        document.querySelectorAll('[data-booking-id]').forEach((card) => {
+          const bookingId = card.dataset.bookingId;
+          const cancelBtn = card.querySelector('[data-cancel-btn]');
+          const rescheduleBtn = card.querySelector('[data-reschedule-btn]');
+          const reschedulePanel = card.querySelector('[data-reschedule-panel]');
+          const rescheduleInput = card.querySelector('[data-reschedule-input]');
+          const rescheduleSubmit = card.querySelector('[data-reschedule-submit]');
+          const rescheduleCancel = card.querySelector('[data-reschedule-cancel]');
+
+          if (cancelBtn) {
+            cancelBtn.addEventListener('click', async () => {
+              if (!confirm('Cancel this appointment?')) return;
+              cancelBtn.disabled = true;
+              const original = cancelBtn.textContent;
+              cancelBtn.textContent = 'Cancelling…';
+              try {
+                const res = await fetch('/api/barber/bookings/cancel', {
+                  method: 'POST',
+                  credentials: 'same-origin',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ bookingId }),
+                });
+                const body = await res.json();
+                if (!body.ok) {
+                  showMsg(card, body?.error?.detail || 'Could not cancel.', true);
+                  cancelBtn.disabled = false;
+                  cancelBtn.textContent = original;
+                  return;
+                }
+                showMsg(card, 'Cancelled. Refreshing…', false);
+                setTimeout(() => window.location.reload(), 700);
+              } catch (_err) {
+                showMsg(card, 'Network error. Try again.', true);
+                cancelBtn.disabled = false;
+                cancelBtn.textContent = original;
+              }
+            });
+          }
+
+          if (rescheduleBtn && reschedulePanel) {
+            rescheduleBtn.addEventListener('click', () => {
+              reschedulePanel.hidden = false;
+              rescheduleBtn.disabled = true;
+            });
+          }
+          if (rescheduleCancel && reschedulePanel) {
+            rescheduleCancel.addEventListener('click', () => {
+              reschedulePanel.hidden = true;
+              if (rescheduleBtn) rescheduleBtn.disabled = false;
+            });
+          }
+          if (rescheduleSubmit && rescheduleInput) {
+            rescheduleSubmit.addEventListener('click', async () => {
+              const newIso = shopLocalToUtcIso(rescheduleInput.value);
+              if (!newIso) {
+                showMsg(card, 'Pick a valid date and time.', true);
+                return;
+              }
+              rescheduleSubmit.disabled = true;
+              const original = rescheduleSubmit.textContent;
+              rescheduleSubmit.textContent = 'Saving…';
+              try {
+                const res = await fetch('/api/barber/bookings/reschedule', {
+                  method: 'POST',
+                  credentials: 'same-origin',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    oldBookingId: bookingId,
+                    newStartAtUtc: newIso,
+                  }),
+                });
+                const body = await res.json();
+                if (!body.ok) {
+                  showMsg(card, body?.error?.detail || 'Could not reschedule.', true);
+                  rescheduleSubmit.disabled = false;
+                  rescheduleSubmit.textContent = original;
+                  return;
+                }
+                showMsg(
+                  card,
+                  body.warning || 'Rescheduled. Refreshing…',
+                  Boolean(body.warning),
+                );
+                setTimeout(() => window.location.reload(), 900);
+              } catch (_err) {
+                showMsg(card, 'Network error. Try again.', true);
+                rescheduleSubmit.disabled = false;
+                rescheduleSubmit.textContent = original;
+              }
+            });
+          }
+        });
+
+        const signout = document.getElementById('signout-btn');
+        if (signout) {
+          signout.addEventListener('click', async () => {
+            signout.disabled = true;
+            try {
+              await fetch('/api/barber/auth/logout', {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: { 'Content-Type': 'application/json' },
+              });
+            } catch {}
+            window.location.href = '/barber/sign-in';
+          });
+        }
+      })();
+    </script>
+  </body>
+</html>

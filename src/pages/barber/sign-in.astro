@@ -1,0 +1,105 @@
+---
+export const prerender = false;
+
+import { getBarberSession } from '../../lib/auth/barberMiddleware';
+import '../../styles/barber.css';
+
+// Already signed in? Skip the form.
+const existing = getBarberSession(Astro.request);
+if (existing) {
+  return new Response(null, {
+    status: 302,
+    headers: { Location: '/barber/dashboard' },
+  });
+}
+---
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>Barber sign-in — Modern Classic</title>
+  </head>
+  <body class="bb-page">
+    <main class="bb-auth">
+      <header class="bb-auth__head">
+        <p class="bb-eyebrow">Staff portal</p>
+        <h1>Sign in</h1>
+        <p class="bb-auth__lede">
+          Modern Classic barbers only. If you don't have a login yet, ask
+          Michael to provision one for you.
+        </p>
+      </header>
+      <form class="bb-form" id="signin-form" method="post" action="#" novalidate>
+        <label class="bb-field">
+          <span class="bb-field__label">Username</span>
+          <input
+            type="text"
+            name="username"
+            autocomplete="username"
+            autocapitalize="none"
+            spellcheck="false"
+            required
+          />
+        </label>
+        <label class="bb-field">
+          <span class="bb-field__label">Password</span>
+          <input
+            type="password"
+            name="password"
+            autocomplete="current-password"
+            required
+          />
+        </label>
+        <p class="bb-form__error" id="signin-error" hidden></p>
+        <button type="submit" class="bb-btn" id="signin-submit">Sign in</button>
+      </form>
+    </main>
+
+    <script is:inline>
+      (function () {
+        const form = document.getElementById('signin-form');
+        const errorEl = document.getElementById('signin-error');
+        const submit = document.getElementById('signin-submit');
+        if (!form) return;
+        form.addEventListener('submit', async (e) => {
+          e.preventDefault();
+          errorEl.hidden = true;
+          submit.disabled = true;
+          const original = submit.textContent;
+          submit.textContent = 'Signing in…';
+          const data = new FormData(form);
+          try {
+            const res = await fetch('/api/barber/auth/login', {
+              method: 'POST',
+              credentials: 'same-origin',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                username: data.get('username'),
+                password: data.get('password'),
+              }),
+            });
+            const body = await res.json();
+            if (!body.ok) {
+              errorEl.textContent =
+                body?.error?.detail || 'Could not sign in. Try again.';
+              errorEl.hidden = false;
+              submit.disabled = false;
+              submit.textContent = original;
+              return;
+            }
+            const next = body.mustChangePassword
+              ? '/barber/change-password'
+              : '/barber/dashboard';
+            window.location.href = next;
+          } catch (_err) {
+            errorEl.textContent = 'Network error. Try again.';
+            errorEl.hidden = false;
+            submit.disabled = false;
+            submit.textContent = original;
+          }
+        });
+      })();
+    </script>
+  </body>
+</html>

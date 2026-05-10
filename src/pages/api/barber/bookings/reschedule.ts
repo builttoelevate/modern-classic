@@ -1,47 +1,50 @@
 import type { APIRoute } from 'astro';
-import { checkBasicAuth } from '../../../../lib/admin/auth';
+import {
+  BarberAuthRequiredError,
+  requireBarberSession,
+} from '../../../../lib/auth/barberMiddleware';
 import { rescheduleBookingCore } from '../../../../lib/booking/rescheduleCore';
 
 export const prerender = false;
 
-// Admin-side reschedule — fired from /admin/customers after Michael
-// looks up a customer and wants to move one of their appointments.
+// Barber-initiated reschedule. Same two-step (create new, cancel old)
+// as the admin endpoint, with two added constraints:
 //
-// Strategy (create-new-then-cancel-old) lives in rescheduleCore.ts so
-// the barber endpoint at /api/barber/bookings/reschedule.ts can share
-// the same logic.
+//   1. Auth is a barber session, not Basic Auth.
+//   2. The booking's team_member_id must match the logged-in barber.
+//      Barbers can move their own appointments around but can't grab
+//      a teammate's row.
 //
-// Differences from the customer flow:
-//   1. Auth is HTTP Basic (admin), not session cookie + ownership.
-//   2. No 24-hour gate.
-//   3. Service stays the same (read from the existing booking). Barber
-//      may be swapped via teamMemberId. Service swap = cancel + rebook.
+// Service stays the same; the barber may not swap themselves out —
+// teamMemberId is forced to the existing booking's barber.
 
-interface AdminReschedulePayload {
+interface BarberReschedulePayload {
   oldBookingId: string;
   newStartAtUtc: string;
-  /** Optional barber swap. Defaults to the existing booking's barber. */
-  teamMemberId?: string;
 }
 
-function isValidPayload(p: unknown): p is AdminReschedulePayload {
+function isValidPayload(p: unknown): p is BarberReschedulePayload {
   if (!p || typeof p !== 'object') return false;
-  const r = p as Partial<AdminReschedulePayload>;
+  const r = p as Partial<BarberReschedulePayload>;
   if (typeof r.oldBookingId !== 'string' || !r.oldBookingId) return false;
   if (typeof r.newStartAtUtc !== 'string') return false;
   if (isNaN(new Date(r.newStartAtUtc).getTime())) return false;
-  if (r.teamMemberId !== undefined && typeof r.teamMemberId !== 'string') return false;
   return true;
 }
 
 function logAction(payload: Record<string, unknown>): void {
   // eslint-disable-next-line no-console
-  console.log(`[ADMIN] ${JSON.stringify({ ts: new Date().toISOString(), ...payload })}`);
+  console.log(`[BARBER] ${JSON.stringify({ ts: new Date().toISOString(), ...payload })}`);
 }
 
 export const POST: APIRoute = async ({ request }) => {
-  const auth = checkBasicAuth(request);
-  if (!auth.ok) return auth.challenge;
+  let session;
+  try {
+    session = requireBarberSession(request);
+  } catch (err) {
+    if (err instanceof BarberAuthRequiredError) return err.response;
+    throw err;
+  }
 
   let body: unknown;
   try {
@@ -59,16 +62,32 @@ export const POST: APIRoute = async ({ request }) => {
     );
   }
 
-  const result = await rescheduleBookingCore({
-    oldBookingId: body.oldBookingId,
-    newStartAtUtc: body.newStartAtUtc,
-    teamMemberId: body.teamMemberId,
-    actorPrefix: 'admin',
-  });
+  const result = await rescheduleBookingCore(
+    {
+      oldBookingId: body.oldBookingId,
+      newStartAtUtc: body.newStartAtUtc,
+      actorPrefix: `barber-${session.barberId}`,
+    },
+    (booking) => {
+      const assigned = booking.appointment_segments?.[0]?.team_member_id;
+      if (!assigned || assigned !== session.barberId) {
+        return {
+          ok: false,
+          status: 403,
+          error: {
+            code: 'FORBIDDEN',
+            detail: 'You can only reschedule your own appointments.',
+          },
+        };
+      }
+      return null;
+    },
+  );
 
   if (!result.ok) {
     logAction({
-      phase: 'admin-reschedule-failed',
+      phase: 'barber-reschedule-failed',
+      barberId: session.barberId,
       oldBookingId: body.oldBookingId,
       code: result.error.code,
       detail: result.error.detail,
@@ -78,8 +97,9 @@ export const POST: APIRoute = async ({ request }) => {
 
   if (result.warning) {
     logAction({
-      phase: 'admin-reschedule-cancel-failed',
+      phase: 'barber-reschedule-cancel-failed',
       severity: 'manual-cleanup-needed',
+      barberId: session.barberId,
       oldBookingId: result.oldBookingId,
       newBookingId: result.newBookingId,
     });
@@ -93,7 +113,8 @@ export const POST: APIRoute = async ({ request }) => {
   }
 
   logAction({
-    phase: 'admin-reschedule-success',
+    phase: 'barber-reschedule-success',
+    barberId: session.barberId,
     oldBookingId: result.oldBookingId,
     newBookingId: result.newBookingId,
   });

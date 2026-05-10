@@ -1,0 +1,526 @@
+---
+export const prerender = false;
+
+import { checkBasicAuth } from '../../lib/admin/auth';
+import { getBarbers } from '../../lib/square/team';
+import { listAccounts } from '../../lib/barber/accountStore';
+import type { Barber } from '../../lib/square/types';
+
+const auth = checkBasicAuth(Astro.request);
+if (!auth.ok) return auth.challenge;
+
+let barbers: Barber[] = [];
+let accounts: Awaited<ReturnType<typeof listAccounts>> = [];
+let loadError: string | null = null;
+try {
+  [barbers, accounts] = await Promise.all([getBarbers(), listAccounts()]);
+} catch (err) {
+  loadError = err instanceof Error ? err.message : 'Failed to load.';
+}
+
+const accountByMember = new Map(accounts.map((a) => [a.teamMemberId, a]));
+
+interface Row {
+  teamMemberId: string;
+  displayName: string;
+  givenName: string;
+  role: string;
+  hasAccount: boolean;
+  username?: string;
+  mustChangePassword?: boolean;
+  updatedAt?: string;
+  /** Default username we'd use if Michael clicks "Provision" without
+   *  editing the username field. Lowercased, ASCII-only first name. */
+  suggestedUsername: string;
+}
+
+function suggestUsername(b: Barber): string {
+  const base = (b.givenName || b.displayName || 'barber')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]/g, '');
+  return base.length >= 2 ? base : `barber-${b.id.slice(-4).toLowerCase()}`;
+}
+
+const rows: Row[] = barbers.map((b) => {
+  const acct = accountByMember.get(b.id);
+  return {
+    teamMemberId: b.id,
+    displayName: b.displayName,
+    givenName: b.givenName,
+    role: b.role,
+    hasAccount: Boolean(acct),
+    username: acct?.username,
+    mustChangePassword: acct?.mustChangePassword,
+    updatedAt: acct?.updatedAt,
+    suggestedUsername: suggestUsername(b),
+  };
+});
+
+const unprovisioned = rows.filter((r) => !r.hasAccount);
+---
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>Barbers — Modern Classic Admin</title>
+    <style>
+      :root {
+        --bg: #0b0a08;
+        --surface: #161311;
+        --surface-2: #1d1916;
+        --border: #2a2520;
+        --text: #f3ece0;
+        --muted: #b0a695;
+        --dim: #80776a;
+        --gold: #c9a35c;
+        --gold-light: #e6c785;
+      }
+      *, *::before, *::after { box-sizing: border-box; }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font: 16px/1.5 ui-sans-serif, system-ui, sans-serif;
+      }
+      .wrap { max-width: 70rem; margin: 0 auto; padding: 32px 24px; }
+      h1 { font-family: Georgia, serif; font-weight: 400; font-size: 1.8rem; margin: 0 0 6px; }
+      h2 { font-family: Georgia, serif; font-weight: 400; font-size: 1.2rem; margin: 32px 0 12px; }
+      .sub { color: var(--muted); margin: 0 0 24px; }
+      .err {
+        background: rgba(220, 80, 60, 0.08);
+        border: 1px solid rgba(220, 80, 60, 0.4);
+        color: #f0a37a;
+        padding: 12px 16px;
+        border-radius: 6px;
+      }
+      .topnav {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 1.5rem;
+        align-items: center;
+        padding-bottom: 18px;
+        margin-bottom: 24px;
+        border-bottom: 1px solid var(--border);
+        font-size: 0.78rem;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+      }
+      .topnav a { color: var(--muted); text-decoration: none; padding-bottom: 4px; }
+      .topnav a.active { color: var(--gold); border-bottom: 2px solid var(--gold); }
+      .topnav a:hover { color: var(--gold); }
+      .grid {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 14px;
+      }
+      @media (min-width: 720px) { .grid { grid-template-columns: repeat(2, 1fr); } }
+      .row {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 16px 18px;
+      }
+      .row__head {
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+        gap: 12px;
+        flex-wrap: wrap;
+        margin-bottom: 10px;
+      }
+      .name { font-family: Georgia, serif; font-size: 1.1rem; }
+      .role { color: var(--dim); font-size: 0.8rem; letter-spacing: 0.06em; text-transform: uppercase; }
+      .status {
+        font-size: 0.72rem;
+        font-weight: 600;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        padding: 3px 10px;
+        border-radius: 999px;
+      }
+      .status--ok { background: rgba(122, 184, 110, 0.15); color: #a4d091; }
+      .status--none { background: rgba(150, 130, 100, 0.15); color: var(--muted); }
+      .status--temp { background: rgba(201, 163, 92, 0.15); color: var(--gold); }
+      .meta { font-size: 0.85rem; color: var(--muted); margin: 0 0 12px; }
+      .meta strong { color: var(--text); font-weight: 500; }
+      .actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+      .btn {
+        appearance: none;
+        background: var(--gold);
+        color: #1a140a;
+        border: 1px solid var(--gold);
+        padding: 8px 14px;
+        font: inherit;
+        font-size: 0.78rem;
+        font-weight: 700;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        border-radius: 4px;
+        cursor: pointer;
+      }
+      .btn:disabled { opacity: 0.55; cursor: not-allowed; }
+      .btn--ghost {
+        background: transparent;
+        color: var(--text);
+        border-color: var(--border);
+      }
+      .btn--ghost:hover { border-color: var(--gold); color: var(--gold-light); }
+      .btn--danger { background: #6b2727; color: #fff5e8; border-color: #4a1818; }
+      .btn--danger:hover { background: #8a3434; }
+      .field {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        margin-bottom: 10px;
+      }
+      .field input {
+        background: var(--surface-2);
+        border: 1px solid var(--border);
+        color: var(--text);
+        font: inherit;
+        padding: 8px 12px;
+        border-radius: 4px;
+      }
+      .field label {
+        font-size: 0.7rem;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: var(--dim);
+      }
+      .credentials {
+        background: rgba(201, 163, 92, 0.08);
+        border: 1px solid rgba(201, 163, 92, 0.4);
+        border-radius: 6px;
+        padding: 12px 14px;
+        margin-top: 10px;
+        font-size: 0.9rem;
+      }
+      .credentials code {
+        display: inline-block;
+        background: var(--surface-2);
+        padding: 2px 8px;
+        border-radius: 4px;
+        font-family: ui-monospace, monospace;
+        color: var(--gold-light);
+      }
+      .credentials button {
+        margin-left: 8px;
+        font-size: 0.7rem;
+        padding: 4px 10px;
+      }
+      .bulk {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 16px 18px;
+        margin-bottom: 20px;
+      }
+      .err-row {
+        color: #f0a37a;
+        font-size: 0.85rem;
+        margin-top: 8px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <nav class="topnav">
+        <a href="/admin">Admin</a>
+        <a href="/admin/today">Today</a>
+        <a href="/admin/bookings">Bookings</a>
+        <a href="/admin/customers">Customers</a>
+        <a href="/admin/waitlist">Waitlist</a>
+        <a href="/admin/barbers" class="active">Barbers</a>
+        <a href="/admin/reviews">Reviews</a>
+      </nav>
+
+      <h1>Barbers &amp; logins</h1>
+      <p class="sub">
+        Each barber gets their own dashboard at <code>/barber/dashboard</code>.
+        Provision a login here. Generated passwords are shown once — copy them
+        and pass them along to the barber.
+      </p>
+
+      {loadError && <p class="err">Couldn't load: {loadError}</p>}
+
+      {unprovisioned.length > 0 && !loadError && (
+        <div class="bulk">
+          <h2 style="margin-top: 0;">Quick provision</h2>
+          <p class="meta">
+            {unprovisioned.length} barber{unprovisioned.length === 1 ? '' : 's'} without a login —
+            {' '}{unprovisioned.map((u) => u.displayName).join(', ')}. Click below to seed
+            them all at once with default usernames and passwords.
+          </p>
+          <button type="button" class="btn" id="bulk-provision">Provision all unprovisioned</button>
+          <div id="bulk-output"></div>
+        </div>
+      )}
+
+      <h2>All barbers</h2>
+      {!loadError && (
+        <div class="grid">
+          {rows.map((r) => (
+            <div class="row" data-team-member-id={r.teamMemberId}>
+              <div class="row__head">
+                <div>
+                  <div class="name">{r.displayName}</div>
+                  <div class="role">{r.role}</div>
+                </div>
+                {r.hasAccount ? (
+                  r.mustChangePassword ? (
+                    <span class="status status--temp">Temp password</span>
+                  ) : (
+                    <span class="status status--ok">Active</span>
+                  )
+                ) : (
+                  <span class="status status--none">No login</span>
+                )}
+              </div>
+              <p class="meta">
+                <strong>ID:</strong> <code style="font-size: 0.78rem;">{r.teamMemberId}</code><br />
+                {r.hasAccount ? (
+                  <>
+                    <strong>Username:</strong> {r.username}<br />
+                    {r.updatedAt && (
+                      <><strong>Last update:</strong> {new Date(r.updatedAt).toLocaleString()}</>
+                    )}
+                  </>
+                ) : (
+                  <>No dashboard login yet.</>
+                )}
+              </p>
+              {!r.hasAccount && (
+                <div class="provision-form" data-suggested-username={r.suggestedUsername}>
+                  <div class="field">
+                    <label>Username</label>
+                    <input type="text" data-username-input value={r.suggestedUsername} />
+                  </div>
+                  <div class="actions">
+                    <button type="button" class="btn" data-provision-btn>Provision login</button>
+                  </div>
+                </div>
+              )}
+              {r.hasAccount && (
+                <div class="actions">
+                  <button type="button" class="btn btn--ghost" data-reset-btn>Reset password</button>
+                  <button type="button" class="btn btn--danger" data-remove-btn>Remove login</button>
+                </div>
+              )}
+              <div class="credentials" data-credentials hidden></div>
+              <p class="err-row" data-error hidden></p>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+
+    <script is:inline>
+      (function () {
+        function showCreds(card, username, password) {
+          const el = card.querySelector('[data-credentials]');
+          if (!el) return;
+          el.innerHTML =
+            '<strong>Save this — it shows once.</strong><br />Username: <code>' +
+            escapeHtml(username) +
+            '</code><br />Password: <code id="pw-' +
+            escapeHtml(card.dataset.teamMemberId) +
+            '">' +
+            escapeHtml(password) +
+            '</code> <button type="button" class="btn btn--ghost" data-copy>Copy</button>';
+          el.hidden = false;
+          const copyBtn = el.querySelector('[data-copy]');
+          if (copyBtn) {
+            copyBtn.addEventListener('click', async () => {
+              try {
+                await navigator.clipboard.writeText(password);
+                copyBtn.textContent = 'Copied';
+              } catch {
+                copyBtn.textContent = 'Copy failed';
+              }
+            });
+          }
+        }
+        function escapeHtml(s) {
+          return String(s).replace(/[&<>"']/g, (c) => ({
+            '&': '&amp;',
+            '<': '&lt;',
+            '>': '&gt;',
+            '"': '&quot;',
+            "'": '&#39;',
+          }[c]));
+        }
+        function showError(card, msg) {
+          const el = card.querySelector('[data-error]');
+          if (!el) return;
+          el.textContent = msg;
+          el.hidden = false;
+        }
+        function clearError(card) {
+          const el = card.querySelector('[data-error]');
+          if (el) el.hidden = true;
+        }
+
+        async function provision(teamMemberId, username) {
+          const res = await fetch('/api/admin/barbers/upsert', {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ teamMemberId, username }),
+          });
+          return res.json();
+        }
+        async function reset(teamMemberId) {
+          const res = await fetch('/api/admin/barbers/reset-password', {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ teamMemberId }),
+          });
+          return res.json();
+        }
+        async function remove(teamMemberId) {
+          const res = await fetch('/api/admin/barbers/remove', {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ teamMemberId }),
+          });
+          return res.json();
+        }
+
+        document.querySelectorAll('[data-team-member-id]').forEach((card) => {
+          const teamMemberId = card.dataset.teamMemberId;
+
+          const provisionBtn = card.querySelector('[data-provision-btn]');
+          if (provisionBtn) {
+            provisionBtn.addEventListener('click', async () => {
+              clearError(card);
+              const usernameInput = card.querySelector('[data-username-input]');
+              const username = (usernameInput && usernameInput.value) || '';
+              if (!username) {
+                showError(card, 'Username is required.');
+                return;
+              }
+              provisionBtn.disabled = true;
+              const original = provisionBtn.textContent;
+              provisionBtn.textContent = 'Provisioning…';
+              try {
+                const body = await provision(teamMemberId, username);
+                if (!body.ok) {
+                  showError(card, body?.error?.detail || 'Could not provision.');
+                  provisionBtn.disabled = false;
+                  provisionBtn.textContent = original;
+                  return;
+                }
+                showCreds(card, body.account.username, body.generatedPassword);
+                provisionBtn.textContent = 'Provisioned';
+              } catch (_err) {
+                showError(card, 'Network error. Try again.');
+                provisionBtn.disabled = false;
+                provisionBtn.textContent = original;
+              }
+            });
+          }
+
+          const resetBtn = card.querySelector('[data-reset-btn]');
+          if (resetBtn) {
+            resetBtn.addEventListener('click', async () => {
+              clearError(card);
+              if (!confirm('Reset this barber\'s password? They will be signed out and forced to set a new one on next login.')) {
+                return;
+              }
+              resetBtn.disabled = true;
+              const original = resetBtn.textContent;
+              resetBtn.textContent = 'Resetting…';
+              try {
+                const body = await reset(teamMemberId);
+                if (!body.ok) {
+                  showError(card, body?.error?.detail || 'Could not reset.');
+                  resetBtn.disabled = false;
+                  resetBtn.textContent = original;
+                  return;
+                }
+                showCreds(card, body.username, body.generatedPassword);
+                resetBtn.disabled = false;
+                resetBtn.textContent = original;
+              } catch (_err) {
+                showError(card, 'Network error. Try again.');
+                resetBtn.disabled = false;
+                resetBtn.textContent = original;
+              }
+            });
+          }
+
+          const removeBtn = card.querySelector('[data-remove-btn]');
+          if (removeBtn) {
+            removeBtn.addEventListener('click', async () => {
+              clearError(card);
+              if (!confirm('Remove this barber\'s login completely? They will be signed out.')) {
+                return;
+              }
+              removeBtn.disabled = true;
+              try {
+                const body = await remove(teamMemberId);
+                if (!body.ok) {
+                  showError(card, body?.error?.detail || 'Could not remove.');
+                  removeBtn.disabled = false;
+                  return;
+                }
+                window.location.reload();
+              } catch (_err) {
+                showError(card, 'Network error. Try again.');
+                removeBtn.disabled = false;
+              }
+            });
+          }
+        });
+
+        const bulkBtn = document.getElementById('bulk-provision');
+        if (bulkBtn) {
+          bulkBtn.addEventListener('click', async () => {
+            bulkBtn.disabled = true;
+            bulkBtn.textContent = 'Provisioning…';
+            const out = document.getElementById('bulk-output');
+            const cards = Array.from(document.querySelectorAll('[data-team-member-id]'))
+              .filter((c) => c.querySelector('[data-provision-btn]'));
+            const results = [];
+            for (const card of cards) {
+              const teamMemberId = card.dataset.teamMemberId;
+              const username = card.querySelector('[data-username-input]').value;
+              try {
+                const body = await provision(teamMemberId, username);
+                if (body.ok) {
+                  showCreds(card, body.account.username, body.generatedPassword);
+                  const btn = card.querySelector('[data-provision-btn]');
+                  if (btn) {
+                    btn.disabled = true;
+                    btn.textContent = 'Provisioned';
+                  }
+                  results.push(body.account.username + ' / ' + body.generatedPassword);
+                } else {
+                  showError(card, body?.error?.detail || 'Failed.');
+                }
+              } catch (_err) {
+                showError(card, 'Network error.');
+              }
+            }
+            bulkBtn.textContent = 'Done';
+            if (out) {
+              out.innerHTML =
+                '<p class="meta" style="margin-top: 12px;">Provisioned ' +
+                results.length +
+                ' login' + (results.length === 1 ? '' : 's') +
+                '. Each card above shows that barber\'s starting password — copy them now.</p>';
+            }
+          });
+        }
+      })();
+    </script>
+  </body>
+</html>
