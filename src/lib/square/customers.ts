@@ -82,24 +82,30 @@ export async function findCustomerByEmail(email: string): Promise<Customer | nul
  * used to book (or if they were booked phone-only and have no email
  * on file at all). Tries Square's exact filter first, then fuzzy.
  *
- * Returns the customer; the caller decides what to do if there's no
- * email on file. We don't send SMS — that needs a separate provider.
+ * When multiple records share the same phone (test accounts,
+ * pre-dedup duplicates), prefer the one with an email on file —
+ * sign-in needs an email to deliver the magic link, so picking a
+ * phone-only sibling dead-ends a customer who actually has a
+ * usable account.
  */
 export async function findCustomerByPhone(phone: string): Promise<Customer | null> {
   const e164 = normalizePhone(phone);
   if (!e164) return null;
 
-  // Square's phone exact filter expects E.164 format. We compare against
-  // the trailing 10 digits below for the fuzzy pass since shop staff
-  // may have entered the number any-which-way over the years.
+  // Square's phone exact filter expects E.164 format. We pull up to 20
+  // exact matches so we can see every sibling sharing the number — not
+  // just whichever Square decided to return first.
   const exact = await squareFetch<SearchCustomersResponse>('/v2/customers/search', {
     method: 'POST',
     body: {
       query: { filter: { phone_number: { exact: e164 } } },
-      limit: 1,
+      limit: 20,
     },
   });
-  if (exact.customers && exact.customers.length > 0) return exact.customers[0];
+  const exactMatches = exact.customers ?? [];
+  if (exactMatches.length > 0) {
+    return pickBestPhoneMatch(exactMatches);
+  }
 
   const fuzzy = await squareFetch<SearchCustomersResponse>('/v2/customers/search', {
     method: 'POST',
@@ -109,11 +115,34 @@ export async function findCustomerByPhone(phone: string): Promise<Customer | nul
     },
   });
   const targetTail = e164.replace(/\D/g, '').slice(-10);
-  for (const c of fuzzy.customers ?? []) {
+  const fuzzyMatches = (fuzzy.customers ?? []).filter((c) => {
     const candidateTail = (c.phone_number ?? '').replace(/\D/g, '').slice(-10);
-    if (candidateTail && candidateTail === targetTail) return c;
-  }
-  return null;
+    return candidateTail.length > 0 && candidateTail === targetTail;
+  });
+  if (fuzzyMatches.length === 0) return null;
+  return pickBestPhoneMatch(fuzzyMatches);
+}
+
+function pickBestPhoneMatch(matches: Customer[]): Customer | null {
+  if (matches.length === 0) return null;
+  if (matches.length === 1) return matches[0];
+  const createdMs = (c: Customer): number => {
+    const v = c.created_at;
+    if (!v) return 0;
+    const parsed = Date.parse(v);
+    return Number.isNaN(parsed) ? 0 : parsed;
+  };
+  // Sort: records with an email first, then most recently created.
+  // hasEmail is the dominant signal because the only consumer that
+  // calls this and then chains a magic-link send (auth/request) needs
+  // an email to do anything useful — a phone-only sibling is a
+  // dead-end for that caller.
+  return [...matches].sort((a, b) => {
+    const aHasEmail = (a.email_address ?? '').trim() ? 1 : 0;
+    const bHasEmail = (b.email_address ?? '').trim() ? 1 : 0;
+    if (aHasEmail !== bHasEmail) return bHasEmail - aHasEmail;
+    return createdMs(b) - createdMs(a);
+  })[0];
 }
 
 interface RetrieveCustomerResponse {
