@@ -91,6 +91,54 @@
 }
 .bb-head__nav a:hover, .bb-head__nav .bb-link:hover { color: var(--bb-gold); }
 
+/* ---------- Tabs (Appointments | Waitlist) ---------- */
+.bb-tabs {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--bb-border);
+  margin-bottom: 18px;
+  overflow-x: auto;
+}
+.bb-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--bb-muted);
+  text-decoration: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  white-space: nowrap;
+  transition: color 200ms ease, border-color 200ms ease;
+}
+.bb-tab:hover { color: var(--bb-gold-light); }
+.bb-tab.is-active {
+  color: var(--bb-gold);
+  border-bottom-color: var(--bb-gold);
+}
+.bb-tab__count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.4rem;
+  height: 1.4rem;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: rgba(201, 163, 92, 0.15);
+  color: var(--bb-gold);
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+.bb-tab.is-active .bb-tab__count {
+  background: var(--bb-gold);
+  color: #1a140a;
+}
+
 /* ---------- Filters ---------- */
 .bb-filters {
   display: flex;

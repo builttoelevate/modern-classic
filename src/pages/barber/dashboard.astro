@@ -52,6 +52,14 @@ const TERMINAL = new Set<Booking['status']>([
   'DECLINED',
 ]);
 
+// Which tab is active. Defaults to appointments — the day view is the
+// daily-driver use case; waitlist is the secondary "who's waiting"
+// tab. URL param so back/forward navigation works and so a barber can
+// bookmark the waitlist tab directly if they want.
+type Tab = 'appointments' | 'waitlist';
+const tabParam = Astro.url.searchParams.get('tab');
+const activeTab: Tab = tabParam === 'waitlist' ? 'waitlist' : 'appointments';
+
 function shopDateKey(date: Date = new Date()): string {
   return new Intl.DateTimeFormat('en-CA', {
     timeZone: SHOP_TZ,
@@ -105,6 +113,7 @@ let loadError: string | null = null;
 const barberNames = new Map<string, string>();
 const serviceNames = new Map<string, string>();
 let waitlist: WaitlistEntry[] = [];
+let isOwner = false;
 
 try {
   const [list, barbers, services, allWaitlist] = await Promise.all([
@@ -121,17 +130,24 @@ try {
     for (const v of s.variations) serviceNames.set(v.id, s.name);
   }
 
-  // Waitlist filter: keep entries where this barber appears in the
-  // customer's picks. Entries with no pick (any barber) are also shown
-  // because anyone in the shop could pick them up. Active statuses
-  // only — booked and archived shouldn't clutter the day view.
-  waitlist = allWaitlist
-    .filter((e) => e.status === 'new' || e.status === 'contacted')
-    .filter((e) => {
-      const picks = getEntryBarberPicks(e);
-      if (picks.length === 0) return true;
-      return picks.some((p) => p.id === session.barberId);
-    });
+  // Owner (Michael) sees the shop-wide waitlist; every other barber
+  // sees only entries where they were specifically requested. Role
+  // is sourced from src/lib/square/team.ts → ROLE_BY_ID, so adding a
+  // new owner there automatically propagates here.
+  const self = barbers.find((b) => b.id === session.barberId);
+  isOwner = self?.role === 'Owner';
+
+  // Active statuses only — booked + archived shouldn't clutter the
+  // dashboard.
+  const activeWaitlist = allWaitlist.filter(
+    (e) => e.status === 'new' || e.status === 'contacted',
+  );
+  waitlist = isOwner
+    ? activeWaitlist
+    : activeWaitlist.filter((e) => {
+        const picks = getEntryBarberPicks(e);
+        return picks.some((p) => p.id === session.barberId);
+      });
 
   const customerIds = Array.from(
     new Set(bookings.map((b) => b.customer_id).filter(Boolean) as string[]),
@@ -257,6 +273,10 @@ interface WaitlistRow {
   customerPhoneE164: string;
   customerEmail: string;
   serviceName: string;
+  /** Display names of every barber this entry requested. Empty array
+   *  means "any barber" — only shown on the owner view since
+   *  individual barbers don't see no-preference entries. */
+  requestedBarbers: string[];
   preferredDate?: string;
   daysOfWeek: string[];
   timesOfDay: string[];
@@ -267,21 +287,25 @@ interface WaitlistRow {
 }
 
 const waitlistRows: WaitlistRow[] = waitlist
-  .map((e): WaitlistRow => ({
-    id: e.id,
-    customerName: e.customerName,
-    customerPhone: e.customerPhone,
-    customerPhoneE164: (e.customerPhone || '').replace(/[^0-9+]/g, ''),
-    customerEmail: e.customerEmail,
-    serviceName: e.serviceName,
-    preferredDate: e.preferredDate,
-    daysOfWeek: e.daysOfWeek ?? [],
-    timesOfDay: e.timesOfDay ?? [],
-    note: e.note ?? '',
-    adminNote: e.adminNote ?? '',
-    status: e.status === 'contacted' ? 'contacted' : 'new',
-    submittedAt: e.submittedAt,
-  }))
+  .map((e): WaitlistRow => {
+    const picks = getEntryBarberPicks(e);
+    return {
+      id: e.id,
+      customerName: e.customerName,
+      customerPhone: e.customerPhone,
+      customerPhoneE164: (e.customerPhone || '').replace(/[^0-9+]/g, ''),
+      customerEmail: e.customerEmail,
+      serviceName: e.serviceName,
+      requestedBarbers: picks.map((p) => p.displayName),
+      preferredDate: e.preferredDate,
+      daysOfWeek: e.daysOfWeek ?? [],
+      timesOfDay: e.timesOfDay ?? [],
+      note: e.note ?? '',
+      adminNote: e.adminNote ?? '',
+      status: e.status === 'contacted' ? 'contacted' : 'new',
+      submittedAt: e.submittedAt,
+    };
+  })
   .sort((a, b) => b.submittedAt.localeCompare(a.submittedAt));
 
 const displayName = barberNames.get(session.barberId) ?? session.username;
@@ -309,26 +333,51 @@ Astro.response.headers.append('Set-Cookie', refreshBarberSessionCookie(session))
         </nav>
       </header>
 
-      <form class="bb-filters" method="get" action="/barber/dashboard">
-        <div class="bb-filters__quick">
-          <a
-            class={`bb-chip ${isToday ? 'is-active' : ''}`}
-            href={`${base}/barber/dashboard?date=${todayKey}`}
-          >Today</a>
-          <a
-            class={`bb-chip ${isTomorrow ? 'is-active' : ''}`}
-            href={`${base}/barber/dashboard?date=${tomorrowKey}`}
-          >Tomorrow</a>
-        </div>
-        <label class="bb-field bb-field--inline">
-          <span class="bb-field__label">Date</span>
-          <input type="date" name="date" value={filterDateKey} />
-        </label>
-        <button type="submit" class="bb-btn bb-btn--ghost">Show</button>
-      </form>
+      <nav class="bb-tabs" role="tablist" aria-label="Dashboard sections">
+        <a
+          class={`bb-tab ${activeTab === 'appointments' ? 'is-active' : ''}`}
+          role="tab"
+          aria-selected={activeTab === 'appointments'}
+          href={`${base}/barber/dashboard?date=${filterDateKey}&tab=appointments`}
+        >
+          Appointments
+          {rows.length > 0 && <span class="bb-tab__count">{rows.length}</span>}
+        </a>
+        <a
+          class={`bb-tab ${activeTab === 'waitlist' ? 'is-active' : ''}`}
+          role="tab"
+          aria-selected={activeTab === 'waitlist'}
+          href={`${base}/barber/dashboard?date=${filterDateKey}&tab=waitlist`}
+        >
+          Waitlist
+          {waitlistRows.length > 0 && <span class="bb-tab__count">{waitlistRows.length}</span>}
+        </a>
+      </nav>
+
+      {activeTab === 'appointments' && (
+        <form class="bb-filters" method="get" action="/barber/dashboard">
+          <input type="hidden" name="tab" value="appointments" />
+          <div class="bb-filters__quick">
+            <a
+              class={`bb-chip ${isToday ? 'is-active' : ''}`}
+              href={`${base}/barber/dashboard?date=${todayKey}&tab=appointments`}
+            >Today</a>
+            <a
+              class={`bb-chip ${isTomorrow ? 'is-active' : ''}`}
+              href={`${base}/barber/dashboard?date=${tomorrowKey}&tab=appointments`}
+            >Tomorrow</a>
+          </div>
+          <label class="bb-field bb-field--inline">
+            <span class="bb-field__label">Date</span>
+            <input type="date" name="date" value={filterDateKey} />
+          </label>
+          <button type="submit" class="bb-btn bb-btn--ghost">Show</button>
+        </form>
+      )}
 
       {loadError && <p class="bb-err">Couldn't load: {loadError}</p>}
 
+      {activeTab === 'appointments' && (
       <section>
         <h2>
           {dateHeading}
@@ -397,16 +446,23 @@ Astro.response.headers.append('Set-Cookie', refreshBarberSessionCookie(session))
           </ul>
         )}
       </section>
+      )}
 
+      {activeTab === 'waitlist' && (
       <section>
         <h2>
-          Waitlist
+          {isOwner ? 'Shop-wide waitlist' : 'Your waitlist'}
           <span class="bb-sub">
             {waitlistRows.length} {waitlistRows.length === 1 ? 'entry' : 'entries'}
+            {isOwner ? ' · all barbers' : ''}
           </span>
         </h2>
         {waitlistRows.length === 0 ? (
-          <p class="bb-empty">No active waitlist entries for you.</p>
+          <p class="bb-empty">
+            {isOwner
+              ? 'No active waitlist entries right now.'
+              : 'No active waitlist entries that asked for you.'}
+          </p>
         ) : (
           <ul class="bb-list">
             {waitlistRows.map((w) => (
@@ -434,6 +490,12 @@ Astro.response.headers.append('Set-Cookie', refreshBarberSessionCookie(session))
                 </div>
                 <dl class="bb-card__details">
                   <div><dt>Service</dt><dd>{w.serviceName}</dd></div>
+                  {isOwner && (
+                    <div>
+                      <dt>Asked for</dt>
+                      <dd>{w.requestedBarbers.length > 0 ? w.requestedBarbers.join(', ') : 'Any barber'}</dd>
+                    </div>
+                  )}
                   {w.preferredDate && <div><dt>Preferred</dt><dd>{w.preferredDate}</dd></div>}
                   {w.daysOfWeek.length > 0 && <div><dt>Days</dt><dd>{w.daysOfWeek.join(', ')}</dd></div>}
                   {w.timesOfDay.length > 0 && <div><dt>Times</dt><dd>{w.timesOfDay.join(', ')}</dd></div>}
@@ -446,6 +508,7 @@ Astro.response.headers.append('Set-Cookie', refreshBarberSessionCookie(session))
           </ul>
         )}
       </section>
+      )}
     </div>
 
     <script is:inline define:vars={{ tz: SHOP_TZ }}>
