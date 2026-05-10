@@ -7,7 +7,7 @@ import type { AvailabilitySlot } from '../../../lib/square/types';
 export const prerender = false;
 
 const CACHE_TTL_SECONDS = 600;
-const SEARCH_WINDOW_DAYS = 90;
+const SEARCH_WINDOW_DAYS = 365;
 const CHUNK_DAYS = 30;
 const DAY_MS = 24 * 60 * 60 * 1000;
 

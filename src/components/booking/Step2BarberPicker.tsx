@@ -20,7 +20,7 @@ function initials(name: string): string {
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 }
 
-const AVAIL_WINDOW_DAYS = 90;
+const AVAIL_WINDOW_DAYS = 365;
 
 export function Step2BarberPicker({
   service,
