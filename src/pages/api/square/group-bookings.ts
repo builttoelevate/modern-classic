@@ -22,6 +22,10 @@ import {
   listLinkedPeople,
   type LinkedPerson,
 } from '../../../lib/customer/profileLinks';
+import {
+  recordGroupMembers,
+  type GroupManifestMember,
+} from '../../../lib/customer/groupManifest';
 import { randomBytes } from 'node:crypto';
 
 export const prerender = false;
@@ -387,6 +391,11 @@ export const POST: APIRoute = async ({ request }) => {
   const bookings: OkResponse['bookings'] = [];
   const failures: BookingFailure[] = [];
   const total = v.assignments.length;
+  // Manifest entries collected as each booking succeeds. Written to
+  // Redis once after the loop so /my-bookings has an authoritative
+  // list of group members regardless of whether linkPerson succeeded
+  // above.
+  const manifestMembers: GroupManifestMember[] = [];
 
   for (let i = 0; i < v.assignments.length; i++) {
     const a = v.assignments[i];
@@ -449,6 +458,12 @@ export const POST: APIRoute = async ({ request }) => {
         bookingId: booking.id,
         customerId: memberCustomerId,
       });
+      manifestMembers.push({
+        bookingId: booking.id,
+        customerId: memberCustomerId,
+        displayName: a.displayName?.trim() ?? '',
+        position: i + 1,
+      });
       logGroup({
         phase: 'member-booked',
         groupId,
@@ -487,6 +502,24 @@ export const POST: APIRoute = async ({ request }) => {
         code,
         detail,
         slotTaken,
+      });
+    }
+  }
+
+  // Persist the group manifest so a future read path (or future
+  // recovery script) has an authoritative list of who's in this
+  // group, independent of whether linkPerson succeeded above or
+  // whether the relationship graph has drifted since. Manifest
+  // write failures are non-fatal — they're logged, and the booking
+  // response still carries the booking IDs.
+  if (manifestMembers.length > 0) {
+    try {
+      await recordGroupMembers(groupId, manifestMembers);
+    } catch (err) {
+      logGroup({
+        phase: 'group-manifest-write-failed',
+        groupId,
+        detail: err instanceof Error ? err.message : String(err),
       });
     }
   }
