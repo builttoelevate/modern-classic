@@ -22,6 +22,10 @@ import {
   listLinkedPeople,
   type LinkedPerson,
 } from '../../../lib/customer/profileLinks';
+import {
+  recordGroupMembers,
+  type GroupManifestMember,
+} from '../../../lib/customer/groupManifest';
 import { randomBytes } from 'node:crypto';
 
 export const prerender = false;
@@ -387,6 +391,10 @@ export const POST: APIRoute = async ({ request }) => {
   const bookings: OkResponse['bookings'] = [];
   const failures: BookingFailure[] = [];
   const total = v.assignments.length;
+  // Manifest entries collected as each booking succeeds. Written to
+  // Redis after the loop so /my-bookings has an authoritative list of
+  // group members regardless of whether linkPerson succeeded above.
+  const manifestMembers: GroupManifestMember[] = [];
 
   for (let i = 0; i < v.assignments.length; i++) {
     const a = v.assignments[i];
@@ -449,6 +457,12 @@ export const POST: APIRoute = async ({ request }) => {
         bookingId: booking.id,
         customerId: memberCustomerId,
       });
+      manifestMembers.push({
+        bookingId: booking.id,
+        customerId: memberCustomerId,
+        displayName: a.displayName?.trim() ?? '',
+        position: i + 1,
+      });
       logGroup({
         phase: 'member-booked',
         groupId,
@@ -491,6 +505,21 @@ export const POST: APIRoute = async ({ request }) => {
     }
   }
 
+  // Persist the group manifest so /my-bookings can resolve siblings
+  // even when linkPerson failed above. Failures here are non-fatal —
+  // the phone-based fallback in groupSelfHeal.ts still recovers.
+  if (manifestMembers.length > 0) {
+    try {
+      await recordGroupMembers(groupId, manifestMembers);
+    } catch (err) {
+      logGroup({
+        phase: 'group-manifest-write-failed',
+        groupId,
+        detail: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
   logGroup({
     phase: 'group-done',
     groupId,
@@ -500,6 +529,7 @@ export const POST: APIRoute = async ({ request }) => {
     succeeded: bookings.filter((b) => b.bookingId !== null).length,
     failures: failures.length,
     newlyLinked: newlyLinked.length,
+    manifestSize: manifestMembers.length,
   });
 
   return Response.json({

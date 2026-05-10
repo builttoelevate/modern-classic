@@ -9,6 +9,7 @@ import { squareFetch } from './client';
 import { MODERN_CLASSIC_LOCATION_ID } from './locations';
 import { getServices } from './catalog';
 import { getBarbers } from './team';
+import { getBooking } from './bookings';
 import { getBookingCardRecords } from '../booking/cardIndex';
 import type {
   Barber,
@@ -302,4 +303,41 @@ export async function getCustomerBookings(customerId: string): Promise<CustomerB
   }
 
   return { upcoming, past };
+}
+
+/**
+ * Fetch and hydrate a set of bookings by id. Used by the group
+ * self-heal path where we know the booking ids from the manifest and
+ * need them as BookingDetail without the customer_id filter that
+ * getCustomerBookings uses (the missing siblings live under different
+ * customers). Services + barbers are fetched once and reused across
+ * all hydrations.
+ */
+export async function getBookingDetailsByIds(
+  ids: string[],
+): Promise<BookingDetail[]> {
+  if (ids.length === 0) return [];
+  const [rawBookings, services, barbers] = await Promise.all([
+    Promise.all(ids.map((id) => getBooking(id).catch(() => null))),
+    getServices(),
+    getBarbers(),
+  ]);
+  const variationIndex = buildVariationIndex(services);
+  const barberIndex = buildBarberIndex(barbers);
+  const out: BookingDetail[] = [];
+  for (const b of rawBookings) {
+    if (!b) continue;
+    const detail = hydrate(b, variationIndex, barberIndex);
+    if (detail) out.push(detail);
+  }
+  return out;
+}
+
+/**
+ * Same upcoming/past split that getCustomerBookings applies. Exposed
+ * so the self-heal path can classify hydrated bookings consistently.
+ */
+export function classifyBooking(detail: BookingDetail, nowMs = Date.now()): 'upcoming' | 'past' {
+  const startMs = new Date(detail.startAtUtc).getTime();
+  return startMs >= nowMs && !TERMINAL_STATUSES.has(detail.status) ? 'upcoming' : 'past';
 }
