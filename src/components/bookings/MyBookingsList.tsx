@@ -1,5 +1,7 @@
 import { useState, type ReactNode } from 'react';
 import type { BookingDetail, CustomerBookings } from '../../lib/square/customerBookings';
+import { encodeGroupPreset } from '../../lib/booking/wizardPreselect';
+import type { GroupBookingPreset } from '../booking/group/groupWizardState';
 import { BookingCard } from './BookingCard';
 
 interface Props {
@@ -116,6 +118,36 @@ export default function MyBookingsList({ initial, basePath }: Props) {
     window.location.href = `${basePath}/book?${params.toString()}`;
   };
 
+  // Rebook every member of a group in one go. We encode the original
+  // services + mode + back-to-back barber into a preset blob that
+  // /book/group decodes and feeds straight into the wizard, landing
+  // the customer on the Time step with everything pre-selected.
+  const handleBookWholeGroup = (members: BookingDetail[]) => {
+    if (members.length < 2) return;
+    const mode = members[0]?.groupMode;
+    if (mode !== 'back-to-back' && mode !== 'all-at-once') return;
+    // Back-to-back groups share one barber across every member, so we
+    // can pull it from member 0. All-at-once groups intentionally use
+    // different barbers per member — we omit teamMemberId in that case
+    // and let the wizard's slot-finder reassign them.
+    const teamMemberId =
+      mode === 'back-to-back' ? members[0]?.barberId : undefined;
+    const preset: GroupBookingPreset = {
+      mode,
+      teamMemberId,
+      members: members.map((m) => ({
+        serviceVariationId: m.serviceVariationId,
+        // bookingFor is undefined for the parent's own slot and set to
+        // the linked-person's display name otherwise — exactly what
+        // the wizard needs to re-pin the chip on Step 6.
+        displayName: m.bookingFor ?? '',
+        isSelf: !m.bookingFor,
+      })),
+    };
+    const encoded = encodeGroupPreset(preset);
+    window.location.href = `${basePath}/book/group?preset=${encoded}`;
+  };
+
   // Walk the list once, gathering bookings that share a groupId into a
   // single visual container while leaving solo bookings as-is. The
   // container is purely presentational — each booking inside still owns
@@ -137,7 +169,11 @@ export default function MyBookingsList({ initial, basePath }: Props) {
           .sort((a, c) => (a.groupPosition ?? 0) - (c.groupPosition ?? 0));
         if (members.length > 1) {
           out.push(
-            <BookingGroup key={`group-${b.groupId}`} members={members}>
+            <BookingGroup
+              key={`group-${b.groupId}`}
+              members={members}
+              onBookWholeGroup={handleBookWholeGroup}
+            >
               {members.map((m) => (
                 <BookingCard
                   key={m.id}
@@ -257,15 +293,21 @@ export default function MyBookingsList({ initial, basePath }: Props) {
 // each child card fully independent for cancel/reschedule.
 function BookingGroup({
   members,
+  onBookWholeGroup,
   children,
 }: {
   members: BookingDetail[];
+  onBookWholeGroup: (members: BookingDetail[]) => void;
   children: ReactNode;
 }): JSX.Element {
   const total = members[0]?.groupTotal ?? members.length;
   const mode = members[0]?.groupMode;
   const modeLabel =
     mode === 'all-at-once' ? 'All at once' : mode === 'back-to-back' ? 'Back-to-back' : null;
+  // Only offer the one-tap rebook when the mode is recognized — without
+  // it the wizard wouldn't know whether to head into the all-at-once or
+  // back-to-back branch on the next step.
+  const canRebookGroup = mode === 'all-at-once' || mode === 'back-to-back';
   return (
     <div
       className="mb-group"
@@ -280,6 +322,17 @@ function BookingGroup({
         <span className="mb-group__hint">Each appointment can be cancelled or rescheduled separately.</span>
       </header>
       <div className="mb-group__members">{children}</div>
+      {canRebookGroup && (
+        <div className="mb-group__actions">
+          <button
+            type="button"
+            className="mb-btn"
+            onClick={() => onBookWholeGroup(members)}
+          >
+            Book whole group again
+          </button>
+        </div>
+      )}
     </div>
   );
 }

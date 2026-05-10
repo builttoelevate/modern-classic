@@ -172,6 +172,14 @@
 @media (min-width: 720px) {
   .mb-group__members { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
+.mb-group__actions {
+  display: flex;
+  justify-content: center;
+  padding: 0.15rem;
+}
+.mb-group__actions .mb-btn {
+  min-width: 16rem;
+}
 
 .mb-card {
   background: var(--color-surface);

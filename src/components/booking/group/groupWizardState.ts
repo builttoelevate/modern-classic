@@ -8,6 +8,27 @@ import type { GroupSlot } from '../../../lib/booking/groupAvailability';
 export type GroupStep = 1 | 2 | 3 | 4 | 5 | 6 | 7;
 export type GroupMode = 'all-at-once' | 'back-to-back';
 
+/** Preset that re-creates a previously-booked group so the customer can
+ *  "Book the whole group again" from /my-bookings in one tap. We carry
+ *  the original variation ids + barber + mode through the URL so the
+ *  wizard skips ahead to the Time step (or Barber step if the original
+ *  back-to-back barber is no longer eligible). */
+export interface GroupBookingPreset {
+  mode: GroupMode;
+  /** Only meaningful when mode === 'back-to-back' — the single barber
+   *  the original group used. May resolve to null if that barber has
+   *  left the roster; the wizard falls back to Step 4 in that case. */
+  teamMemberId?: string;
+  members: Array<{
+    serviceVariationId: string;
+    /** Display name for non-self members. Empty string for self. */
+    displayName: string;
+    /** True if this member is the parent themselves on the original
+     *  group booking. */
+    isSelf?: boolean;
+  }>;
+}
+
 export interface MemberDraft {
   /** Stable UI id for the React list. */
   key: string;
@@ -88,6 +109,130 @@ export function makeInitialState(initialSize: 2 | 3 | 4 = 2): GroupWizardState {
     })),
     mode: null,
     selectedBarber: null,
+    availableSlots: null,
+    selectedSlot: null,
+    parent: { givenName: '', familyName: '', email: '', phone: '' },
+    groupNote: '',
+    status: { kind: 'idle' },
+  };
+}
+
+/** Find the parent Service that owns a given variation id. Per-barber
+ *  pricing stores N variations under one service, so we walk every
+ *  service until we find the one containing this variation. */
+function findServiceForVariation(
+  services: Service[],
+  variationId: string,
+): Service | null {
+  for (const s of services) {
+    if (s.variations.some((v) => v.id === variationId)) return s;
+  }
+  return null;
+}
+
+export interface PresetResolverInput {
+  preset: GroupBookingPreset;
+  services: Service[];
+  barbers: Barber[];
+  /** Optional saved-people list so we can pre-link a preset's display
+   *  name back to a 'self' or 'existing' chip instead of treating it
+   *  as a fresh 'new' name. */
+  savedPeople?: Array<{ customerId: string; displayName: string; isSelf: boolean }>;
+}
+
+/** Build a wizard state that re-creates a previously-booked group from
+ *  the supplied preset. Resolves variation ids to parent services and
+ *  the (optional) back-to-back barber id to a Barber. Jumps the wizard
+ *  past every step whose pick was already determined by the preset:
+ *  Step 5 (Time) when everything resolves, Step 4 (Barber) when the
+ *  original back-to-back barber is gone, Step 1 if catalog drift makes
+ *  the preset unusable. */
+export function makeStateFromPreset({
+  preset,
+  services,
+  barbers,
+  savedPeople = [],
+}: PresetResolverInput): GroupWizardState {
+  const size = (Math.max(2, Math.min(4, preset.members.length)) as 2 | 3 | 4);
+  const members: MemberDraft[] = preset.members.slice(0, size).map((m, i) => {
+    const service = findServiceForVariation(services, m.serviceVariationId);
+    // Match the supplied displayName back to a saved-person chip when
+    // we can. Self matches by isSelf; everyone else matches by name
+    // (case-insensitive, trimmed) so "briar bone" rehydrates onto the
+    // "Briar Bone" chip the wizard would otherwise render.
+    let who: MemberDraft['who'] = 'new';
+    let existingCustomerId: string | undefined;
+    let displayName = m.displayName ?? '';
+    if (m.isSelf) {
+      const selfOption = savedPeople.find((p) => p.isSelf);
+      if (selfOption) {
+        who = 'self';
+        displayName = selfOption.displayName;
+      }
+    } else if (displayName.trim()) {
+      const match = savedPeople.find(
+        (p) =>
+          !p.isSelf &&
+          p.displayName.trim().toLowerCase() === displayName.trim().toLowerCase(),
+      );
+      if (match) {
+        who = 'existing';
+        existingCustomerId = match.customerId;
+      }
+    }
+    return {
+      key: memberKey(i),
+      displayName,
+      service,
+      who,
+      existingCustomerId,
+    };
+  });
+
+  const allServicesResolved = members.every((m) => m.service !== null);
+
+  let selectedBarber: Barber | null = null;
+  if (preset.mode === 'back-to-back' && preset.teamMemberId) {
+    selectedBarber = barbers.find((b) => b.id === preset.teamMemberId) ?? null;
+    if (selectedBarber) {
+      // Verify the barber can still cover every preset service. If a
+      // variation has been retired or the barber's eligibility list
+      // shrank, drop the preselection and let the customer pick fresh
+      // on Step 4.
+      const covers = members.every((m) => {
+        if (!m.service) return false;
+        return m.service.variations.some(
+          (v) =>
+            v.availableForBooking &&
+            v.eligibleTeamMemberIds.includes(selectedBarber!.id),
+        );
+      });
+      if (!covers) selectedBarber = null;
+    }
+  }
+
+  // Decide which step to land on:
+  //   - All preset data resolved → jump straight to Step 5 (Time).
+  //   - Back-to-back but the original barber is gone → Step 4 so the
+  //     customer can pick a replacement.
+  //   - Catalog drift dropped a service → Step 2 so the customer can
+  //     reselect missing services.
+  //   - Anything else unexpected → Step 1 for a clean restart.
+  let step: GroupStep;
+  if (!allServicesResolved) {
+    step = 2;
+  } else if (preset.mode === 'back-to-back' && !selectedBarber) {
+    step = 4;
+  } else {
+    step = 5;
+  }
+
+  return {
+    step,
+    size,
+    members,
+    mode: preset.mode,
+    selectedBarber,
     availableSlots: null,
     selectedSlot: null,
     parent: { givenName: '', familyName: '', email: '', phone: '' },
