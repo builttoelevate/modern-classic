@@ -185,6 +185,42 @@ export async function sendReviewRequest(
   });
 }
 
+export interface SendWaitlistConfirmationInput {
+  to: string;
+  customerName: string;
+  serviceName: string;
+  barberName: string;
+  /** Optional pre-formatted "May 11 – May 18, 2026" string. Empty
+   *  string / undefined → the window line is suppressed in the body. */
+  windowLabel?: string;
+  shopAddress: string;
+  shopPhone: string;
+}
+
+/**
+ * Customer-facing thank-you the moment they submit the waitlist form.
+ * Counterpart to the shop notification that already goes out via
+ * sendWaitlistRequest. Reply-to is the shop inbox so a customer
+ * tweaking their request goes straight to staff. No unsubscribe header
+ * — this is transactional (the customer just took an action that
+ * requested an email back), not marketing.
+ */
+export async function sendWaitlistConfirmation(
+  input: SendWaitlistConfirmationInput,
+): Promise<{ id: string }> {
+  const { waitlistConfirmationHtml, waitlistConfirmationText, waitlistConfirmationSubject } =
+    await import('./templates/waitlistConfirmation');
+  const html = waitlistConfirmationHtml(input);
+  const text = waitlistConfirmationText(input);
+  return sendEmail({
+    to: input.to,
+    subject: waitlistConfirmationSubject(),
+    html,
+    text,
+    replyTo: REPLY_TO,
+  });
+}
+
 export interface SendWaitlistOpeningInput {
   to: string;
   customerName: string;
