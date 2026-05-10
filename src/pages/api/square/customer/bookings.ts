@@ -2,6 +2,7 @@ import type { APIRoute } from 'astro';
 import { AuthRequiredError, requireSession, refreshSessionCookie } from '../../../../lib/auth/middleware';
 import { getCustomerBookings } from '../../../../lib/square/customerBookings';
 import { listLinkedPeople } from '../../../../lib/customer/profileLinks';
+import { adoptMissingGroupSiblings } from '../../../../lib/customer/groupSelfHeal';
 import { isAuthConfigured } from '../../../../lib/auth/session';
 
 export const prerender = false;
@@ -56,13 +57,29 @@ export const GET: APIRoute = async ({ request }) => {
         past.push({ ...pb, bookingFor: r.person.displayName });
       }
     }
-    upcoming.sort(
+    // Phone-based self-heal for group bookings whose sibling lives
+    // under a separate Square customer record that isn't in
+    // linkedPeople (linkPerson failed silently at booking time, etc.).
+    // Mirrors the same call on /my-bookings.astro so a refresh after
+    // cancel/reschedule keeps the partner's row visible.
+    const merged = { upcoming, past };
+    try {
+      const knownIds = new Set<string>([
+        session.customerId,
+        ...linkedPeople.map((lp) => lp.customerId),
+      ]);
+      await adoptMissingGroupSiblings(session.customerId, knownIds, merged);
+    } catch {
+      // Self-heal failures are non-fatal; the existing list is good enough.
+    }
+
+    merged.upcoming.sort(
       (a, b) => new Date(a.startAtUtc).getTime() - new Date(b.startAtUtc).getTime(),
     );
-    past.sort(
+    merged.past.sort(
       (a, b) => new Date(b.startAtUtc).getTime() - new Date(a.startAtUtc).getTime(),
     );
-    return new Response(JSON.stringify({ ok: true, upcoming, past }), {
+    return new Response(JSON.stringify({ ok: true, upcoming: merged.upcoming, past: merged.past }), {
       status: 200,
       headers: {
         'Content-Type': 'application/json',

@@ -11,6 +11,7 @@ import { ProductRecommendations } from '../components/bookings/ProductRecommenda
 import { getSession, refreshSessionCookie } from '../lib/auth/middleware';
 import { isAuthConfigured } from '../lib/auth/session';
 import { getCustomerBookings } from '../lib/square/customerBookings';
+import { adoptMissingGroupSiblings } from '../lib/customer/groupSelfHeal';
 import { getRetailProducts } from '../lib/square/products';
 import { getBarbers } from '../lib/square/team';
 import { listLinkedPeople } from '../lib/customer/profileLinks';
@@ -78,6 +79,37 @@ try {
       bookings.past.push({ ...pb, bookingFor: result.person.displayName });
     }
   }
+  // Pull in any group-booking siblings we'd otherwise be missing. Safe
+  // when there are no incomplete groups — the helper is a no-op then.
+  // Errors are swallowed so the page still renders.
+  try {
+    const knownIds = new Set<string>([
+      session.customerId,
+      ...linkedPeople.map((lp) => lp.customerId),
+    ]);
+    const adopted = await adoptMissingGroupSiblings(session.customerId, knownIds, bookings);
+    if (adopted > 0) {
+      // eslint-disable-next-line no-console
+      console.log(
+        `[BOOK] ${JSON.stringify({
+          ts: new Date().toISOString(),
+          phase: 'group-siblings-self-healed',
+          customerId: session.customerId,
+          adopted,
+        })}`,
+      );
+    }
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.log(
+      `[BOOK] ${JSON.stringify({
+        ts: new Date().toISOString(),
+        phase: 'group-self-heal-failed',
+        detail: err instanceof Error ? err.message : String(err),
+      })}`,
+    );
+  }
+
   bookings.upcoming.sort(
     (a, b) => new Date(a.startAtUtc).getTime() - new Date(b.startAtUtc).getTime(),
   );
