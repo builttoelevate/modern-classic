@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
 interface Props {
@@ -120,6 +120,33 @@ export function WaitlistSheet({
   const [status, setStatus] = useState<Status>('idle');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const firstFieldRef = useRef<HTMLInputElement>(null);
+
+  // Which weekdays the picked [dateFrom, dateTo] range actually covers.
+  // Drives both the "hide chip row when no narrowing is possible" branch
+  // and the per-chip disabled state — chips for weekdays outside the
+  // range can only ever match an empty set of slots, so making them
+  // tappable just confuses the customer (they think they're narrowing
+  // when they're really creating an impossible filter).
+  const weekdaysInRange = useMemo(() => {
+    const set = new Set<DayKey>();
+    if (!dateFrom || !dateTo) return set;
+    const fromMs = Date.parse(`${dateFrom}T12:00:00`);
+    const toMs = Date.parse(`${dateTo}T12:00:00`);
+    if (Number.isNaN(fromMs) || Number.isNaN(toMs) || toMs < fromMs) return set;
+    const DAY_MS = 24 * 60 * 60 * 1000;
+    const MAX_ITERS = 60; // safety net; real ranges are < 12 months
+    for (let ms = fromMs, i = 0; ms <= toMs && i < MAX_ITERS; ms += DAY_MS, i++) {
+      const dow = new Date(ms).getDay(); // 0=Sun, 1=Mon, ..., 6=Sat
+      if (dow === 0) continue; // Sunday — shop closed; not a chip option
+      set.add(DAY_OPTIONS[dow - 1].key);
+    }
+    return set;
+  }, [dateFrom, dateTo]);
+  // When the range covers at most one bookable weekday, the chip row
+  // can only re-state the date range. Hide it; show a small reassurance
+  // line so the customer knows their day-of-week preference (if any
+  // was set on a wider range earlier) hasn't been silently lost.
+  const showDayChips = weekdaysInRange.size > 1;
 
   function toggleDay(key: DayKey) {
     setDaysOfWeek((prev) =>
@@ -451,27 +478,35 @@ export function WaitlistSheet({
                 </label>
               </div>
 
-              <div className="bw-field">
-                <span className="bw-field__label">
-                  Days that work <span className="bw-field__optional">(tap to toggle)</span>
-                </span>
-                <div className="bw-chip-row" role="group" aria-label="Days of week">
-                  {DAY_OPTIONS.map((opt) => {
-                    const active = daysOfWeek.includes(opt.key);
-                    return (
-                      <button
-                        key={opt.key}
-                        type="button"
-                        className={`bw-chip${active ? ' bw-chip--on' : ''}`}
-                        aria-pressed={active}
-                        onClick={() => toggleDay(opt.key)}
-                      >
-                        {opt.label}
-                      </button>
-                    );
-                  })}
+              {showDayChips ? (
+                <div className="bw-field">
+                  <span className="bw-field__label">
+                    Days that work <span className="bw-field__optional">(tap to toggle)</span>
+                  </span>
+                  <div className="bw-chip-row" role="group" aria-label="Days of week">
+                    {DAY_OPTIONS.map((opt) => {
+                      const active = daysOfWeek.includes(opt.key);
+                      const inRange = weekdaysInRange.has(opt.key);
+                      return (
+                        <button
+                          key={opt.key}
+                          type="button"
+                          className={`bw-chip${active && inRange ? ' bw-chip--on' : ''}`}
+                          aria-pressed={active && inRange}
+                          disabled={!inRange}
+                          onClick={() => toggleDay(opt.key)}
+                        >
+                          {opt.label}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
-              </div>
+              ) : (
+                <p className="bw-field bw-field--hint">
+                  Days are set by the dates above.
+                </p>
+              )}
 
               <div className="bw-field">
                 <span className="bw-field__label">
