@@ -2,6 +2,9 @@
 export const prerender = false;
 
 import { findCustomerByEmail, findCustomerByPhone } from '../../lib/square/customers';
+import { getCustomerBookings, type CustomerBookings } from '../../lib/square/customerBookings';
+import { getBarbers } from '../../lib/square/team';
+import { getBookingCardRecords, type BookingCardRecord } from '../../lib/booking/cardIndex';
 import { checkBasicAuth } from '../../lib/admin/auth';
 import { SquareApiError } from '../../lib/square/client';
 import type { Customer } from '../../lib/square/types';
@@ -26,6 +29,10 @@ let customer: Customer | null = null;
 let searchError: string | null = null;
 let notFound = false;
 let lookupMethod: 'email' | 'phone' | null = null;
+let bookings: CustomerBookings | null = null;
+let bookingsError: string | null = null;
+let cardRecords = new Map<string, BookingCardRecord>();
+let barbers: Array<{ id: string; displayName: string }> = [];
 
 if (rawQuery) {
   const isEmail = looksLikeEmail(rawQuery);
@@ -47,6 +54,45 @@ if (rawQuery) {
     } else {
       searchError = err instanceof Error ? err.message : 'Lookup failed.';
     }
+  }
+}
+
+// Once we have a customer, hydrate everything needed to render the
+// bookings panel: their bookings (upcoming + past), the barbers list
+// for the reschedule barber picker, and the card-on-file index for the
+// no-show charge action. Fetch in parallel and degrade gracefully on
+// failure — the customer card itself stays useful even if Square's
+// bookings endpoint is having a bad minute.
+if (customer) {
+  const customerId = customer.id;
+  const [bookingsResult, barbersResult] = await Promise.allSettled([
+    getCustomerBookings(customerId),
+    getBarbers(),
+  ]);
+  if (bookingsResult.status === 'fulfilled') {
+    bookings = bookingsResult.value;
+    try {
+      const allIds = [
+        ...bookings.upcoming.map((b) => b.id),
+        ...bookings.past.map((b) => b.id),
+      ];
+      if (allIds.length > 0) {
+        cardRecords = await getBookingCardRecords(allIds);
+      }
+    } catch {
+      // KV hiccup — the no-show charge button just won't render.
+      cardRecords = new Map();
+    }
+  } else {
+    const err = bookingsResult.reason;
+    if (err instanceof SquareApiError) {
+      bookingsError = `${err.code}: ${err.detail}`;
+    } else {
+      bookingsError = err instanceof Error ? err.message : 'Could not load bookings.';
+    }
+  }
+  if (barbersResult.status === 'fulfilled') {
+    barbers = barbersResult.value.map((b) => ({ id: b.id, displayName: b.displayName }));
   }
 }
 
@@ -72,6 +118,45 @@ function fmtTimestamp(iso: string | undefined): string {
     year: 'numeric',
   }).format(d);
 }
+
+function statusPillClass(status: string): string {
+  if (status === 'ACCEPTED') return 'ok';
+  if (status === 'PENDING') return 'pending';
+  return 'cancelled';
+}
+
+function describeChargeStatus(record: BookingCardRecord | undefined): string {
+  if (!record) return '';
+  if (record.chargeStatus === 'pending') return 'Card on file';
+  if (record.chargeStatus === 'late-cancel')
+    return `Late-cancel charged $${(record.servicePriceCents / 100).toFixed(2)}`;
+  if (record.chargeStatus === 'no-show')
+    return `No-show charged $${(record.servicePriceCents / 100).toFixed(2)}`;
+  if (record.chargeStatus === 'failed')
+    return `Charge failed — ${record.chargeFailureReason ?? 'unknown'}`;
+  return '';
+}
+
+function canChargeNoShow(startAtUtc: string, record: BookingCardRecord | undefined): boolean {
+  if (!record) return false;
+  if (record.chargeStatus !== 'pending' && record.chargeStatus !== 'failed') return false;
+  return new Date(startAtUtc).getTime() < Date.now();
+}
+
+// Default value for the "new date" picker — tomorrow in NY time, in
+// YYYY-MM-DD form ready for an <input type="date">.
+function tomorrowInNyDate(): string {
+  const now = new Date(Date.now() + 24 * 60 * 60 * 1000);
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/New_York',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(now);
+  const get = (type: string) => parts.find((p) => p.type === type)?.value ?? '';
+  return `${get('year')}-${get('month')}-${get('day')}`;
+}
+const defaultRescheduleDate = tomorrowInNyDate();
 ---
 
 <html lang="en">
@@ -243,6 +328,148 @@ function fmtTimestamp(iso: string | undefined): string {
         border-radius: 8px;
         color: var(--muted);
       }
+
+      h3 {
+        font-family: Georgia, serif;
+        font-weight: 400;
+        font-size: 1.1rem;
+        margin: 28px 0 12px;
+      }
+      table.bookings { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+      table.bookings th, table.bookings td {
+        padding: 9px 10px;
+        text-align: left;
+        border-bottom: 1px solid var(--border);
+        vertical-align: top;
+      }
+      table.bookings th {
+        font-size: 0.68rem;
+        font-weight: 700;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: var(--muted);
+        background: var(--surface);
+      }
+      .pill {
+        display: inline-block;
+        padding: 2px 8px;
+        border-radius: 999px;
+        font-size: 0.7rem;
+        font-weight: 600;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        white-space: nowrap;
+      }
+      .pill.ok { background: rgba(122, 184, 110, 0.15); color: #a4d091; }
+      .pill.pending { background: rgba(201, 163, 92, 0.15); color: var(--gold); }
+      .pill.cancelled { background: rgba(220, 80, 60, 0.15); color: #f0a37a; }
+      .row-actions {
+        display: flex;
+        gap: 6px;
+        flex-wrap: wrap;
+      }
+      .row-actions button {
+        padding: 6px 10px;
+        font-size: 0.72rem;
+        letter-spacing: 0.06em;
+        background: transparent;
+        color: var(--gold);
+        border: 1px solid var(--gold);
+      }
+      .row-actions button:hover:not(:disabled) {
+        background: var(--gold);
+        color: var(--bg);
+      }
+      .row-actions button.danger {
+        color: #f0a37a;
+        border-color: rgba(220, 80, 60, 0.6);
+      }
+      .row-actions button.danger:hover:not(:disabled) {
+        background: rgba(220, 80, 60, 0.6);
+        color: var(--bg);
+      }
+      .row-status {
+        margin-top: 6px;
+        font-size: 0.78rem;
+        color: var(--muted);
+      }
+      .row-status.error { color: var(--danger); }
+      .row-status.ok { color: #a4d091; }
+      .row-status[hidden] { display: none; }
+      .charge-tag {
+        display: inline-block;
+        font-size: 0.72rem;
+        font-weight: 600;
+        letter-spacing: 0.04em;
+        padding: 2px 8px;
+        border-radius: 999px;
+      }
+      .charge-tag--none { color: var(--dim); }
+      .charge-tag--pending { background: rgba(201, 163, 92, 0.15); color: var(--gold); }
+      .charge-tag--late-cancel,
+      .charge-tag--no-show { background: rgba(122, 184, 110, 0.15); color: #a4d091; }
+      .charge-tag--failed { background: rgba(220, 80, 60, 0.15); color: #f0a37a; }
+
+      .resched-row {
+        background: var(--surface-2);
+      }
+      .resched-row[hidden] { display: none; }
+      .resched-form {
+        display: grid;
+        gap: 10px;
+        padding: 14px 4px;
+      }
+      .resched-form .grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr auto;
+        gap: 8px;
+        align-items: end;
+      }
+      @media (max-width: 600px) { .resched-form .grid { grid-template-columns: 1fr; } }
+      .resched-form input[type='date'],
+      .resched-form select {
+        width: 100%;
+        padding: 8px 10px;
+        background: var(--bg);
+        border: 1px solid var(--border);
+        color: var(--text);
+        border-radius: 6px;
+        font: inherit;
+      }
+      .slot-list {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        max-height: 200px;
+        overflow-y: auto;
+      }
+      .slot-list[hidden] { display: none; }
+      .slot-list button {
+        padding: 6px 10px;
+        font-size: 0.78rem;
+        background: transparent;
+        color: var(--text);
+        border: 1px solid var(--border);
+      }
+      .slot-list button:hover:not(:disabled) {
+        border-color: var(--gold);
+        color: var(--gold);
+      }
+      .slot-list button.selected {
+        background: var(--gold);
+        color: var(--bg);
+        border-color: var(--gold);
+      }
+      .resched-confirm-row {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        align-items: center;
+      }
+      .resched-confirm-row .picked {
+        color: var(--muted);
+        font-size: 0.85rem;
+      }
     </style>
   </head>
   <body>
@@ -350,6 +577,140 @@ function fmtTimestamp(iso: string | undefined): string {
             </div>
             <p class="status" id="edit-status" hidden></p>
           </form>
+
+          {bookingsError && <p class="err" style="margin-top: 22px">Failed to load bookings: {bookingsError}</p>}
+
+          {bookings && (
+            <>
+              <h3>Upcoming bookings ({bookings.upcoming.length})</h3>
+              {bookings.upcoming.length === 0 ? (
+                <p class="empty">No upcoming bookings.</p>
+              ) : (
+                <table class="bookings">
+                  <thead>
+                    <tr>
+                      <th>When</th>
+                      <th>Service</th>
+                      <th>Barber</th>
+                      <th>Card</th>
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {bookings.upcoming.flatMap((b) => {
+                      const record = cardRecords.get(b.id);
+                      const chargeLabel = describeChargeStatus(record);
+                      return [
+                        <tr data-booking-id={b.id} data-booking-version={b.version} data-service-id={b.serviceVariationId} data-service-version={b.serviceVariationVersion} data-duration={b.durationMinutes} data-barber-id={b.barberId}>
+                          <td>{b.startAtLocal}</td>
+                          <td>{b.serviceName} <span class="meta">· {b.priceDisplay}</span></td>
+                          <td>{b.barberName}</td>
+                          <td>
+                            {chargeLabel ? (
+                              <span class={`charge-tag charge-tag--${record?.chargeStatus ?? 'none'}`}>{chargeLabel}</span>
+                            ) : (
+                              <span class="charge-tag charge-tag--none">—</span>
+                            )}
+                          </td>
+                          <td>
+                            <div class="row-actions">
+                              <button type="button" data-action="reschedule" data-booking-id={b.id}>Reschedule</button>
+                              <button type="button" class="danger" data-action="cancel" data-booking-id={b.id}>Cancel</button>
+                            </div>
+                            <p class="row-status" data-status-for={b.id} hidden></p>
+                          </td>
+                        </tr>,
+                        <tr class="resched-row" data-resched-for={b.id} hidden>
+                          <td colspan="5">
+                            <form class="resched-form" data-resched-form-for={b.id}>
+                              <div class="grid">
+                                <div>
+                                  <label>New date</label>
+                                  <input type="date" name="date" value={defaultRescheduleDate} required />
+                                </div>
+                                <div>
+                                  <label>Barber</label>
+                                  <select name="teamMemberId">
+                                    {barbers.map((br) => (
+                                      <option value={br.id} selected={br.id === b.barberId}>{br.displayName}</option>
+                                    ))}
+                                  </select>
+                                </div>
+                                <button type="button" data-load-slots>Load times</button>
+                              </div>
+                              <div class="slot-list" data-slot-list hidden></div>
+                              <div class="resched-confirm-row">
+                                <span class="picked" data-picked-label></span>
+                                <button type="submit" disabled>Confirm reschedule</button>
+                                <button type="button" class="ghost" data-cancel-resched>Close</button>
+                              </div>
+                            </form>
+                          </td>
+                        </tr>,
+                      ];
+                    })}
+                  </tbody>
+                </table>
+              )}
+
+              <h3>Past bookings ({bookings.past.length})</h3>
+              {bookings.past.length === 0 ? (
+                <p class="empty">No past bookings on file (last 6 months).</p>
+              ) : (
+                <table class="bookings">
+                  <thead>
+                    <tr>
+                      <th>When</th>
+                      <th>Status</th>
+                      <th>Service</th>
+                      <th>Barber</th>
+                      <th>Card / charge</th>
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {bookings.past.map((b) => {
+                      const record = cardRecords.get(b.id);
+                      const chargeLabel = describeChargeStatus(record);
+                      const canCharge = canChargeNoShow(b.startAtUtc, record);
+                      return (
+                        <tr data-booking-id={b.id}>
+                          <td>{b.startAtLocal}</td>
+                          <td><span class={`pill ${statusPillClass(b.status)}`}>{b.status.replace(/_/g, ' ')}</span></td>
+                          <td>{b.serviceName}</td>
+                          <td>{b.barberName}</td>
+                          <td>
+                            {chargeLabel ? (
+                              <span class={`charge-tag charge-tag--${record?.chargeStatus ?? 'none'}`}>{chargeLabel}</span>
+                            ) : (
+                              <span class="charge-tag charge-tag--none">—</span>
+                            )}
+                          </td>
+                          <td>
+                            {canCharge ? (
+                              <div class="row-actions">
+                                <button
+                                  type="button"
+                                  data-action="no-show-charge"
+                                  data-booking-id={b.id}
+                                  data-amount-cents={record!.servicePriceCents}
+                                >
+                                  Mark no-show &amp; charge ${(record!.servicePriceCents / 100).toFixed(2)}
+                                </button>
+                              </div>
+                            ) : (
+                              <span class="meta">—</span>
+                            )}
+                            <p class="row-status" data-status-for={b.id} hidden></p>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              )}
+            </>
+          )}
         </div>
       )}
 
@@ -444,6 +805,261 @@ function fmtTimestamp(iso: string | undefined): string {
             submitBtn.disabled = false;
             submitBtn.textContent = 'Save changes';
           }
+        });
+      })();
+
+      // Bookings panel — cancel, reschedule, no-show charge.
+      (function () {
+        function setRowStatus(bookingId, msg, kind) {
+          const el = document.querySelector('[data-status-for="' + bookingId + '"]');
+          if (!el) return;
+          el.textContent = msg || '';
+          el.className = 'row-status ' + (kind || '');
+          el.hidden = !msg;
+        }
+
+        // Convert a YYYY-MM-DD picked in NY local time into a UTC
+        // start/end window covering that NY day exactly (24h). We probe
+        // the NY hour at noon UTC to discover the offset (handles DST).
+        function nyDayUtcBounds(dateStr) {
+          const probe = new Date(dateStr + 'T12:00:00Z');
+          const nyHourStr = new Intl.DateTimeFormat('en-US', {
+            timeZone: 'America/New_York',
+            hour: '2-digit',
+            hour12: false,
+          }).format(probe);
+          const nyHour = parseInt(nyHourStr, 10);
+          const offsetHours = 12 - nyHour;
+          const start = new Date(dateStr + 'T00:00:00Z');
+          start.setUTCHours(offsetHours);
+          const end = new Date(start.getTime() + 24 * 60 * 60 * 1000);
+          return { startAt: start.toISOString(), endAt: end.toISOString() };
+        }
+
+        function fmtSlotLocal(utcIso) {
+          return new Intl.DateTimeFormat('en-US', {
+            timeZone: 'America/New_York',
+            weekday: 'short',
+            hour: 'numeric',
+            minute: '2-digit',
+            hour12: true,
+          }).format(new Date(utcIso));
+        }
+
+        // Cancel — confirm, then POST.
+        document.querySelectorAll('button[data-action="cancel"]').forEach((btn) => {
+          btn.addEventListener('click', async () => {
+            const bookingId = btn.dataset.bookingId;
+            if (!bookingId) return;
+            if (!window.confirm('Cancel this booking? The customer will not be charged.')) return;
+            btn.disabled = true;
+            const original = btn.textContent;
+            btn.textContent = 'Cancelling…';
+            setRowStatus(bookingId, '', '');
+            try {
+              const res = await fetch('/api/admin/bookings/cancel', {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ bookingId }),
+              });
+              const data = await res.json();
+              if (!res.ok || !data.ok) {
+                setRowStatus(bookingId, (data && data.error && data.error.detail) || 'Cancel failed.', 'error');
+                btn.disabled = false;
+                btn.textContent = original;
+                return;
+              }
+              setRowStatus(bookingId, 'Cancelled. Refreshing…', 'ok');
+              setTimeout(() => window.location.reload(), 600);
+            } catch (err) {
+              setRowStatus(bookingId, 'Network error. Try again.', 'error');
+              btn.disabled = false;
+              btn.textContent = original;
+            }
+          });
+        });
+
+        // Reschedule — toggle inline form.
+        document.querySelectorAll('button[data-action="reschedule"]').forEach((btn) => {
+          btn.addEventListener('click', () => {
+            const bookingId = btn.dataset.bookingId;
+            const row = document.querySelector('[data-resched-for="' + bookingId + '"]');
+            if (!row) return;
+            row.hidden = !row.hidden;
+          });
+        });
+
+        document.querySelectorAll('[data-cancel-resched]').forEach((btn) => {
+          btn.addEventListener('click', () => {
+            const form = btn.closest('.resched-form');
+            const bookingId = form?.dataset.reschedFormFor;
+            if (!bookingId) return;
+            const row = document.querySelector('[data-resched-for="' + bookingId + '"]');
+            if (row) row.hidden = true;
+          });
+        });
+
+        // Reschedule — load slots for the picked date + barber.
+        document.querySelectorAll('[data-load-slots]').forEach((btn) => {
+          btn.addEventListener('click', async () => {
+            const form = btn.closest('.resched-form');
+            if (!form) return;
+            const bookingId = form.dataset.reschedFormFor;
+            const bookingRow = document.querySelector('tr[data-booking-id="' + bookingId + '"]');
+            if (!bookingRow) return;
+            const serviceVariationId = bookingRow.dataset.serviceId;
+            const teamMemberId = form.querySelector('select[name="teamMemberId"]').value;
+            const date = form.querySelector('input[name="date"]').value;
+            const slotList = form.querySelector('[data-slot-list]');
+            const submitBtn = form.querySelector('button[type="submit"]');
+            const pickedLabel = form.querySelector('[data-picked-label]');
+            if (!date) {
+              setRowStatus(bookingId, 'Pick a date first.', 'error');
+              return;
+            }
+            setRowStatus(bookingId, '', '');
+            slotList.hidden = false;
+            slotList.innerHTML = '<span class="meta">Loading times…</span>';
+            submitBtn.disabled = true;
+            pickedLabel.textContent = '';
+            form.dataset.pickedSlot = '';
+            const { startAt, endAt } = nyDayUtcBounds(date);
+            const params = new URLSearchParams({
+              serviceVariationId: serviceVariationId,
+              startAt,
+              endAt,
+            });
+            if (teamMemberId) params.set('teamMemberId', teamMemberId);
+            try {
+              const res = await fetch('/api/square/availability?' + params.toString(), {
+                credentials: 'same-origin',
+              });
+              const data = await res.json();
+              if (!res.ok || !data.ok) {
+                slotList.innerHTML = '';
+                slotList.hidden = true;
+                setRowStatus(bookingId, (data && data.error && data.error.detail) || 'Could not load times.', 'error');
+                return;
+              }
+              const slots = (data.slots || []);
+              if (slots.length === 0) {
+                slotList.innerHTML = '<span class="meta">No openings that day.</span>';
+                return;
+              }
+              slotList.innerHTML = '';
+              slots.forEach((s) => {
+                const startUtc = s.startAt || s.start_at;
+                if (!startUtc) return;
+                const b = document.createElement('button');
+                b.type = 'button';
+                b.textContent = fmtSlotLocal(startUtc);
+                b.dataset.slotUtc = startUtc;
+                b.addEventListener('click', () => {
+                  slotList.querySelectorAll('button').forEach((x) => x.classList.remove('selected'));
+                  b.classList.add('selected');
+                  form.dataset.pickedSlot = startUtc;
+                  pickedLabel.textContent = 'Picked: ' + fmtSlotLocal(startUtc);
+                  submitBtn.disabled = false;
+                });
+                slotList.appendChild(b);
+              });
+            } catch (err) {
+              slotList.innerHTML = '';
+              slotList.hidden = true;
+              setRowStatus(bookingId, 'Network error. Try again.', 'error');
+            }
+          });
+        });
+
+        // Reschedule — submit.
+        document.querySelectorAll('.resched-form').forEach((form) => {
+          form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const bookingId = form.dataset.reschedFormFor;
+            const slotUtc = form.dataset.pickedSlot;
+            const teamMemberId = form.querySelector('select[name="teamMemberId"]').value;
+            if (!bookingId || !slotUtc) return;
+            const submitBtn = form.querySelector('button[type="submit"]');
+            submitBtn.disabled = true;
+            const original = submitBtn.textContent;
+            submitBtn.textContent = 'Rescheduling…';
+            setRowStatus(bookingId, '', '');
+            try {
+              const res = await fetch('/api/admin/bookings/reschedule', {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  oldBookingId: bookingId,
+                  newStartAtUtc: slotUtc,
+                  teamMemberId,
+                }),
+              });
+              const data = await res.json();
+              if (!res.ok || !data.ok) {
+                setRowStatus(bookingId, (data && data.error && data.error.detail) || 'Reschedule failed.', 'error');
+                submitBtn.disabled = false;
+                submitBtn.textContent = original;
+                return;
+              }
+              const msg = data.warning ? 'Rescheduled (with warning: ' + data.warning + ')' : 'Rescheduled. Refreshing…';
+              setRowStatus(bookingId, msg, 'ok');
+              setTimeout(() => window.location.reload(), 800);
+            } catch (err) {
+              setRowStatus(bookingId, 'Network error. Try again.', 'error');
+              submitBtn.disabled = false;
+              submitBtn.textContent = original;
+            }
+          });
+        });
+
+        // No-show charge on a past booking — reuses the existing endpoint
+        // /admin/bookings already calls.
+        document.querySelectorAll('button[data-action="no-show-charge"]').forEach((btn) => {
+          btn.addEventListener('click', async () => {
+            const bookingId = btn.dataset.bookingId;
+            const amountCents = parseInt(btn.dataset.amountCents || '0', 10);
+            if (!bookingId) return;
+            const dollars = (amountCents / 100).toFixed(2);
+            const ok = window.confirm(
+              'Mark this customer NO-SHOW and charge $' + dollars + ' to their card on file?\n\n' +
+              'This will:\n' +
+              '  • Cancel the Square booking\n' +
+              '  • Charge the saved card the full service price\n\n' +
+              'Refunds are handled in Square.',
+            );
+            if (!ok) return;
+            btn.disabled = true;
+            const originalLabel = btn.textContent;
+            btn.textContent = 'Charging…';
+            setRowStatus(bookingId, '', '');
+            try {
+              const res = await fetch('/api/admin/bookings/no-show-charge', {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ bookingId }),
+              });
+              const data = await res.json();
+              if (!res.ok || !data.ok) {
+                setRowStatus(bookingId, (data && data.error && data.error.detail) || 'Charge failed.', 'error');
+                btn.disabled = false;
+                btn.textContent = originalLabel;
+                return;
+              }
+              if (data.chargeFailed) {
+                setRowStatus(bookingId, 'Booking cancelled, but card charge failed: ' + data.chargeFailed.detail, 'error');
+              } else {
+                setRowStatus(bookingId, 'No-show charge complete. Refreshing…', 'ok');
+              }
+              setTimeout(() => window.location.reload(), 1200);
+            } catch (err) {
+              setRowStatus(bookingId, 'Network error. Try again.', 'error');
+              btn.disabled = false;
+              btn.textContent = originalLabel;
+            }
+          });
         });
       })();
     </script>
