@@ -130,6 +130,14 @@ export type WizardAction =
    *  person. Without a full reset, a leftover cardId from one customer
    *  would silently get attached to a different customer's booking. */
   | { type: 'RESET_CARD_CAPTURE'; required?: boolean | null }
+  /** "Book another visit" on the success screen — wipes the slot,
+   *  service, barber, and status so the wizard goes back to Step 1
+   *  ready for a fresh appointment, but KEEPS the customer's name,
+   *  email, phone, and marketing consent so they don't retype on
+   *  every visit. The customer is now established (they just booked
+   *  one), so cardCapture pins to required:false to skip Step 4.5
+   *  on subsequent visits in the same session. */
+  | { type: 'START_ANOTHER_BOOKING' }
   | { type: 'RESET' };
 
 export function reducer(state: WizardState, action: WizardAction): WizardState {
@@ -248,6 +256,22 @@ export function reducer(state: WizardState, action: WizardAction): WizardState {
         cardCapture: {
           ...initialCardCapture,
           required: action.required === undefined ? null : action.required,
+        },
+      };
+    case 'START_ANOTHER_BOOKING':
+      return {
+        ...initialState,
+        customer: {
+          ...state.customer,
+          // Per-appointment fields don't carry over.
+          note: '',
+        },
+        cardCapture: {
+          ...initialCardCapture,
+          // Skip the new-customer check + Step 4.5 on subsequent
+          // bookings in the same session — they just booked their
+          // first visit, so by definition they're not new anymore.
+          required: false,
         },
       };
     case 'RESET':

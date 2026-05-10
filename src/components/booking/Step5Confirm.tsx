@@ -15,6 +15,12 @@ interface Props {
   onEditSlot: () => void;
   onEditCustomer: () => void;
   onUpdateContactToggle: (value: boolean) => void;
+  /** Fired from the success screen's "Book another" button. When
+   *  provided, the button does a soft wizard reset (preserving the
+   *  customer's contact info) instead of a hard navigation back to
+   *  /book. Optional so the wizard can decide per-mount whether to
+   *  surface it. */
+  onBookAnother?: () => void;
   rescheduleMode?: boolean;
   /** When set, the customer captured a card on file in Step 4.5. We
    *  surface it on the summary so they know what's being held, and we
@@ -58,6 +64,7 @@ export function Step5Confirm({
   onUpdateContactToggle,
   rescheduleMode = false,
   cardOnFile = null,
+  onBookAnother,
 }: Props) {
   const [existingContact, setExistingContact] = useState<{ phone?: string; givenName?: string; familyName?: string } | null>(null);
   const [calendarSheetOpen, setCalendarSheetOpen] = useState(false);
@@ -164,11 +171,20 @@ export function Step5Confirm({
             <a className="bw-btn bw-btn--ghost" href="/my-bookings">
               View My Bookings
             </a>
-            {!rescheduleMode && (
-              <a className="bw-btn" href="/book">
-                Book another
-              </a>
-            )}
+            {!rescheduleMode &&
+              (onBookAnother ? (
+                <button
+                  type="button"
+                  className="bw-btn"
+                  onClick={onBookAnother}
+                >
+                  Book another
+                </button>
+              ) : (
+                <a className="bw-btn" href="/book">
+                  Book another
+                </a>
+              ))}
             {rescheduleMode && (
               <a className="bw-btn" href="/my-bookings">
                 Done
