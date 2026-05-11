@@ -370,8 +370,8 @@ export function Step45CardCapture({
               <p className="bw-cardstep-form__secure">
                 <svg
                   className="bw-cardstep-form__secure-icon"
-                  width="12"
-                  height="14"
+                  width="16"
+                  height="18"
                   viewBox="0 0 12 14"
                   fill="none"
                   aria-hidden="true"
@@ -393,8 +393,8 @@ export function Step45CardCapture({
                   />
                 </svg>
                 <span>
-                  Secured by Square. Your card details are encrypted and never
-                  touch our servers.
+                  <strong>Secured by Square.</strong> Your card details are
+                  encrypted and never touch our servers.
                 </span>
               </p>
             )}
