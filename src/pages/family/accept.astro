@@ -1,0 +1,256 @@
+---
+// /family/accept?token=... — landing page for a family-invite link.
+//
+// Peek-only: we read the invite record but don't consume it here.
+// The actual single-use consume happens in POST /api/family/accept
+// when the user taps Accept, so a quick visit + back-button doesn't
+// burn the token.
+//
+// If the visitor isn't signed in, we bounce through /sign-in with a
+// redirect back to this exact URL (token preserved). After magic-link
+// sign-in they land back here and can Accept in one tap.
+
+export const prerender = false;
+
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import Header from '../../components/Header.astro';
+import Footer from '../../components/Footer.astro';
+import { getSession, refreshSessionCookie } from '../../lib/auth/middleware';
+import { isAuthConfigured } from '../../lib/auth/session';
+import { getCustomerById } from '../../lib/square/customers';
+import {
+  getInvite,
+  getFamilyById,
+  getFamilyForCustomer,
+} from '../../lib/customer/familyAccount';
+
+import '../../styles/portal.css';
+
+const base = import.meta.env.BASE_URL.replace(/\/$/, '');
+
+if (!isAuthConfigured()) {
+  return new Response(
+    'The family-account feature is temporarily unavailable. Please try again shortly.',
+    { status: 503, headers: { 'Content-Type': 'text/plain' } },
+  );
+}
+
+const url = new URL(Astro.request.url);
+const token = (url.searchParams.get('token') ?? '').trim();
+
+const session = getSession(Astro.request);
+if (!session) {
+  // Preserve the token through the sign-in round-trip so the user
+  // doesn't have to dig the email back up.
+  const here = `${base}/family/accept${token ? `?token=${encodeURIComponent(token)}` : ''}`;
+  return new Response(null, {
+    status: 302,
+    headers: {
+      Location: `${base}/sign-in?redirect=${encodeURIComponent(here)}`,
+    },
+  });
+}
+
+// Sliding cookie refresh — same pattern as /profile and /my-bookings.
+Astro.response.headers.append('Set-Cookie', refreshSessionCookie(session));
+
+type Status =
+  | 'no-token'
+  | 'invalid'
+  | 'email-mismatch'
+  | 'family-gone'
+  | 'already-in-this-family'
+  | 'in-other-family'
+  | 'ready';
+
+let status: Status = 'ready';
+let inviterName = 'A Modern Classic customer';
+let invitedEmail = '';
+
+if (!token) {
+  status = 'no-token';
+} else {
+  const invite = await getInvite(token);
+  if (!invite) {
+    status = 'invalid';
+  } else {
+    invitedEmail = invite.invitedEmail;
+    const sessionEmail = session.email.trim().toLowerCase();
+    if (invite.invitedEmail !== sessionEmail) {
+      status = 'email-mismatch';
+    } else {
+      const family = await getFamilyById(invite.familyId);
+      if (!family) {
+        status = 'family-gone';
+      } else {
+        const currentFamily = await getFamilyForCustomer(session.customerId);
+        if (currentFamily && currentFamily.familyId === invite.familyId) {
+          status = 'already-in-this-family';
+        } else if (currentFamily && currentFamily.familyId !== invite.familyId) {
+          status = 'in-other-family';
+        } else {
+          // Best-effort inviter name for the headline.
+          try {
+            const inviter = await getCustomerById(invite.invitedByCustomerId);
+            if (inviter) {
+              const first = (inviter.given_name ?? '').trim();
+              const last = (inviter.family_name ?? '').trim();
+              const full = `${first} ${last}`.trim();
+              if (full) inviterName = full;
+              else if (first) inviterName = first;
+            }
+          } catch {
+            // Fall back to the generic label. Non-fatal.
+          }
+        }
+      }
+    }
+  }
+}
+---
+<BaseLayout
+  title="Accept family invite — Modern Classic Barbershop"
+  description="Join a Modern Classic family account."
+>
+  <Header />
+  <main id="main" class="mb-page">
+    <div class="mb-head">
+      <div class="mb-head__id">
+        <span class="mb-head__eyebrow">Family account</span>
+        <h1>Accept invite</h1>
+        <p class="mb-head__email">{session.email}</p>
+      </div>
+      <a class="mb-head__signout" href={`${base}/my-bookings`}>← My bookings</a>
+    </div>
+
+    {status === 'no-token' && (
+      <section class="mb-empty">
+        <p>
+          This link is missing its invite token. Check the email you got and
+          tap the <strong>Accept invite</strong> button again, or have the
+          inviter resend it from their profile.
+        </p>
+      </section>
+    )}
+
+    {status === 'invalid' && (
+      <section class="mb-empty">
+        <p>
+          This invite has expired or already been used. Invites are good for
+          7 days and can only be accepted once. Ask the inviter to send a
+          fresh one from their profile.
+        </p>
+        <p><a class="mb-btn" href={`${base}/profile`}>Back to profile</a></p>
+      </section>
+    )}
+
+    {status === 'email-mismatch' && (
+      <section class="mb-empty">
+        <p>
+          This invite was sent to <strong>{invitedEmail}</strong>, but you're
+          signed in as <strong>{session.email}</strong>. Sign out and sign
+          back in with the email the invite was sent to, then tap the link
+          in your email again.
+        </p>
+        <p><a class="mb-btn mb-btn--ghost" href={`${base}/sign-out`}>Sign out</a></p>
+      </section>
+    )}
+
+    {status === 'family-gone' && (
+      <section class="mb-empty">
+        <p>
+          The family that sent this invite no longer exists. Ask the inviter
+          to start a fresh family from their profile.
+        </p>
+        <p><a class="mb-btn" href={`${base}/profile`}>Back to profile</a></p>
+      </section>
+    )}
+
+    {status === 'already-in-this-family' && (
+      <section class="mb-empty">
+        <p>
+          You're already part of this family — no need to accept again.
+        </p>
+        <p><a class="mb-btn" href={`${base}/my-bookings`}>Go to My bookings</a></p>
+      </section>
+    )}
+
+    {status === 'in-other-family' && (
+      <section class="mb-empty">
+        <p>
+          You're already in a different family account. Leave it first from
+          your profile, then come back and tap this link again.
+        </p>
+        <p><a class="mb-btn" href={`${base}/profile`}>Open my profile</a></p>
+      </section>
+    )}
+
+    {status === 'ready' && (
+      <section class="mb-profile">
+        <header class="mb-profile__head">
+          <h2>Join {inviterName}'s family account?</h2>
+          <p class="mb-profile__sub">
+            Accepting joins you to a shared Modern Classic family. You'll
+            each see the other's appointments — and any kids' appointments
+            — in one merged list on <strong>My bookings</strong>. You can
+            leave the family from your profile at any time.
+          </p>
+        </header>
+        <div class="mb-profile__actions">
+          <a class="mb-btn mb-btn--ghost" href={`${base}/my-bookings`}>Not now</a>
+          <button type="button" class="mb-btn" id="accept-btn" data-token={token}>
+            Accept invite
+          </button>
+        </div>
+        <p class="mb-profile__status" data-status hidden></p>
+      </section>
+    )}
+  </main>
+  <Footer />
+</BaseLayout>
+
+<script is:inline>
+  (function () {
+    const btn = document.getElementById('accept-btn');
+    if (!btn) return;
+    const status = document.querySelector('[data-status]');
+    const token = btn.getAttribute('data-token') || '';
+
+    function show(msg, kind) {
+      if (!status) return;
+      status.textContent = msg;
+      status.className = 'mb-profile__status mb-profile__status--' + kind;
+      status.hidden = false;
+    }
+
+    btn.addEventListener('click', async () => {
+      btn.disabled = true;
+      btn.textContent = 'Accepting…';
+      show('Joining family…', 'ok');
+      try {
+        const res = await fetch('/api/family/accept', {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ token: token }),
+        });
+        const data = await res.json();
+        if (!res.ok || !data.ok) {
+          const detail =
+            (data && data.error && data.error.detail) ||
+            'Could not accept this invite.';
+          show(detail, 'error');
+          btn.disabled = false;
+          btn.textContent = 'Accept invite';
+          return;
+        }
+        show('Joined! Taking you to My bookings…', 'ok');
+        window.location.href = '/my-bookings';
+      } catch {
+        show('Network error. Please try again.', 'error');
+        btn.disabled = false;
+        btn.textContent = 'Accept invite';
+      }
+    });
+  })();
+</script>

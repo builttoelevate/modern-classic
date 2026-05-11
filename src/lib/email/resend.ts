@@ -440,3 +440,41 @@ export async function sendReviewClickBarber(
     replyTo: REPLY_TO,
   });
 }
+
+export interface SendFamilyInviteInput {
+  /** Invitee's email (resolved from the customer record at invite time). */
+  to: string;
+  /** Display name of the inviter — "Bill", "Bill Chicha", whatever the
+   *  caller resolved. Used verbatim in subject + body. */
+  inviterName: string;
+  /** Full /family/accept?token=... URL. */
+  acceptUrl: string;
+  /** Pre-formatted "in 7 days" / "by Sat May 18" copy. */
+  expiresLabel: string;
+  shopAddress: string;
+  shopPhone: string;
+}
+
+/**
+ * Family-account invite. Triggered when an existing customer invites
+ * another adult to share their account. Reply-to is the shop inbox
+ * so a confused invitee can ask the shop what this is. Transactional
+ * (no unsubscribe header) — the invitee took an explicit action (a
+ * trusted contact's request) that prompted this email.
+ */
+export async function sendFamilyInvite(
+  input: SendFamilyInviteInput,
+): Promise<{ id: string }> {
+  const { familyInviteHtml, familyInviteText, familyInviteSubject } = await import(
+    './templates/familyInvite'
+  );
+  const html = familyInviteHtml(input);
+  const text = familyInviteText(input);
+  return sendEmail({
+    to: input.to,
+    subject: familyInviteSubject({ inviterName: input.inviterName }),
+    html,
+    text,
+    replyTo: REPLY_TO,
+  });
+}

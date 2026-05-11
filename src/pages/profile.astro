@@ -8,6 +8,12 @@ import { getSession, refreshSessionCookie } from '../lib/auth/middleware';
 import { isAuthConfigured } from '../lib/auth/session';
 import { getCustomerById } from '../lib/square/customers';
 import { listLinkedPeople, type LinkedPerson } from '../lib/customer/profileLinks';
+import {
+  getFamilyForCustomer,
+  MAX_FAMILY_ADULTS,
+  MAX_FAMILY_MEMBERS,
+  type FamilyRecord,
+} from '../lib/customer/familyAccount';
 import type { Customer } from '../lib/square/types';
 
 import '../styles/portal.css';
@@ -33,17 +39,25 @@ if (!session) {
 
 let customer: Customer | null = null;
 let linkedPeople: LinkedPerson[] = [];
+let family: FamilyRecord | null = null;
 let loadError: string | null = null;
 try {
-  const [c, kids] = await Promise.all([
+  const [c, kids, fam] = await Promise.all([
     getCustomerById(session.customerId),
     listLinkedPeople(session.customerId).catch(() => [] as LinkedPerson[]),
+    getFamilyForCustomer(session.customerId).catch(() => null),
   ]);
   customer = c;
   linkedPeople = kids;
+  family = fam;
 } catch (err) {
   loadError = err instanceof Error ? err.message : 'Failed to load.';
 }
+
+const adultCount = family?.members.filter((m) => m.role === 'adult').length ?? 0;
+const familyAtCap = (family?.members.length ?? 0) >= MAX_FAMILY_MEMBERS;
+const adultsAtCap = adultCount >= MAX_FAMILY_ADULTS;
+const inviteDisabled = !!family && (familyAtCap || adultsAtCap);
 
 function fmtPhone(raw: string): string {
   const d = raw.replace(/[^0-9]/g, '');
@@ -154,6 +168,84 @@ Astro.response.headers.append('Set-Cookie', refreshSessionCookie(session));
           </div>
           <p class="mb-profile__status" data-status hidden></p>
         </form>
+      </section>
+    )}
+
+    {customer && (
+      <section class="mb-profile" aria-labelledby="family-account">
+        <header class="mb-profile__head">
+          <h2 id="family-account">Family account</h2>
+          <p class="mb-profile__sub">
+            Share one Modern Classic account with another adult — typically a
+            spouse or partner. You'll each see the other's appointments
+            (and any kids' appointments) in one merged list on
+            <strong>My bookings</strong>. Up to {MAX_FAMILY_ADULTS} adults and
+            {MAX_FAMILY_MEMBERS} members total.
+          </p>
+        </header>
+
+        {!family && (
+          <div class="mb-people__add">
+            <p class="mb-profile__empty">
+              You're not in a family account yet. Create one, then invite the
+              other adult by email.
+            </p>
+            <div class="mb-profile__actions">
+              <button type="button" class="mb-btn" id="create-family-btn">
+                Create family account
+              </button>
+            </div>
+            <p class="mb-profile__status" data-create-status hidden></p>
+          </div>
+        )}
+
+        {family && (
+          <>
+            <ul class="mb-people" id="family-list">
+              {family.members.map((m) => (
+                <li class="mb-person">
+                  <div class="mb-person__id">
+                    <span class="mb-person__name">{m.displayName}</span>
+                    <span class="mb-person__rel">
+                      {m.role === 'adult' ? 'Adult' : 'Kid'}
+                      {m.customerId === session.customerId ? ' · you' : ''}
+                    </span>
+                  </div>
+                </li>
+              ))}
+            </ul>
+
+            <form id="invite-family-form" class="mb-people__add">
+              <label class="mb-profile__field">
+                <span class="mb-profile__label">Invite another adult by email</span>
+                <input
+                  type="email"
+                  name="inviteeEmail"
+                  maxlength="120"
+                  autocomplete="email"
+                  autocapitalize="none"
+                  spellcheck="false"
+                  placeholder="spouse@example.com"
+                  disabled={inviteDisabled}
+                  required
+                />
+                <span class="mb-profile__hint">
+                  {familyAtCap
+                    ? `Family is at the ${MAX_FAMILY_MEMBERS}-member cap.`
+                    : adultsAtCap
+                      ? `Family is at the ${MAX_FAMILY_ADULTS}-adult cap.`
+                      : 'They’ll get an email with a one-tap accept link. The invite expires in 7 days.'}
+                </span>
+              </label>
+              <div class="mb-profile__actions">
+                <button type="submit" class="mb-btn" disabled={inviteDisabled}>
+                  Send invite
+                </button>
+              </div>
+              <p class="mb-profile__status" data-invite-status hidden></p>
+            </form>
+          </>
+        )}
       </section>
     )}
 
@@ -421,6 +513,95 @@ Astro.response.headers.append('Set-Cookie', refreshSessionCookie(session));
           target.disabled = false;
           target.textContent = 'Remove';
           alert('Network error: ' + (err && err.message ? err.message : 'try again.'));
+        }
+      });
+    }
+  })();
+
+  // ---------- Family account ----------
+  (function () {
+    const createBtn = document.getElementById('create-family-btn');
+    if (createBtn) {
+      const createStatus = document.querySelector('[data-create-status]');
+      function showCreate(msg, kind) {
+        if (!createStatus) return;
+        createStatus.textContent = msg;
+        createStatus.className = 'mb-profile__status mb-profile__status--' + kind;
+        createStatus.hidden = false;
+      }
+      createBtn.addEventListener('click', async () => {
+        createBtn.disabled = true;
+        createBtn.textContent = 'Creating…';
+        try {
+          const res = await fetch('/api/family/create', {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/json' },
+            body: '{}',
+          });
+          const data = await res.json();
+          if (!res.ok || !data.ok) {
+            showCreate(
+              (data && data.error && data.error.detail) || 'Could not create family.',
+              'error',
+            );
+            createBtn.disabled = false;
+            createBtn.textContent = 'Create family account';
+            return;
+          }
+          window.location.reload();
+        } catch {
+          showCreate('Network error. Please try again.', 'error');
+          createBtn.disabled = false;
+          createBtn.textContent = 'Create family account';
+        }
+      });
+    }
+
+    const inviteForm = document.getElementById('invite-family-form');
+    if (inviteForm) {
+      const inviteStatus = inviteForm.querySelector('[data-invite-status]');
+      const inviteBtn = inviteForm.querySelector('button[type="submit"]');
+      function showInvite(msg, kind) {
+        if (!inviteStatus) return;
+        inviteStatus.textContent = msg;
+        inviteStatus.className = 'mb-profile__status mb-profile__status--' + kind;
+        inviteStatus.hidden = false;
+      }
+      inviteForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const email = inviteForm.inviteeEmail.value.trim();
+        if (!email) {
+          showInvite('Email is required.', 'error');
+          return;
+        }
+        inviteBtn.disabled = true;
+        inviteBtn.textContent = 'Sending…';
+        try {
+          const res = await fetch('/api/family/invite', {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ inviteeEmail: email }),
+          });
+          const data = await res.json();
+          if (!res.ok || !data.ok) {
+            showInvite(
+              (data && data.error && data.error.detail) || 'Could not send invite.',
+              'error',
+            );
+            inviteBtn.disabled = false;
+            inviteBtn.textContent = 'Send invite';
+            return;
+          }
+          showInvite('Invite sent. They have 7 days to accept.', 'ok');
+          inviteForm.inviteeEmail.value = '';
+          inviteBtn.disabled = false;
+          inviteBtn.textContent = 'Send invite';
+        } catch {
+          showInvite('Network error. Please try again.', 'error');
+          inviteBtn.disabled = false;
+          inviteBtn.textContent = 'Send invite';
         }
       });
     }
