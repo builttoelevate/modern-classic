@@ -172,3 +172,63 @@ export async function resolveSeriesAvailability(
     return { intendedStartAtUtc: intended, status: 'taken', slot: null };
   });
 }
+
+/**
+ * Look up alternative slots for a Booking Plan row whose intended
+ * time is taken or unavailable. Strategy:
+ *
+ *   1. Same shop-day as the target — sort the day's openings by
+ *      proximity to the target time and return the top N. This is
+ *      the common case ("you wanted 2pm, here's 1:30 / 2:30 / 3pm
+ *      same day").
+ *   2. If the day has zero openings (barber off, holiday), walk a
+ *      7-day forward window from the day-after-target and return
+ *      the soonest N slots in chronological order.
+ *
+ * Returns an empty array when nothing's bookable in either pass —
+ * the popover surfaces that state as "No alternatives nearby."
+ */
+export async function findNearbyAlternatives(
+  targetUtc: string,
+  serviceVariationId: string,
+  teamMemberId: string | undefined,
+  count = 3,
+): Promise<AvailabilitySlot[]> {
+  const targetMs = Date.parse(targetUtc);
+  if (Number.isNaN(targetMs)) return [];
+
+  // Same-day pass.
+  const dayBounds = shopDayBoundsUtc(targetUtc);
+  const sameDay = await fetchSlotsForDay(
+    serviceVariationId,
+    teamMemberId,
+    dayBounds.startAt,
+    dayBounds.endAt,
+  );
+  if (sameDay && sameDay.length > 0) {
+    return [...sameDay]
+      .sort((a, b) => {
+        const da = Math.abs(Date.parse(a.startAtUtc) - targetMs);
+        const db = Math.abs(Date.parse(b.startAtUtc) - targetMs);
+        return da - db;
+      })
+      .slice(0, count);
+  }
+
+  // Forward-7-day pass. Square caps each call at 31 days; 7 days is
+  // comfortably under and keeps the popover decision fast.
+  const dayMs = 24 * 60 * 60 * 1000;
+  const forwardStart = Date.parse(dayBounds.endAt); // day after target's local day
+  const forwardEnd = forwardStart + 7 * dayMs;
+  if (Number.isNaN(forwardStart)) return [];
+  const forward = await fetchSlotsForDay(
+    serviceVariationId,
+    teamMemberId,
+    new Date(forwardStart).toISOString(),
+    new Date(forwardEnd).toISOString(),
+  );
+  if (!forward || forward.length === 0) return [];
+  return [...forward]
+    .sort((a, b) => Date.parse(a.startAtUtc) - Date.parse(b.startAtUtc))
+    .slice(0, count);
+}

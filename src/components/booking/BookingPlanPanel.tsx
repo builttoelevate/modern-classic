@@ -9,8 +9,10 @@
 // PR 2 wires the inline alternatives picker so unavailable rows can
 // be swapped without leaving the screen.
 
+import { useState } from 'react';
 import type { AvailabilitySlot } from '../../lib/square/types';
 import type { GeneratedSlot, GeneratedSlotStatus } from './wizardState';
+import { SlotAlternativesPopover } from './SlotAlternativesPopover';
 
 interface PlanRow {
   /** Stable key — for the first visit, the real slot's startAtUtc; for
@@ -32,7 +34,16 @@ interface Props {
   /** Service price in cents, used to compute the total. Same across
    *  every visit (Book Ahead locks one service for the whole series). */
   pricePerVisitCents: number | null;
+  /** Locked across the whole series — Book Ahead doesn't let the
+   *  customer change service or barber per-visit. Used by the
+   *  alternatives popover to query Square for nearby openings. */
+  serviceVariationId: string;
+  teamMemberId: string | undefined;
   onRemoveSlot: (intendedStartAtUtc: string) => void;
+  /** Replace the slot at intendedStartAtUtc with the picked
+   *  alternative. The reducer pivots the row to status 'available'
+   *  with the new slot bound. */
+  onReplaceSlot: (intendedStartAtUtc: string, replacement: AvailabilitySlot) => void;
 }
 
 const SHOP_TZ = 'America/New_York';
@@ -69,8 +80,16 @@ export function BookingPlanPanel({
   generatedSlots,
   resolving,
   pricePerVisitCents,
+  serviceVariationId,
+  teamMemberId,
   onRemoveSlot,
+  onReplaceSlot,
 }: Props) {
+  // Which row's alternatives popover is open. At most one at a time
+  // so the panel doesn't bloat on mobile. The key is the row's
+  // intendedStartAtUtc — stable across re-renders and unique across
+  // rows.
+  const [pickerOpenFor, setPickerOpenFor] = useState<string | null>(null);
   const rows: PlanRow[] = [
     {
       key: firstSlot.startAtUtc,
@@ -105,6 +124,14 @@ export function BookingPlanPanel({
         {rows.map((row, idx) => {
           const badge = statusBadge(row.status);
           const showRemove = !row.isFirst && row.status !== 'pending';
+          // Picker only makes sense for rows that have a real
+          // intended time but no Square slot — i.e. taken or
+          // barber-off. Out-of-horizon rows can't be alternatives'd
+          // (they're past Square's bookable window) and pending /
+          // available rows don't need it.
+          const canPickAlternative =
+            !row.isFirst && (row.status === 'taken' || row.status === 'barber-off');
+          const pickerOpen = pickerOpenFor === row.startAtUtc;
           return (
             <li key={row.key} className={`bw-plan__row bw-plan__row--${badge.tone}`}>
               <span className="bw-plan__num" aria-hidden="true">
@@ -120,17 +147,44 @@ export function BookingPlanPanel({
                     {badge.label}
                   </span>
                 </div>
+                {canPickAlternative && pickerOpen ? (
+                  <SlotAlternativesPopover
+                    intendedStartAtUtc={row.startAtUtc}
+                    serviceVariationId={serviceVariationId}
+                    teamMemberId={teamMemberId}
+                    onPick={(slot) => {
+                      onReplaceSlot(row.startAtUtc, slot);
+                      setPickerOpenFor(null);
+                    }}
+                    onClose={() => setPickerOpenFor(null)}
+                  />
+                ) : null}
               </div>
-              {showRemove ? (
-                <button
-                  type="button"
-                  className="bw-plan__remove"
-                  onClick={() => onRemoveSlot(row.startAtUtc)}
-                  aria-label={`Remove visit on ${formatRowDateTime(row.startAtUtc)}`}
-                >
-                  Remove
-                </button>
-              ) : null}
+              <div className="bw-plan__actions">
+                {canPickAlternative ? (
+                  <button
+                    type="button"
+                    className="bw-plan__alt"
+                    onClick={() =>
+                      setPickerOpenFor(pickerOpen ? null : row.startAtUtc)
+                    }
+                    aria-expanded={pickerOpen}
+                    aria-label={`Pick another time for visit ${idx + 1}`}
+                  >
+                    {pickerOpen ? 'Cancel' : 'Pick another time'}
+                  </button>
+                ) : null}
+                {showRemove ? (
+                  <button
+                    type="button"
+                    className="bw-plan__remove"
+                    onClick={() => onRemoveSlot(row.startAtUtc)}
+                    aria-label={`Remove visit on ${formatRowDateTime(row.startAtUtc)}`}
+                  >
+                    Remove
+                  </button>
+                ) : null}
+              </div>
             </li>
           );
         })}
