@@ -21,6 +21,9 @@ interface RequestBody {
   customerId?: string;
   /** "cnon:..." — single-use payment-method nonce from card.tokenize(). */
   sourceId?: string;
+  /** "verf:..." — SCA verification token from payments.verifyBuyer().
+   *  Square requires this paired with the nonce when storing a card. */
+  verificationToken?: string;
   /** Pulled from the booking form so the Square dashboard reads
    *  consistently with the booking. Optional. */
   cardholderName?: string;
@@ -53,6 +56,7 @@ export const POST: APIRoute = async ({ request }) => {
 
   const customerId = (payload.customerId ?? '').trim();
   const sourceId = (payload.sourceId ?? '').trim();
+  const verificationToken = (payload.verificationToken ?? '').trim() || undefined;
   const cardholderName = (payload.cardholderName ?? '').trim() || undefined;
 
   if (!customerId) return fail(400, 'BAD_REQUEST', 'customerId is required.');
@@ -82,6 +86,7 @@ export const POST: APIRoute = async ({ request }) => {
     const card = await createCardOnFile({
       customerId,
       sourceId,
+      verificationToken,
       cardholderName,
       idempotencyKey,
     });

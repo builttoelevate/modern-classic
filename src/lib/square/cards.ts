@@ -31,6 +31,10 @@ export interface CreateCardOnFileInput {
   /** payment-method nonce ("source_id") returned by Square Web Payments SDK
    *  card.tokenize() in the browser. Single-use; expires within minutes. */
   sourceId: string;
+  /** SCA verification token from Square's payments.verifyBuyer() with
+   *  intent: 'STORE'. Required by /v2/cards when source_id is a nonce;
+   *  without it Square rejects with "Invalid card data." */
+  verificationToken?: string;
   /** A unique key that lets Square dedupe accidental retries — caller
    *  should make this stable for the user's card-capture attempt. */
   idempotencyKey: string;
@@ -47,6 +51,7 @@ export async function createCardOnFile(input: CreateCardOnFileInput): Promise<Sq
   const body = {
     idempotency_key: input.idempotencyKey,
     source_id: input.sourceId,
+    ...(input.verificationToken ? { verification_token: input.verificationToken } : {}),
     card: {
       customer_id: input.customerId,
       ...(input.cardholderName ? { cardholder_name: input.cardholderName } : {}),
