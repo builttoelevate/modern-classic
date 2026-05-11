@@ -85,7 +85,7 @@ export interface WizardState {
 }
 
 export type FrequencyWeeks = 0 | 2 | 3 | 4 | 6;
-export type SeriesCount = 3 | 6 | 12;
+export type SeriesCount = 3 | 6 | 8;
 export type GeneratedSlotStatus =
   /** Initial state before availability resolution finishes. */
   | 'pending'

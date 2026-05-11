@@ -6,7 +6,7 @@ import { Step3DateTimePicker } from './Step3DateTimePicker';
 import { Step4CustomerInfo } from './Step4CustomerInfo';
 import { Step5Confirm } from './Step5Confirm';
 import { Step45CardCapture } from './Step45CardCapture';
-import { generateSeriesTimestamps } from '../../lib/booking/series';
+import { buildSeriesNote, generateSeriesTimestamps, newSeriesId } from '../../lib/booking/series';
 import { resolveSeriesAvailability } from '../../lib/booking/seriesAvailability';
 import {
   initialState as defaultInitialState,
@@ -545,6 +545,20 @@ export default function BookingWizard({
 
     let body: CreateBookingResponse;
     let networkError = false;
+    // Book Ahead — every booking in a series carries the same
+    // mc-srs-XXXX id in its customer note (parallel to the group
+    // preamble). The id is generated once per submit and reused
+    // across the first booking + every extra in the series loop
+    // below. Hoisted to function scope so both the initial-submit
+    // branch (where it's set) and the post-success series loop
+    // (where it's read) can see it. Reschedule mode never sets
+    // these — that branch doesn't carry a series.
+    const isSeriesSubmit =
+      !rescheduleMode &&
+      state.series.frequencyWeeks > 0 &&
+      state.series.generatedSlots.length > 0;
+    const seriesId = isSeriesSubmit ? newSeriesId() : null;
+    const seriesTotal = isSeriesSubmit ? state.series.count : 0;
 
     if (rescheduleMode && reschedule) {
       const reschedulePayload = {
@@ -619,6 +633,21 @@ export default function BookingWizard({
               amountCents: state.cardCapture.amountCents,
             }
           : undefined;
+      // Build the first booking's customer note. For a series, the
+      // total is pegged to the chip the customer picked (3/6/8) even
+      // when some intended visits were unbookable, so each booking's
+      // marker preserves original intent. The customer's typed note
+      // only rides along on the first visit — "first time, please
+      // go easy" doesn't apply to visit 5.
+      const firstNote = isSeriesSubmit && seriesId
+        ? buildSeriesNote({
+            seriesId,
+            position: 1,
+            total: seriesTotal,
+            frequencyWeeks: state.series.frequencyWeeks,
+            userNote: state.customer.note,
+          })
+        : state.customer.note.trim() || undefined;
       const payload = {
         service: {
           variationId: state.selectedVariation.id,
@@ -637,7 +666,7 @@ export default function BookingWizard({
           familyName: overrideName ? overrideName.slice(1).join(' ') : state.customer.familyName.trim(),
           email: state.customer.email.trim(),
           phone: digits(state.customer.phone),
-          note: state.customer.note.trim() || undefined,
+          note: firstNote,
           updateContact: overrideCustomerId ? false : state.customer.updateContact,
           marketingConsent: overrideCustomerId ? false : state.customer.marketingConsent,
         },
@@ -681,17 +710,24 @@ export default function BookingWizard({
       // batch; the success screen surfaces the partial result so the
       // customer can re-pick the conflicted ones later.
       if (
-        !rescheduleMode &&
-        state.series.frequencyWeeks > 0 &&
-        state.series.generatedSlots.length > 0 &&
+        isSeriesSubmit &&
+        seriesId &&
         state.selectedService &&
         state.selectedVariation
       ) {
         const resolvedCustomerId = body.customerId;
-        const bookableExtras = state.series.generatedSlots.filter(
-          (g) => g.status === 'available' && g.slot !== null,
-        );
-        if (bookableExtras.length > 0 && resolvedCustomerId) {
+        // Iterate by index so each visit keeps its original
+        // position in the series even when earlier visits were
+        // skipped (unbookable from the start) or fail mid-loop.
+        // A skipped visit doesn't break the loop; only a real
+        // booking failure does.
+        const generatedSlotsWithPosition = state.series.generatedSlots.map((g, idx) => ({
+          slot: g,
+          // First booking is position 1; generated[0] is position 2,
+          // generated[1] is position 3, etc.
+          position: idx + 2,
+        }));
+        if (resolvedCustomerId) {
           const seriesCardOnFile =
             state.cardCapture.cardId && state.cardCapture.amountCents
               ? {
@@ -704,10 +740,11 @@ export default function BookingWizard({
           // visits 4-6 may or may not have succeeded — the customer
           // sees a clean "visits 1-2 booked, visit 3 couldn't be
           // booked, 4-6 not attempted" picture instead. Slower than
-          // parallel (~500ms per extra), but for 3-12 visits that's
-          // 1.5-6s of submitting state with clear semantics at the end.
-          for (const g of bookableExtras) {
-            const slot = g.slot!;
+          // parallel (~500ms per extra), but for 3-8 visits that's
+          // 1.5-4s of submitting state with clear semantics at the end.
+          for (const { slot: g, position } of generatedSlotsWithPosition) {
+            if (g.status !== 'available' || !g.slot) continue;
+            const slot = g.slot;
             const extraPayload = {
               service: {
                 variationId: state.selectedVariation!.id,
@@ -729,7 +766,15 @@ export default function BookingWizard({
                 familyName: state.customer.familyName.trim(),
                 email: state.customer.email.trim(),
                 phone: digits(state.customer.phone),
-                note: undefined,
+                note: buildSeriesNote({
+                  seriesId,
+                  position,
+                  total: seriesTotal,
+                  frequencyWeeks: state.series.frequencyWeeks,
+                  // Extras don't carry the customer's typed note —
+                  // "first time, please go easy" doesn't apply to
+                  // visit 5. The marker is enough to thread them.
+                }),
                 // The first booking already wrote whatever contact /
                 // marketing-consent diff the customer cared about;
                 // don't replay it on every series visit.

@@ -63,6 +63,20 @@ export interface BookingDetail {
   groupTotal?: number;
   /** Whether the group books members back-to-back or all simultaneously. */
   groupMode?: 'back-to-back' | 'all-at-once';
+  /** When this booking is part of a Book Ahead series, the shared
+   *  series id encoded in the customer note. Pure data hook — no
+   *  customer-facing UI consumes it today, but a future admin
+   *  "view all bookings in this series" or "cancel whole series"
+   *  view can stitch them back together without retroactive
+   *  tagging. Mirrors groupId. */
+  seriesId?: string;
+  /** 1-based position in the series, e.g. 3 for "3/8". */
+  seriesPosition?: number;
+  /** Original count the customer picked when starting the series
+   *  (3/6/8), even if some visits weren't bookable. */
+  seriesTotal?: number;
+  /** Weeks between visits in the series (2/3/4/6). */
+  seriesFrequencyWeeks?: number;
 }
 
 interface ParsedGroupNote {
@@ -98,6 +112,41 @@ function parseGroupNote(raw: string | undefined): ParsedGroupNote | null {
     groupPosition: parseInt(posStr, 10),
     groupTotal: parseInt(totalStr, 10),
     groupMode: mode as 'back-to-back' | 'all-at-once',
+    remainingNote: trimmedRest,
+  };
+}
+
+interface ParsedSeriesNote {
+  seriesId: string;
+  seriesPosition: number;
+  seriesTotal: number;
+  seriesFrequencyWeeks: number;
+  /** Customer-facing portion of the note (whatever they typed at
+   *  booking time) with the admin marker stripped off. Empty when
+   *  no free-text note was attached. */
+  remainingNote: string;
+}
+
+// Mirror of parseGroupNote for Book Ahead series. Format generated
+// by buildSeriesNote in lib/booking/series.ts:
+//   "Series [mc-srs-XXXX] · N/M · Every Xwk"
+// followed optionally by "\nNote: <free text>".
+function parseSeriesNote(raw: string | undefined): ParsedSeriesNote | null {
+  if (!raw) return null;
+  const firstNewline = raw.indexOf('\n');
+  const firstLine = firstNewline === -1 ? raw : raw.slice(0, firstNewline);
+  const rest = firstNewline === -1 ? '' : raw.slice(firstNewline + 1);
+  const match = firstLine.match(
+    /^Series \[([^\]]+)\] · (\d+)\/(\d+) · Every (\d+) wk\s*$/,
+  );
+  if (!match) return null;
+  const [, seriesId, posStr, totalStr, freqStr] = match;
+  const trimmedRest = rest.replace(/^Note:\s*/, '').trim();
+  return {
+    seriesId,
+    seriesPosition: parseInt(posStr, 10),
+    seriesTotal: parseInt(totalStr, 10),
+    seriesFrequencyWeeks: parseInt(freqStr, 10),
     remainingNote: trimmedRest,
   };
 }
@@ -167,13 +216,18 @@ function hydrate(
     barberIndex.get(segment.team_member_id) ??
     (segment.team_member_id ? 'Barber' : 'First available');
 
+  // Try group preamble first, then series preamble. A booking is
+  // one or the other, never both, so at most one of these returns
+  // non-null. Either way, the parsed remainder becomes the
+  // customer-facing displayed note so the admin marker doesn't
+  // leak into any UI that reads booking.customerNote.
   const parsedGroup = parseGroupNote(booking.customer_note);
-  // When a group preamble was found, the displayed customerNote is
-  // whatever free text the customer typed (without the admin marker).
-  // Otherwise pass the raw note through unchanged.
+  const parsedSeries = parsedGroup ? null : parseSeriesNote(booking.customer_note);
   const displayNote = parsedGroup
     ? parsedGroup.remainingNote || undefined
-    : booking.customer_note;
+    : parsedSeries
+      ? parsedSeries.remainingNote || undefined
+      : booking.customer_note;
 
   return {
     id: booking.id,
@@ -194,6 +248,12 @@ function hydrate(
       groupPosition: parsedGroup.groupPosition,
       groupTotal: parsedGroup.groupTotal,
       groupMode: parsedGroup.groupMode,
+    }),
+    ...(parsedSeries && {
+      seriesId: parsedSeries.seriesId,
+      seriesPosition: parsedSeries.seriesPosition,
+      seriesTotal: parsedSeries.seriesTotal,
+      seriesFrequencyWeeks: parsedSeries.seriesFrequencyWeeks,
     }),
   };
 }
