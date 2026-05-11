@@ -6,8 +6,7 @@ import { Step3DateTimePicker } from './Step3DateTimePicker';
 import { Step4CustomerInfo } from './Step4CustomerInfo';
 import { Step5Confirm } from './Step5Confirm';
 import { Step45CardCapture } from './Step45CardCapture';
-import { buildSeriesNote, generateSeriesTimestamps, newSeriesId } from '../../lib/booking/series';
-import { resolveSeriesAvailability } from '../../lib/booking/seriesAvailability';
+import { buildSeriesNote, newSeriesId } from '../../lib/booking/series';
 import {
   initialState as defaultInitialState,
   reducer,
@@ -474,66 +473,6 @@ export default function BookingWizard({
     state.status.kind,
   ]);
 
-  // Book Ahead — when the customer has picked a first slot AND a
-  // recurring frequency, generate the rest of the series and resolve
-  // each generated date's availability against Square. The reducer
-  // clears generatedSlots whenever frequency/count/first-slot changes,
-  // so the empty-list check here is the gate that decides whether
-  // we need to re-resolve.
-  useEffect(() => {
-    if (!state.selectedSlot) return;
-    if (state.series.frequencyWeeks === 0) return;
-    if (state.series.generatedSlots.length > 0) return;
-    if (state.series.resolving) return;
-    if (state.series.count <= 1) return;
-    const firstSlot = state.selectedSlot;
-    const variationId =
-      firstSlot.serviceVariationId ?? state.selectedVariation?.id;
-    if (!variationId) return;
-    const componentTeamId = state.anyBarber ? undefined : state.selectedBarber?.id;
-    const teamId = firstSlot.teamMemberId || componentTeamId;
-
-    const timestamps = generateSeriesTimestamps(
-      firstSlot.startAtUtc,
-      state.series.frequencyWeeks,
-      state.series.count,
-    );
-    if (timestamps.length === 0) return;
-
-    let cancelled = false;
-    dispatch({ type: 'START_SERIES_RESOLVE' });
-    resolveSeriesAvailability(timestamps, variationId, teamId)
-      .then((slots) => {
-        if (cancelled) return;
-        dispatch({ type: 'SET_GENERATED_SLOTS', slots });
-      })
-      .catch(() => {
-        if (cancelled) return;
-        // Surface a panel of unresolved rows rather than blocking the
-        // whole flow; the customer can still confirm the first visit.
-        dispatch({
-          type: 'SET_GENERATED_SLOTS',
-          slots: timestamps.map((ts) => ({
-            intendedStartAtUtc: ts,
-            status: 'barber-off' as const,
-            slot: null,
-          })),
-        });
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [
-    state.selectedSlot,
-    state.selectedVariation?.id,
-    state.series.frequencyWeeks,
-    state.series.count,
-    state.series.generatedSlots.length,
-    state.series.resolving,
-    state.selectedBarber?.id,
-    state.anyBarber,
-  ]);
-
   const submit = async () => {
     if (!state.selectedService || !state.selectedVariation || !state.selectedSlot) return;
     const teamMemberId = state.anyBarber
@@ -554,11 +493,14 @@ export default function BookingWizard({
     // (where it's read) can see it. Reschedule mode never sets
     // these — that branch doesn't carry a series.
     const isSeriesSubmit =
-      !rescheduleMode &&
-      state.series.frequencyWeeks > 0 &&
-      state.series.generatedSlots.length > 0;
+      !rescheduleMode && state.series.desiredCount > 1 && state.series.pickedSlots.length > 0;
     const seriesId = isSeriesSubmit ? newSeriesId() : null;
-    const seriesTotal = isSeriesSubmit ? state.series.count : 0;
+    // Total = first booking + every extra in the plan. We don't pin
+    // to desiredCount here because the customer might have advanced
+    // with fewer than they originally asked for (the Continue button
+    // only enables when the plan is full, but reducer-level changes
+    // could trim mid-flight).
+    const seriesTotal = isSeriesSubmit ? 1 + state.series.pickedSlots.length : 0;
 
     if (rescheduleMode && reschedule) {
       const reschedulePayload = {
@@ -633,18 +575,16 @@ export default function BookingWizard({
               amountCents: state.cardCapture.amountCents,
             }
           : undefined;
-      // Build the first booking's customer note. For a series, the
-      // total is pegged to the chip the customer picked (3/6/8) even
-      // when some intended visits were unbookable, so each booking's
-      // marker preserves original intent. The customer's typed note
-      // only rides along on the first visit — "first time, please
-      // go easy" doesn't apply to visit 5.
+      // Build the first booking's customer note. For a series the
+      // marker stamps every booking with the same series id so a
+      // future admin/log can stitch them back. The customer's typed
+      // note only rides along on the first visit — "first time,
+      // please go easy" doesn't apply to visit 3.
       const firstNote = isSeriesSubmit && seriesId
         ? buildSeriesNote({
             seriesId,
             position: 1,
             total: seriesTotal,
-            frequencyWeeks: state.series.frequencyWeeks,
             userNote: state.customer.note,
           })
         : state.customer.note.trim() || undefined;
@@ -715,18 +655,18 @@ export default function BookingWizard({
         state.selectedService &&
         state.selectedVariation
       ) {
+        // Mark the first booking's outcome too — the success screen
+        // reads bookingResults to render Confirmed/Failed badges
+        // per row, and the first visit's the same as any other in
+        // the customer's eyes.
+        if (state.selectedSlot) {
+          dispatch({
+            type: 'MARK_PICK_RESULT',
+            startAtUtc: state.selectedSlot.startAtUtc,
+            bookingId: body.bookingId,
+          });
+        }
         const resolvedCustomerId = body.customerId;
-        // Iterate by index so each visit keeps its original
-        // position in the series even when earlier visits were
-        // skipped (unbookable from the start) or fail mid-loop.
-        // A skipped visit doesn't break the loop; only a real
-        // booking failure does.
-        const generatedSlotsWithPosition = state.series.generatedSlots.map((g, idx) => ({
-          slot: g,
-          // First booking is position 1; generated[0] is position 2,
-          // generated[1] is position 3, etc.
-          position: idx + 2,
-        }));
         if (resolvedCustomerId) {
           const seriesCardOnFile =
             state.cardCapture.cardId && state.cardCapture.amountCents
@@ -735,16 +675,24 @@ export default function BookingWizard({
                   amountCents: state.cardCapture.amountCents,
                 }
               : undefined;
-          // Sequential, stop-on-failure. A race condition on visit 3
-          // shouldn't quietly cascade into a half-booked plan where
-          // visits 4-6 may or may not have succeeded — the customer
-          // sees a clean "visits 1-2 booked, visit 3 couldn't be
-          // booked, 4-6 not attempted" picture instead. Slower than
-          // parallel (~500ms per extra), but for 3-8 visits that's
-          // 1.5-4s of submitting state with clear semantics at the end.
-          for (const { slot: g, position } of generatedSlotsWithPosition) {
-            if (g.status !== 'available' || !g.slot) continue;
-            const slot = g.slot;
+          // Iterate the extras in pick order. Position is derived
+          // from the slot's chronological place in the full plan
+          // (sorted), not pick order, so the customer-note marker
+          // reads sensibly.
+          const allInOrder = [
+            state.selectedSlot,
+            ...state.series.pickedSlots,
+          ]
+            .filter((s): s is NonNullable<typeof s> => s !== null)
+            .slice()
+            .sort((a, b) => Date.parse(a.startAtUtc) - Date.parse(b.startAtUtc));
+          const positionOf = (startAtUtc: string): number =>
+            allInOrder.findIndex((s) => s.startAtUtc === startAtUtc) + 1;
+          // Sequential, stop-on-failure. A race condition on
+          // visit 3 shouldn't quietly cascade into a half-booked
+          // plan — the customer sees "visits 1-2 booked, visit 3
+          // couldn't be booked, 4 not attempted" instead.
+          for (const slot of state.series.pickedSlots) {
             const extraPayload = {
               service: {
                 variationId: state.selectedVariation!.id,
@@ -768,12 +716,8 @@ export default function BookingWizard({
                 phone: digits(state.customer.phone),
                 note: buildSeriesNote({
                   seriesId,
-                  position,
+                  position: positionOf(slot.startAtUtc),
                   total: seriesTotal,
-                  frequencyWeeks: state.series.frequencyWeeks,
-                  // Extras don't carry the customer's typed note —
-                  // "first time, please go easy" doesn't apply to
-                  // visit 5. The marker is enough to thread them.
                 }),
                 // The first booking already wrote whatever contact /
                 // marketing-consent diff the customer cared about;
@@ -794,23 +738,23 @@ export default function BookingWizard({
               const data = (await res.json()) as CreateBookingResponse;
               if (data.ok) {
                 dispatch({
-                  type: 'MARK_GENERATED_SLOT_RESULT',
-                  intendedStartAtUtc: g.intendedStartAtUtc,
+                  type: 'MARK_PICK_RESULT',
+                  startAtUtc: slot.startAtUtc,
                   bookingId: data.bookingId,
                 });
               } else {
                 dispatch({
-                  type: 'MARK_GENERATED_SLOT_RESULT',
-                  intendedStartAtUtc: g.intendedStartAtUtc,
-                  bookingError: data.error?.detail ?? 'Could not book this visit.',
+                  type: 'MARK_PICK_RESULT',
+                  startAtUtc: slot.startAtUtc,
+                  error: data.error?.detail ?? 'Could not book this visit.',
                 });
                 visitFailed = true;
               }
             } catch {
               dispatch({
-                type: 'MARK_GENERATED_SLOT_RESULT',
-                intendedStartAtUtc: g.intendedStartAtUtc,
-                bookingError: 'Network error on this visit.',
+                type: 'MARK_PICK_RESULT',
+                startAtUtc: slot.startAtUtc,
+                error: 'Network error on this visit.',
               });
               visitFailed = true;
             }
@@ -1015,7 +959,22 @@ export default function BookingWizard({
           selected={state.selectedSlot}
           blockedSlots={state.blockedSlots}
           location={location}
-          onPick={(slot: AvailabilitySlot) => dispatch({ type: 'SET_SLOT', slot })}
+          onPick={(slot: AvailabilitySlot) => {
+            // First pick (or single-visit) goes through SET_SLOT,
+            // which also auto-advances when desiredCount === 1.
+            // Subsequent picks in a multi-visit plan append to
+            // pickedSlots and keep the customer on Step 3 so they
+            // can keep building.
+            if (!state.selectedSlot) {
+              dispatch({ type: 'SET_SLOT', slot });
+            } else if (state.series.desiredCount > 1) {
+              dispatch({ type: 'ADD_PICKED_SLOT', slot });
+            } else {
+              // Customer changed mind on a single-visit slot —
+              // just replace.
+              dispatch({ type: 'SET_SLOT', slot });
+            }
+          }}
           serviceName={state.selectedService?.name ?? 'a haircut'}
           barberName={state.selectedBarber?.displayName ?? 'any barber'}
           prefillName={[state.customer.givenName, state.customer.familyName]
@@ -1025,20 +984,18 @@ export default function BookingWizard({
           prefillEmail={state.customer.email}
           prefillPhone={state.customer.phone}
           barbers={barbers}
-          seriesFrequencyWeeks={state.series.frequencyWeeks}
-          seriesCount={state.series.count}
-          generatedSlots={state.series.generatedSlots}
-          seriesResolving={state.series.resolving}
+          desiredCount={state.series.desiredCount}
+          picks={
+            state.selectedSlot
+              ? [state.selectedSlot, ...state.series.pickedSlots]
+              : []
+          }
           pricePerVisitCents={state.selectedVariation?.priceCents ?? null}
-          onSeriesFrequencyChange={(frequencyWeeks) =>
-            dispatch({ type: 'SET_SERIES_FREQUENCY', frequencyWeeks })
+          onDesiredCountChange={(desiredCount) =>
+            dispatch({ type: 'SET_DESIRED_COUNT', desiredCount })
           }
-          onSeriesCountChange={(count) => dispatch({ type: 'SET_SERIES_COUNT', count })}
-          onRemoveGeneratedSlot={(intendedStartAtUtc) =>
-            dispatch({ type: 'REMOVE_GENERATED_SLOT', intendedStartAtUtc })
-          }
-          onReplaceGeneratedSlot={(intendedStartAtUtc, replacement) =>
-            dispatch({ type: 'REPLACE_GENERATED_SLOT', intendedStartAtUtc, replacement })
+          onRemovePick={(startAtUtc) =>
+            dispatch({ type: 'REMOVE_PICKED_SLOT', startAtUtc })
           }
           onSeriesContinue={() => dispatch({ type: 'GO_TO', step: 4 })}
         />

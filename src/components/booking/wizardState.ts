@@ -75,57 +75,41 @@ export interface WizardState {
   status: WizardStatus;
   /** Phase 8 — card-on-file capture for new customers. */
   cardCapture: CardCaptureState;
-  /** Book Ahead — when frequencyWeeks > 0, the wizard reserves
-   *  state.selectedSlot AND every entry in series.generatedSlots in
-   *  one Confirm. When frequencyWeeks === 0 (the default), behaves
-   *  exactly like a single-visit booking. The generator runs the
-   *  moment the customer picks a first slot with frequencyWeeks > 0
-   *  set; UI lives in BookAheadCard / BookingPlanPanel. */
+  /** Book Ahead — when desiredCount > 1, the customer is building
+   *  a multi-visit plan by tapping slots from the live calendar.
+   *  state.selectedSlot is always the first pick; every additional
+   *  pick lands in series.pickedSlots. When desiredCount === 1
+   *  (the default) the wizard behaves exactly like single-visit
+   *  booking — pickedSlots stays empty.
+   *
+   *  Each pick is a real Square slot, never auto-generated; the
+   *  prior cadence-based model was replaced because customers
+   *  think in specific dates, not frequencies, and live picks
+   *  guarantee availability at pick time (no resolution gap, no
+   *  partial-failure recovery flow needed). */
   series: SeriesState;
 }
 
-export type FrequencyWeeks = 0 | 2 | 3 | 4 | 6;
-export type SeriesCount = 3 | 6 | 8;
-export type GeneratedSlotStatus =
-  /** Initial state before availability resolution finishes. */
-  | 'pending'
-  /** A real Square slot matches the intended date at the same wall-clock
-   *  time as the first visit. Bookable as-is. */
-  | 'available'
-  /** Square returned slots for the day but none at the intended time —
-   *  the barber's calendar already has something there. */
-  | 'taken'
-  /** Square returned no slots at all for the day (barber off, holiday,
-   *  shop closed). */
-  | 'barber-off'
-  /** The intended date is past the booking horizon. */
-  | 'out-of-horizon';
-
-export interface GeneratedSlot {
-  /** Wall-clock-matched intended start time in UTC. Stable across
-   *  availability re-resolutions. */
-  intendedStartAtUtc: string;
-  status: GeneratedSlotStatus;
-  /** The actual Square slot to book against. Set only when
-   *  status === 'available'. */
-  slot: AvailabilitySlot | null;
-  /** Booking outcome after Confirm — populated per-slot as the submit
-   *  loop runs so the success screen can show partial results. */
-  bookingId?: string;
-  bookingError?: string;
-}
+export type DesiredCount = 1 | 2 | 3 | 4;
 
 export interface SeriesState {
-  frequencyWeeks: FrequencyWeeks;
-  count: SeriesCount;
-  /** Positions 2..N of the series. Position 1 is always
-   *  state.selectedSlot (already a real Square AvailabilitySlot), so
-   *  generatedSlots.length is at most count - 1. Empty when
-   *  frequencyWeeks === 0. */
-  generatedSlots: GeneratedSlot[];
-  /** True while seriesAvailability is fetching/resolving the generated
-   *  dates so the panel can show a spinner instead of stale data. */
-  resolving: boolean;
+  /** How many visits the customer wants to book in this session.
+   *  Default 1 (single visit). Capped at 4 — beyond that, decision
+   *  fatigue compounds and the success-screen "Book ahead" CTA
+   *  gives a clean path to additional visits via repetition. */
+  desiredCount: DesiredCount;
+  /** Picks in addition to state.selectedSlot. Length is at most
+   *  desiredCount - 1. Plan is full when:
+   *    selectedSlot !== null && pickedSlots.length === desiredCount - 1
+   *  Order is pick order; rendering re-sorts chronologically. */
+  pickedSlots: AvailabilitySlot[];
+  /** Per-pick booking outcome after Confirm. Keyed by the slot's
+   *  startAtUtc so it survives reordering. Populated as the submit
+   *  loop runs so the success screen can render per-row status —
+   *  a customer who sat on Step 5 long enough for a slot to get
+   *  taken sees exactly which one failed instead of a vague
+   *  "X of N" recap. */
+  bookingResults: Record<string, { bookingId?: string; error?: string }>;
 }
 
 export const initialCustomer: CustomerInfo = {
@@ -139,10 +123,9 @@ export const initialCustomer: CustomerInfo = {
 };
 
 export const initialSeries: SeriesState = {
-  frequencyWeeks: 0,
-  count: 3,
-  generatedSlots: [],
-  resolving: false,
+  desiredCount: 1,
+  pickedSlots: [],
+  bookingResults: {},
 };
 
 export const initialCardCapture: CardCaptureState = {
@@ -189,13 +172,29 @@ export type WizardAction =
    *  person. Without a full reset, a leftover cardId from one customer
    *  would silently get attached to a different customer's booking. */
   | { type: 'RESET_CARD_CAPTURE'; required?: boolean | null }
-  | { type: 'SET_SERIES_FREQUENCY'; frequencyWeeks: FrequencyWeeks }
-  | { type: 'SET_SERIES_COUNT'; count: SeriesCount }
-  | { type: 'START_SERIES_RESOLVE' }
-  | { type: 'SET_GENERATED_SLOTS'; slots: GeneratedSlot[] }
-  | { type: 'REMOVE_GENERATED_SLOT'; intendedStartAtUtc: string }
-  | { type: 'REPLACE_GENERATED_SLOT'; intendedStartAtUtc: string; replacement: AvailabilitySlot }
-  | { type: 'MARK_GENERATED_SLOT_RESULT'; intendedStartAtUtc: string; bookingId?: string; bookingError?: string }
+  /** Book Ahead — adjust how many visits the customer wants to
+   *  book in this session. The reducer reconciles when the new
+   *  count is smaller than the current pick total: most-recently-
+   *  added pickedSlots are dropped to fit. The Step 3 component
+   *  surfaces a toast describing the drop so the change isn't
+   *  silent. */
+  | { type: 'SET_DESIRED_COUNT'; desiredCount: DesiredCount }
+  /** Book Ahead — append a pick after the customer has already
+   *  set a selectedSlot (the first pick goes through SET_SLOT).
+   *  No-op if the pick would overflow desiredCount or duplicate
+   *  an existing pick (defense in depth — the slot grid disables
+   *  already-picked times). */
+  | { type: 'ADD_PICKED_SLOT'; slot: AvailabilitySlot }
+  /** Book Ahead — drop a pick from the plan. Matches by exact
+   *  startAtUtc. If the removed slot is state.selectedSlot, the
+   *  next-earliest pickedSlot is promoted into selectedSlot so
+   *  downstream wizard code (which reads selectedSlot for the
+   *  first booking's payload) stays in shape. */
+  | { type: 'REMOVE_PICKED_SLOT'; startAtUtc: string }
+  /** Book Ahead — record a per-pick booking outcome as the
+   *  submit loop progresses. Used by the success screen to show
+   *  Confirmed / Failed badges on each row. */
+  | { type: 'MARK_PICK_RESULT'; startAtUtc: string; bookingId?: string; error?: string }
   /** "Book another visit" on the success screen — wipes the slot,
    *  service, barber, and status so the wizard goes back to Step 1
    *  ready for a fresh appointment, but KEEPS the customer's name,
@@ -228,7 +227,7 @@ export function reducer(state: WizardState, action: WizardAction): WizardState {
             anyBarber: false,
             selectedSlot: null,
             blockedSlots: [],
-            series: { ...state.series, generatedSlots: [], resolving: false },
+            series: { ...state.series, pickedSlots: [], bookingResults: {} },
             step: 3,
           };
         }
@@ -242,7 +241,7 @@ export function reducer(state: WizardState, action: WizardAction): WizardState {
         selectedSlot: null,
         blockedSlots: [],
         candidateVariations: [],
-        series: { ...state.series, generatedSlots: [], resolving: false },
+        series: { ...state.series, pickedSlots: [], bookingResults: {} },
         step: 2,
       };
     }
@@ -255,7 +254,7 @@ export function reducer(state: WizardState, action: WizardAction): WizardState {
         anyBarber: action.anyBarber ?? false,
         selectedSlot: null,
         blockedSlots: [],
-        series: { ...state.series, generatedSlots: [], resolving: false },
+        series: { ...state.series, pickedSlots: [], bookingResults: {} },
         step: 3,
       };
     case 'SET_ANY_BARBER':
@@ -267,7 +266,7 @@ export function reducer(state: WizardState, action: WizardAction): WizardState {
         anyBarber: true,
         selectedSlot: null,
         blockedSlots: [],
-        series: { ...state.series, generatedSlots: [], resolving: false },
+        series: { ...state.series, pickedSlots: [], bookingResults: {} },
         step: 3,
       };
     case 'SET_ANY_BARBER_MULTI':
@@ -281,7 +280,7 @@ export function reducer(state: WizardState, action: WizardAction): WizardState {
         anyBarber: true,
         selectedSlot: null,
         blockedSlots: [],
-        series: { ...state.series, generatedSlots: [], resolving: false },
+        series: { ...state.series, pickedSlots: [], bookingResults: {} },
         step: 3,
       };
     case 'SET_SLOT': {
@@ -300,14 +299,14 @@ export function reducer(state: WizardState, action: WizardAction): WizardState {
         // The generated series is keyed off the first-visit slot. A new
         // first slot means we need to regenerate from scratch; clear the
         // old list so Step 3's resolver can populate it fresh.
-        series: { ...state.series, generatedSlots: [], resolving: false },
+        series: { ...state.series, pickedSlots: [], bookingResults: {} },
         // For single-visit bookings we auto-advance. For Book Ahead
         // series, stay on Step 3 so the customer sees the plan panel
         // assemble below the calendar — without this, picking a slot
         // jumped straight to Step 4 (customer info) and the customer
         // never saw the series being built. They'd hit Confirm before
         // resolution finished and only the first visit would land.
-        step: state.series.frequencyWeeks > 0 ? 3 : 4,
+        step: state.series.desiredCount > 1 ? 3 : 4,
       };
     }
     case 'BLOCK_SLOT':
@@ -339,77 +338,99 @@ export function reducer(state: WizardState, action: WizardAction): WizardState {
           required: action.required === undefined ? null : action.required,
         },
       };
-    case 'SET_SERIES_FREQUENCY':
-      // Changing frequency invalidates any previously-generated slots —
-      // every visit's date depends on the gap between visits.
+    case 'SET_DESIRED_COUNT': {
+      // Reconcile when the new count drops below the existing pick
+      // total. Most-recently-added pickedSlots get truncated; the
+      // first pick (state.selectedSlot) is preserved unless the
+      // customer drops back to count=1 from a state with extras —
+      // in which case selectedSlot still stays (it's their first
+      // pick, the one they most likely want), and only the extras
+      // disappear. The Step 3 component watches the diff and shows
+      // a toast so the change isn't silent.
+      const maxExtras = action.desiredCount - 1;
+      const trimmedExtras = state.series.pickedSlots.slice(0, Math.max(0, maxExtras));
+      // Trim bookingResults to match the surviving picks so a
+      // stale "Confirmed" badge from a previously-dropped slot
+      // can't leak into the success screen.
+      const survivingKeys = new Set([
+        ...(state.selectedSlot ? [state.selectedSlot.startAtUtc] : []),
+        ...trimmedExtras.map((s) => s.startAtUtc),
+      ]);
+      const trimmedResults = Object.fromEntries(
+        Object.entries(state.series.bookingResults).filter(([k]) => survivingKeys.has(k)),
+      );
       return {
         ...state,
         series: {
-          ...state.series,
-          frequencyWeeks: action.frequencyWeeks,
-          generatedSlots: [],
-          resolving: false,
+          desiredCount: action.desiredCount,
+          pickedSlots: trimmedExtras,
+          bookingResults: trimmedResults,
         },
       };
-    case 'SET_SERIES_COUNT':
-      // Same — count drives how many slots we need to generate.
+    }
+    case 'ADD_PICKED_SLOT': {
+      // Defense-in-depth — the slot grid disables already-picked
+      // times, but we also refuse duplicates and overflow here so
+      // a programmatic dispatch can't corrupt the plan.
+      const alreadyHave =
+        state.selectedSlot?.startAtUtc === action.slot.startAtUtc ||
+        state.series.pickedSlots.some((s) => s.startAtUtc === action.slot.startAtUtc);
+      if (alreadyHave) return state;
+      const planLen = (state.selectedSlot ? 1 : 0) + state.series.pickedSlots.length;
+      if (planLen >= state.series.desiredCount) return state;
       return {
         ...state,
         series: {
           ...state.series,
-          count: action.count,
-          generatedSlots: [],
-          resolving: false,
+          pickedSlots: [...state.series.pickedSlots, action.slot],
         },
       };
-    case 'START_SERIES_RESOLVE':
-      return { ...state, series: { ...state.series, resolving: true } };
-    case 'SET_GENERATED_SLOTS':
+    }
+    case 'REMOVE_PICKED_SLOT': {
+      // Removing the primary slot (state.selectedSlot) promotes the
+      // earliest extra into selectedSlot so downstream code that
+      // reads selectedSlot stays in shape. If there are no extras,
+      // selectedSlot just clears.
+      if (state.selectedSlot?.startAtUtc === action.startAtUtc) {
+        const extras = state.series.pickedSlots;
+        if (extras.length === 0) {
+          return { ...state, selectedSlot: null };
+        }
+        const sortedExtras = [...extras].sort(
+          (a, b) => Date.parse(a.startAtUtc) - Date.parse(b.startAtUtc),
+        );
+        const promoted = sortedExtras[0];
+        return {
+          ...state,
+          selectedSlot: promoted,
+          series: {
+            ...state.series,
+            pickedSlots: extras.filter((s) => s.startAtUtc !== promoted.startAtUtc),
+          },
+        };
+      }
       return {
         ...state,
         series: {
           ...state.series,
-          generatedSlots: action.slots,
-          resolving: false,
-        },
-      };
-    case 'REMOVE_GENERATED_SLOT':
-      return {
-        ...state,
-        series: {
-          ...state.series,
-          generatedSlots: state.series.generatedSlots.filter(
-            (g) => g.intendedStartAtUtc !== action.intendedStartAtUtc,
+          pickedSlots: state.series.pickedSlots.filter(
+            (s) => s.startAtUtc !== action.startAtUtc,
           ),
         },
       };
-    case 'REPLACE_GENERATED_SLOT':
+    }
+    case 'MARK_PICK_RESULT':
       return {
         ...state,
         series: {
           ...state.series,
-          generatedSlots: state.series.generatedSlots.map((g) =>
-            g.intendedStartAtUtc === action.intendedStartAtUtc
-              ? {
-                  ...g,
-                  status: 'available' as const,
-                  slot: action.replacement,
-                  intendedStartAtUtc: action.replacement.startAtUtc,
-                }
-              : g,
-          ),
-        },
-      };
-    case 'MARK_GENERATED_SLOT_RESULT':
-      return {
-        ...state,
-        series: {
-          ...state.series,
-          generatedSlots: state.series.generatedSlots.map((g) =>
-            g.intendedStartAtUtc === action.intendedStartAtUtc
-              ? { ...g, bookingId: action.bookingId, bookingError: action.bookingError }
-              : g,
-          ),
+          bookingResults: {
+            ...state.series.bookingResults,
+            [action.startAtUtc]: {
+              bookingId: action.bookingId,
+              error: action.error,
+            },
+          },
         },
       };
     case 'START_ANOTHER_BOOKING':

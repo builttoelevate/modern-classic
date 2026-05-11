@@ -120,24 +120,30 @@ interface ParsedSeriesNote {
   seriesId: string;
   seriesPosition: number;
   seriesTotal: number;
-  seriesFrequencyWeeks: number;
+  /** Only set on legacy bookings minted by the old auto-generated
+   *  cadence model. New bookings have no cadence concept. */
+  seriesFrequencyWeeks?: number;
   /** Customer-facing portion of the note (whatever they typed at
    *  booking time) with the admin marker stripped off. Empty when
    *  no free-text note was attached. */
   remainingNote: string;
 }
 
-// Mirror of parseGroupNote for Book Ahead series. Format generated
-// by buildSeriesNote in lib/booking/series.ts:
-//   "Series [mc-srs-XXXX] · N/M · Every Xwk"
-// followed optionally by "\nNote: <free text>".
+// Mirror of parseGroupNote for Book Ahead series. Two formats
+// supported because the marker shape changed when Book Ahead
+// switched from auto-generated cadence to customer-driven multi-
+// pick — old bookings still carry the "Every X wk" suffix; new
+// ones don't have a cadence concept at all:
+//   "Series [mc-srs-XXXX] · N/M"             (current)
+//   "Series [mc-srs-XXXX] · N/M · Every Xwk" (legacy)
+// Followed optionally by "\nNote: <free text>" in either form.
 function parseSeriesNote(raw: string | undefined): ParsedSeriesNote | null {
   if (!raw) return null;
   const firstNewline = raw.indexOf('\n');
   const firstLine = firstNewline === -1 ? raw : raw.slice(0, firstNewline);
   const rest = firstNewline === -1 ? '' : raw.slice(firstNewline + 1);
   const match = firstLine.match(
-    /^Series \[([^\]]+)\] · (\d+)\/(\d+) · Every (\d+) wk\s*$/,
+    /^Series \[([^\]]+)\] · (\d+)\/(\d+)(?: · Every (\d+) wk)?\s*$/,
   );
   if (!match) return null;
   const [, seriesId, posStr, totalStr, freqStr] = match;
@@ -146,7 +152,7 @@ function parseSeriesNote(raw: string | undefined): ParsedSeriesNote | null {
     seriesId,
     seriesPosition: parseInt(posStr, 10),
     seriesTotal: parseInt(totalStr, 10),
-    seriesFrequencyWeeks: parseInt(freqStr, 10),
+    seriesFrequencyWeeks: freqStr ? parseInt(freqStr, 10) : undefined,
     remainingNote: trimmedRest,
   };
 }

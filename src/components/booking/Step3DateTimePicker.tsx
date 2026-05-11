@@ -3,7 +3,7 @@ import type { AvailabilitySlot, Barber, DayOfWeek, Location, ServiceVariation } 
 import { WaitlistSheet } from './WaitlistSheet';
 import { BookAheadCard } from './BookAheadCard';
 import { BookingPlanPanel } from './BookingPlanPanel';
-import type { FrequencyWeeks, GeneratedSlot, SeriesCount } from './wizardState';
+import type { DesiredCount } from './wizardState';
 
 interface Props {
   /**
@@ -31,26 +31,19 @@ interface Props {
    * customer can opt into being notified about ANY of several barbers
    * (e.g. "let me know if Michael OR Rick has an opening"). */
   barbers?: Barber[];
-  /** Book Ahead — current series picks. The card sits above the
-   *  calendar and the plan panel renders below once a first slot is
-   *  picked AND frequencyWeeks > 0. Series resolution itself lives
-   *  in BookingWizard so the dispatch wiring stays in one place. */
-  seriesFrequencyWeeks: FrequencyWeeks;
-  seriesCount: SeriesCount;
-  generatedSlots: GeneratedSlot[];
-  seriesResolving: boolean;
+  /** Book Ahead — the customer's count target and every slot
+   *  they've picked so far (selectedSlot + extras combined into
+   *  one ordered list by the parent). The card sits above the
+   *  calendar; the plan panel renders below as soon as the count
+   *  is > 1. */
+  desiredCount: DesiredCount;
+  picks: AvailabilitySlot[];
   /** Service price snapshot used for the plan-panel total. */
   pricePerVisitCents: number | null;
-  onSeriesFrequencyChange: (f: FrequencyWeeks) => void;
-  onSeriesCountChange: (c: SeriesCount) => void;
-  onRemoveGeneratedSlot: (intendedStartAtUtc: string) => void;
-  /** Swap the slot at intendedStartAtUtc for an alternative the
-   *  customer picked from the popover. */
-  onReplaceGeneratedSlot: (intendedStartAtUtc: string, replacement: AvailabilitySlot) => void;
-  /** When the customer is on a Book Ahead series, the SET_SLOT
-   *  reducer stays on Step 3 so the plan panel can render. The
-   *  customer then taps the in-step Continue button to advance —
-   *  which fires this callback to dispatch GO_TO step 4. */
+  onDesiredCountChange: (next: DesiredCount) => void;
+  onRemovePick: (startAtUtc: string) => void;
+  /** Once the plan is full and the customer has reviewed it on
+   *  Step 3, this advances the wizard to Step 4. */
   onSeriesContinue: () => void;
 }
 
@@ -224,15 +217,11 @@ export function Step3DateTimePicker({
   prefillEmail,
   prefillPhone,
   barbers,
-  seriesFrequencyWeeks,
-  seriesCount,
-  generatedSlots,
-  seriesResolving,
+  desiredCount,
+  picks,
   pricePerVisitCents,
-  onSeriesFrequencyChange,
-  onSeriesCountChange,
-  onRemoveGeneratedSlot,
-  onReplaceGeneratedSlot,
+  onDesiredCountChange,
+  onRemovePick,
   onSeriesContinue,
 }: Props) {
   const variationKey = variations.map((v) => v.id).join(',');
@@ -324,6 +313,17 @@ export function Step3DateTimePicker({
   }, [monthState.status, slotsByDate, monthDays, activeDateKey]);
 
   const blockedSet = useMemo(() => new Set(blockedSlots), [blockedSlots]);
+  // Slots already in the customer's Book Ahead plan get disabled
+  // by exact start time. Same date with a different time stays
+  // selectable — a customer who actually wants two visits on the
+  // same day at different times is rare but valid, and the
+  // system shouldn't block it. Single-visit bookings have an
+  // empty picks array, so this set is empty and behaves like the
+  // pre-Book-Ahead flow.
+  const pickedStartSet = useMemo(
+    () => new Set(picks.map((p) => p.startAtUtc)),
+    [picks],
+  );
 
   const canPrev = !(view.year === minMonth.year && view.month === minMonth.month);
   const canNext = !(view.year === maxMonth.year && view.month === maxMonth.month);
@@ -383,11 +383,18 @@ export function Step3DateTimePicker({
       </div>
 
       <BookAheadCard
-        frequencyWeeks={seriesFrequencyWeeks}
-        count={seriesCount}
-        onFrequencyChange={onSeriesFrequencyChange}
-        onCountChange={onSeriesCountChange}
+        desiredCount={desiredCount}
+        currentPlanLength={picks.length}
+        onCountChange={onDesiredCountChange}
       />
+
+      {desiredCount > 1 && (
+        <p className="bw-series-progress" aria-live="polite">
+          {picks.length >= desiredCount
+            ? `All ${desiredCount} visits picked`
+            : `Pick visit ${picks.length + 1} of ${desiredCount}`}
+        </p>
+      )}
 
       <div className="bw-cal">
         <div className="bw-cal-head">
@@ -533,15 +540,18 @@ export function Step3DateTimePicker({
             {activeSlots.map((slot) => {
               const isSelected = selected?.startAtUtc === slot.startAtUtc;
               const isBlocked = blockedSet.has(slot.startAtUtc);
+              const isAlreadyPicked = pickedStartSet.has(slot.startAtUtc);
+              const planFull = desiredCount > 1 && picks.length >= desiredCount;
+              const disabled = isBlocked || isAlreadyPicked || planFull;
               return (
                 <button
                   key={slot.startAtUtc}
                   type="button"
                   className="bw-slot"
                   role="option"
-                  aria-selected={isSelected}
-                  data-selected={isSelected}
-                  disabled={isBlocked}
+                  aria-selected={isSelected || isAlreadyPicked}
+                  data-selected={isSelected || isAlreadyPicked}
+                  disabled={disabled}
                   onClick={() => onPick(slot)}
                 >
                   {slot.startTimeLabel}
@@ -552,36 +562,28 @@ export function Step3DateTimePicker({
         </div>
       )}
 
-      {selected && seriesFrequencyWeeks > 0 ? (
+      {desiredCount > 1 ? (
         <>
           <BookingPlanPanel
-            firstSlot={selected}
-            generatedSlots={generatedSlots}
-            resolving={seriesResolving}
+            picks={picks}
+            desiredCount={desiredCount}
             pricePerVisitCents={pricePerVisitCents}
-            // The Book Ahead series locks variation + barber from the
-            // first slot for every visit, so the alternatives picker
-            // queries the same calendar the plan was generated against.
-            serviceVariationId={selected.serviceVariationId}
-            teamMemberId={selected.teamMemberId || teamMemberId}
-            onRemoveSlot={onRemoveGeneratedSlot}
-            onReplaceSlot={onReplaceGeneratedSlot}
+            onRemoveSlot={onRemovePick}
           />
-          <div className="bw-series-continue">
-            <button
-              type="button"
-              className="bw-btn"
-              onClick={onSeriesContinue}
-              disabled={seriesResolving}
-            >
-              {seriesResolving
-                ? 'Checking availability…'
-                : `Continue with ${1 + generatedSlots.filter((g) => g.status === 'available').length} ${1 + generatedSlots.filter((g) => g.status === 'available').length === 1 ? 'visit' : 'visits'}`}
-            </button>
-            <p className="bw-series-continue__hint">
-              Unavailable visits can be swapped above before continuing.
-            </p>
-          </div>
+          {picks.length >= desiredCount && (
+            <div className="bw-series-continue">
+              <button
+                type="button"
+                className="bw-btn"
+                onClick={onSeriesContinue}
+              >
+                {`Continue with ${desiredCount} visits`}
+              </button>
+              <p className="bw-series-continue__hint">
+                Remove a visit to pick a different date or time.
+              </p>
+            </div>
+          )}
         </>
       ) : null}
 
