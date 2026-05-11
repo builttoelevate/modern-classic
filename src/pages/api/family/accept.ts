@@ -24,8 +24,29 @@ import {
   getFamilyById,
   getFamilyForCustomer,
 } from '../../../lib/customer/familyAccount';
+import { sendFamilyInviteAccepted } from '../../../lib/email/resend';
+import { redactEmail } from '../../../lib/booking/log';
 
 export const prerender = false;
+
+const SHOP_ADDRESS = '819 Linden Avenue, Zanesville, OH 43701';
+const SHOP_PHONE = '740-297-4462';
+
+function siteOriginFromRequest(request: Request): string {
+  const env = import.meta.env.SITE_URL;
+  if (typeof env === 'string' && /^https?:\/\//i.test(env)) {
+    return env.replace(/\/$/, '');
+  }
+  const proto = request.headers.get('x-forwarded-proto') ?? 'https';
+  const host = request.headers.get('x-forwarded-host') ?? request.headers.get('host');
+  if (host) return `${proto}://${host}`.replace(/\/$/, '');
+  try {
+    const url = new URL(request.url);
+    return `${url.protocol}//${url.host}`.replace(/\/$/, '');
+  } catch {
+    return 'https://mdrnclassic.com';
+  }
+}
 
 function logFamily(payload: Record<string, unknown>): void {
   // eslint-disable-next-line no-console
@@ -132,6 +153,51 @@ export const POST: APIRoute = async ({ request }) => {
       acceptedByCustomerId: session.customerId,
       memberCount: updated.members.length,
     });
+
+    // Best-effort notification to the inviter. Wrapped in its own
+    // try/catch so a Resend hiccup, missing inviter email, or
+    // deleted-inviter-record never fails the accept itself — the
+    // family link is the primary contract, the email is a courtesy.
+    try {
+      const inviter = await getCustomerById(record.invitedByCustomerId);
+      const inviterEmail = inviter?.email_address?.trim();
+      if (inviterEmail) {
+        const inviterName =
+          `${inviter?.given_name ?? ''} ${inviter?.family_name ?? ''}`.trim() ||
+          inviterEmail.split('@')[0] ||
+          'there';
+        const origin = siteOriginFromRequest(request);
+        const result = await sendFamilyInviteAccepted({
+          to: inviterEmail,
+          inviterName,
+          acceptedByName: displayName,
+          totalMembers: updated.members.length,
+          myBookingsUrl: `${origin}/my-bookings`,
+          shopAddress: SHOP_ADDRESS,
+          shopPhone: SHOP_PHONE,
+        });
+        logFamily({
+          phase: 'family-invite-accepted-notify-sent',
+          familyId: record.familyId,
+          inviterEmail: redactEmail(inviterEmail),
+          messageId: result.id,
+        });
+      } else {
+        logFamily({
+          phase: 'family-invite-accepted-notify-skipped',
+          familyId: record.familyId,
+          reason: 'no-inviter-email',
+          invitedByCustomerId: record.invitedByCustomerId,
+        });
+      }
+    } catch (notifyErr) {
+      logFamily({
+        phase: 'family-invite-accepted-notify-failed',
+        familyId: record.familyId,
+        detail: notifyErr instanceof Error ? notifyErr.message : String(notifyErr),
+      });
+    }
+
     return new Response(
       JSON.stringify({ ok: true, family: updated, alreadyMember: false }),
       {
