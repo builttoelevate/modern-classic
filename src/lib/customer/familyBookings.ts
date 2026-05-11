@@ -15,12 +15,48 @@
 // unchanged.
 
 import { getCustomerBookings, type CustomerBookings } from '../square/customerBookings';
+import { getCustomerById } from '../square/customers';
 import { listLinkedPeople, type LinkedPerson } from './profileLinks';
 import {
   getFamilyForCustomer,
   type FamilyMember,
   type FamilyRecord,
 } from './familyAccount';
+
+/**
+ * Resolve every family member's display name from Square at render
+ * time. Stored family.members[*].displayName is a snapshot taken at
+ * accept (or create) time and goes stale the moment a member edits
+ * their profile name. The card on /profile and the "for X" booking
+ * tag in /my-bookings should both reflect the live name — without
+ * this fan-out, Brook updating her first name to "Brook" still
+ * showed her as "Briar Bone" (the name on her Square record at the
+ * moment she accepted the invite).
+ *
+ * Returns a Map<customerId, liveName>. Per-member fetch failures
+ * fall back to the stored snapshot so a transient Square hiccup
+ * doesn't blank the card. Exported so /profile can reuse the same
+ * resolution.
+ */
+export async function resolveLiveFamilyMemberNames(
+  family: FamilyRecord,
+): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  const results = await Promise.all(
+    family.members.map((m) =>
+      getCustomerById(m.customerId)
+        .then((c) => ({ member: m, customer: c }))
+        .catch(() => ({ member: m, customer: null })),
+    ),
+  );
+  for (const { member, customer } of results) {
+    const live = customer
+      ? `${customer.given_name ?? ''} ${customer.family_name ?? ''}`.trim()
+      : '';
+    out.set(member.customerId, live || member.displayName || 'Member');
+  }
+  return out;
+}
 
 export interface MergedBookingsResult {
   bookings: CustomerBookings;
@@ -125,6 +161,20 @@ export async function getMergedBookingsForSession(
     () => null,
   );
   const targets = await resolveFetchTargets(sessionCustomerId, family);
+
+  // Refresh each family member's displayName from Square so a profile
+  // rename ("Briar Bone" → "Brook Chicha") propagates to the
+  // bookingFor tag without waiting for the stored snapshot to be
+  // overwritten. No-op when there's no family.
+  if (family) {
+    const liveNames = await resolveLiveFamilyMemberNames(family).catch(
+      () => new Map<string, string>(),
+    );
+    for (const t of targets) {
+      const live = liveNames.get(t.customerId);
+      if (live) t.displayName = live;
+    }
+  }
 
   // Parallel fetch with per-target degradation. One bad customer fetch
   // (deleted record, transient Square hiccup) shouldn't blank the rest.

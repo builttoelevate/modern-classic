@@ -14,6 +14,7 @@ import {
   MAX_FAMILY_MEMBERS,
   type FamilyRecord,
 } from '../lib/customer/familyAccount';
+import { resolveLiveFamilyMemberNames } from '../lib/customer/familyBookings';
 import type { Customer } from '../lib/square/types';
 
 import '../styles/portal.css';
@@ -41,6 +42,12 @@ let customer: Customer | null = null;
 let linkedPeople: LinkedPerson[] = [];
 let family: FamilyRecord | null = null;
 let loadError: string | null = null;
+// customerId → live display name resolved from Square at render
+// time. Stored family.members[i].displayName is a snapshot taken at
+// accept time; once a member renames themselves in /profile, the
+// snapshot goes stale. Looking up live names here keeps the family
+// card honest. Empty map when there's no family.
+let liveFamilyNames: Map<string, string> = new Map();
 try {
   const [c, kids, fam] = await Promise.all([
     getCustomerById(session.customerId),
@@ -50,6 +57,11 @@ try {
   customer = c;
   linkedPeople = kids;
   family = fam;
+  if (family) {
+    liveFamilyNames = await resolveLiveFamilyMemberNames(family).catch(
+      () => new Map<string, string>(),
+    );
+  }
 } catch (err) {
   loadError = err instanceof Error ? err.message : 'Failed to load.';
 }
@@ -213,7 +225,9 @@ Astro.response.headers.append('Set-Cookie', refreshSessionCookie(session));
               {family.members.map((m) => (
                 <li class="mb-person">
                   <div class="mb-person__id">
-                    <span class="mb-person__name">{m.displayName}</span>
+                    <span class="mb-person__name">
+                      {liveFamilyNames.get(m.customerId) ?? m.displayName}
+                    </span>
                     <span class="mb-person__rel">
                       {m.role === 'adult' ? 'Adult' : 'Kid'}
                       {m.customerId === session.customerId ? ' · you' : ''}
