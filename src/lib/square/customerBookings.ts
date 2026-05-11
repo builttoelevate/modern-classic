@@ -316,20 +316,80 @@ async function listAllBookingsForCustomer(customerId: string): Promise<Booking[]
     windows.push(fetchBookingsWindow(customerId, min, max));
   }
 
-  const results = await Promise.all(windows);
-  // Merge + dedupe (windows may overlap at boundaries).
+  // allSettled, not all — a single window hiccup (429, transient 5xx,
+  // network blip) is a 30-day gap in coverage at worst. Used to be
+  // Promise.all, which made one bad window blank the entire /my-bookings
+  // page with "We couldn't load your bookings right now." Each failure
+  // is logged so we can see if a particular window is consistently
+  // sad, but rendering proceeds with whatever we got.
+  const settled = await Promise.allSettled(windows);
   const byId = new Map<string, Booking>();
-  for (const list of results) {
-    for (const b of list) byId.set(b.id, b);
+  let failed = 0;
+  for (const r of settled) {
+    if (r.status === 'fulfilled') {
+      for (const b of r.value) byId.set(b.id, b);
+    } else {
+      failed++;
+      // eslint-disable-next-line no-console
+      console.log(
+        `[BOOK] ${JSON.stringify({
+          ts: new Date().toISOString(),
+          phase: 'bookings-window-failed',
+          customerId,
+          detail: r.reason instanceof Error ? r.reason.message : String(r.reason),
+        })}`,
+      );
+    }
+  }
+  if (failed > 0) {
+    // eslint-disable-next-line no-console
+    console.log(
+      `[BOOK] ${JSON.stringify({
+        ts: new Date().toISOString(),
+        phase: 'bookings-windows-partial',
+        customerId,
+        failed,
+        total: windows.length,
+      })}`,
+    );
   }
   return Array.from(byId.values());
 }
 
 export async function getCustomerBookings(customerId: string): Promise<CustomerBookings> {
+  // getServices() and getBarbers() are needed to hydrate names + prices,
+  // but a transient failure on either shouldn't blank the entire
+  // /my-bookings page. Fall back to empty lookup maps — bookings still
+  // render with "Service"/"Barber" placeholder strings, which is way
+  // better than the error overlay. The catalog/team list is fetched
+  // exactly once per page load (vs. 19 parallel windows for bookings),
+  // so this is rare, but the symptom is severe when it happens.
   const [bookings, services, barbers] = await Promise.all([
     listAllBookingsForCustomer(customerId),
-    getServices(),
-    getBarbers(),
+    getServices().catch((err) => {
+      // eslint-disable-next-line no-console
+      console.log(
+        `[BOOK] ${JSON.stringify({
+          ts: new Date().toISOString(),
+          phase: 'getServices-soft-fail',
+          customerId,
+          detail: err instanceof Error ? err.message : String(err),
+        })}`,
+      );
+      return [] as Service[];
+    }),
+    getBarbers().catch((err) => {
+      // eslint-disable-next-line no-console
+      console.log(
+        `[BOOK] ${JSON.stringify({
+          ts: new Date().toISOString(),
+          phase: 'getBarbers-soft-fail',
+          customerId,
+          detail: err instanceof Error ? err.message : String(err),
+        })}`,
+      );
+      return [] as Barber[];
+    }),
   ]);
   const variationIndex = buildVariationIndex(services);
   const barberIndex = buildBarberIndex(barbers);

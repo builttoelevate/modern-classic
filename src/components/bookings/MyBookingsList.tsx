@@ -84,6 +84,18 @@ export default function MyBookingsList({ initial, basePath }: Props) {
         } else {
           setToast('Appointment cancelled.');
         }
+        // Optimistically drop the cancelled row out of upcoming.
+        // Without this, a refresh() failure (Square hiccup, transient
+        // 5xx) leaves the cancelled card on screen as if still
+        // confirmed — exactly what we saw when 4 Book-Ahead visits
+        // were cancelled but stayed visible in the list. The refresh
+        // below still runs to pull any server-side changes (e.g.
+        // status now PAST), but the user sees the row vanish
+        // immediately regardless of whether the refetch succeeds.
+        setBookings((prev) => ({
+          upcoming: prev.upcoming.filter((b) => b.id !== booking.id),
+          past: prev.past,
+        }));
         await refresh();
       } else if (data.error?.code === 'CANCEL_REQUIRES_CHARGE_ACCEPT') {
         // Should not reach here in normal use — BookingCard surfaces
