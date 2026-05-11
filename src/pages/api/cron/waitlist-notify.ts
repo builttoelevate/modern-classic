@@ -28,7 +28,11 @@ import {
   searchAvailabilityChunked,
   searchWindowFor,
 } from '../../../lib/marketing/waitlistSlotSuggestions';
-import { sendWaitlistOpening } from '../../../lib/email/resend';
+import {
+  sendWaitlistOpening,
+  sendWaitlistSlotMatchBarber,
+} from '../../../lib/email/resend';
+import { resolveBarberContact } from '../../../lib/barber/contactLookup';
 import { formatRelativeSlot } from '../../../lib/availability/timing';
 import { redactEmail } from '../../../lib/booking/log';
 import { SquareApiError } from '../../../lib/square/client';
@@ -261,6 +265,60 @@ async function handle(request: Request): Promise<Response> {
         slot: match.startAtUtc,
         resendId: sendResult.id,
       });
+
+      // Barber heads-up — only fires when the entry specifically
+      // requested a barber (the matched one). "Any barber" entries
+      // skip this so a slot match doesn't blast every barber's inbox.
+      // The customer's email has already gone out by this point, so a
+      // failure here is non-fatal and just logged. Same email-resolution
+      // rules as the submit-time barber notification: account.email >
+      // Square's TeamMember.email_address > skip.
+      //
+      // Reuses `picks` from earlier in the loop (declared right before
+      // the availability search) — entries with no preference have
+      // picks.length === 0, so the branch below skips naturally.
+      const matchedBarberId = bestMatch.teamMemberId;
+      const customerNamedThisBarber =
+        !!matchedBarberId && picks.some((p) => p.id === matchedBarberId);
+      if (customerNamedThisBarber && matchedBarberId) {
+        try {
+          const contact = await resolveBarberContact(matchedBarberId);
+          if (contact) {
+            const barberSend = await sendWaitlistSlotMatchBarber({
+              to: contact.email,
+              barberDisplayName: contact.displayName,
+              customerName: entry.customerName,
+              customerEmail: entry.customerEmail,
+              customerPhone: entry.customerPhone,
+              serviceName: entry.serviceName,
+              whenLabel,
+              dashboardUrl: `${origin}/barber/dashboard?tab=waitlist`,
+              shopPhone: SHOP_PHONE,
+            });
+            logCron({
+              phase: 'barber-notify-sent',
+              entryId: entry.id,
+              teamMemberId: matchedBarberId,
+              inbox: redactEmail(contact.email),
+              resendId: barberSend.id,
+            });
+          } else {
+            logCron({
+              phase: 'barber-notify-skipped-no-email',
+              entryId: entry.id,
+              teamMemberId: matchedBarberId,
+            });
+          }
+        } catch (err) {
+          const detail = err instanceof Error ? err.message : String(err);
+          logCron({
+            phase: 'barber-notify-failed',
+            entryId: entry.id,
+            teamMemberId: matchedBarberId,
+            errorDetail: detail,
+          });
+        }
+      }
     } catch (err) {
       const detail =
         err instanceof SquareApiError

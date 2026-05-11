@@ -328,8 +328,11 @@ async function handle(request: Request): Promise<Response> {
         customerId: customer.id,
         bookingId: booking.id,
         customerEmailRedacted: redactEmail(toEmail),
+        customerName: customerName || undefined,
         serviceName,
         barberName,
+        teamMemberId: seg.team_member_id,
+        appointmentDate: formatAppointmentDate(booking.start_at),
         sentAt,
         resendId: sendResult.id,
       });
