@@ -128,6 +128,45 @@ export async function findCustomersByPhone(phone: string): Promise<Customer[]> {
   });
 }
 
+/**
+ * Lookup by display name — used by the admin /admin/customers
+ * search field so the operator can find a customer they know by
+ * name even when phone or email isn't to hand. The phone-and-email-
+ * only flow misses cases like "I deleted a Briar but I'm not sure
+ * which one — let me look up every Briar in Square."
+ *
+ * Query handling:
+ *   - Single word ("Briar") → fuzzy match on given_name only.
+ *   - Two+ words ("Briar Chicha") → split on first space; given_name
+ *     fuzzy on the first token AND family_name fuzzy on the rest.
+ *
+ * Both filters use Square's `fuzzy` matcher because the goal is
+ * discoverability, not exactness — operators won't always remember
+ * the exact spelling. Caller renders the results as a chooser
+ * when there's more than one.
+ */
+export async function findCustomersByName(query: string): Promise<Customer[]> {
+  const trimmed = query.trim();
+  if (!trimmed) return [];
+
+  const firstSpace = trimmed.indexOf(' ');
+  const givenName = firstSpace === -1 ? trimmed : trimmed.slice(0, firstSpace);
+  const familyName = firstSpace === -1 ? '' : trimmed.slice(firstSpace + 1).trim();
+
+  const filter: Record<string, unknown> = {};
+  if (givenName) filter.given_name = { fuzzy: givenName };
+  if (familyName) filter.family_name = { fuzzy: familyName };
+
+  const res = await squareFetch<SearchCustomersResponse>('/v2/customers/search', {
+    method: 'POST',
+    body: {
+      query: { filter },
+      limit: 20,
+    },
+  });
+  return res.customers ?? [];
+}
+
 function pickBestPhoneMatch(matches: Customer[]): Customer | null {
   if (matches.length === 0) return null;
   if (matches.length === 1) return matches[0];
