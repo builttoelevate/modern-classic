@@ -44,6 +44,9 @@ interface Props {
   onSeriesFrequencyChange: (f: FrequencyWeeks) => void;
   onSeriesCountChange: (c: SeriesCount) => void;
   onRemoveGeneratedSlot: (intendedStartAtUtc: string) => void;
+  /** Swap the slot at intendedStartAtUtc for an alternative the
+   *  customer picked from the popover. */
+  onReplaceGeneratedSlot: (intendedStartAtUtc: string, replacement: AvailabilitySlot) => void;
 }
 
 const SHOP_TZ = 'America/New_York';
@@ -224,6 +227,7 @@ export function Step3DateTimePicker({
   onSeriesFrequencyChange,
   onSeriesCountChange,
   onRemoveGeneratedSlot,
+  onReplaceGeneratedSlot,
 }: Props) {
   const variationKey = variations.map((v) => v.id).join(',');
   const today = useMemo(() => todayInShopTz(), []);
@@ -548,7 +552,13 @@ export function Step3DateTimePicker({
           generatedSlots={generatedSlots}
           resolving={seriesResolving}
           pricePerVisitCents={pricePerVisitCents}
+          // The Book Ahead series locks variation + barber from the
+          // first slot for every visit, so the alternatives picker
+          // queries the same calendar the plan was generated against.
+          serviceVariationId={selected.serviceVariationId}
+          teamMemberId={selected.teamMemberId || teamMemberId}
           onRemoveSlot={onRemoveGeneratedSlot}
+          onReplaceSlot={onReplaceGeneratedSlot}
         />
       ) : null}
 

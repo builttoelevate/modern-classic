@@ -992,6 +992,9 @@ export default function BookingWizard({
           onRemoveGeneratedSlot={(intendedStartAtUtc) =>
             dispatch({ type: 'REMOVE_GENERATED_SLOT', intendedStartAtUtc })
           }
+          onReplaceGeneratedSlot={(intendedStartAtUtc, replacement) =>
+            dispatch({ type: 'REPLACE_GENERATED_SLOT', intendedStartAtUtc, replacement })
+          }
         />
       )}
 
