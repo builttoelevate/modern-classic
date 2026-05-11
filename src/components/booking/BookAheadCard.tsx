@@ -1,91 +1,91 @@
-// Book Ahead — the upsell card that sits above the Step 3 calendar.
-// Two chip rows: frequency ("Every N weeks") and, when frequency > 0,
-// total visits to lock in.
+// Book Ahead — count picker that sits above the Step 3 calendar.
+// Customer indicates how many visits they want to book in this
+// session. Default 1 (single visit, behavior unchanged from a
+// non-Book-Ahead booking). Picking 2-4 keeps them on Step 3
+// after each slot tap so they can build out the plan.
 //
-// "Just this visit" is the default and routes the customer through
-// the regular single-booking flow with no change. The card frames
-// recurring booking as a loyalty perk ("keep your chair") rather
-// than as a cart.
+// When the customer drops the count BELOW the number of slots
+// they've already picked, the parent reducer truncates the plan
+// to fit. We surface that as a brief toast inside this card —
+// silent deletion would feel like a bug.
 
-import type { FrequencyWeeks, SeriesCount } from './wizardState';
+import { useEffect, useRef, useState } from 'react';
+import type { DesiredCount } from './wizardState';
 
 interface Props {
-  frequencyWeeks: FrequencyWeeks;
-  count: SeriesCount;
-  onFrequencyChange: (frequencyWeeks: FrequencyWeeks) => void;
-  onCountChange: (count: SeriesCount) => void;
+  desiredCount: DesiredCount;
+  /** Total picks currently in the plan (selectedSlot + pickedSlots).
+   *  Used to detect when a count change drops slots so we can
+   *  surface the reconciliation toast. */
+  currentPlanLength: number;
+  onCountChange: (next: DesiredCount) => void;
 }
 
-const FREQUENCY_OPTIONS: Array<{ value: FrequencyWeeks; label: string }> = [
-  { value: 0, label: 'Just this visit' },
-  { value: 2, label: 'Every 2 wk' },
-  { value: 3, label: 'Every 3 wk' },
-  { value: 4, label: 'Every 4 wk' },
-  { value: 6, label: 'Every 6 wk' },
-];
-
-// 8 visits at every 6 weeks is already ~11 months out — bumping
-// any higher pushes past the 1-year horizon for the sparser
-// frequencies, which would force "Past 1-year limit" badges on
-// every plan. 8 is the honest commitment ceiling.
-const COUNT_OPTIONS: SeriesCount[] = [3, 6, 8];
+const COUNT_OPTIONS: DesiredCount[] = [1, 2, 3, 4];
 
 export function BookAheadCard({
-  frequencyWeeks,
-  count,
-  onFrequencyChange,
+  desiredCount,
+  currentPlanLength,
   onCountChange,
 }: Props) {
-  const isRecurring = frequencyWeeks > 0;
+  const [toast, setToast] = useState<string | null>(null);
+  // Track the last-seen plan length so we only fire the toast on
+  // an actual reconciliation (not on every plan-length change like
+  // adds and removes).
+  const lastPlanLenRef = useRef(currentPlanLength);
+  const lastDesiredRef = useRef(desiredCount);
+
+  useEffect(() => {
+    const desiredChanged = lastDesiredRef.current !== desiredCount;
+    const planShrunk = currentPlanLength < lastPlanLenRef.current;
+    if (desiredChanged && planShrunk) {
+      const dropped = lastPlanLenRef.current - currentPlanLength;
+      setToast(
+        `Removed ${dropped} ${dropped === 1 ? 'visit' : 'visits'} to match the new count.`,
+      );
+      const t = setTimeout(() => setToast(null), 3000);
+      lastPlanLenRef.current = currentPlanLength;
+      lastDesiredRef.current = desiredCount;
+      return () => clearTimeout(t);
+    }
+    lastPlanLenRef.current = currentPlanLength;
+    lastDesiredRef.current = desiredCount;
+  }, [currentPlanLength, desiredCount]);
+
   return (
     <section className="bw-bookahead" aria-label="Book ahead">
       <header className="bw-bookahead__head">
         <h3 className="bw-bookahead__title">Book ahead and keep your chair.</h3>
         <p className="bw-bookahead__copy">
-          Reserve your next few visits so your spot is already waiting.
+          Reserve up to four visits in one go. Pick each date and time
+          yourself.
         </p>
       </header>
 
       <div className="bw-bookahead__field">
-        <span className="bw-field__label">Frequency</span>
-        <div className="bw-chip-row" role="group" aria-label="Visit frequency">
-          {FREQUENCY_OPTIONS.map((opt) => {
-            const active = opt.value === frequencyWeeks;
+        <span className="bw-field__label">How many visits today?</span>
+        <div className="bw-chip-row" role="group" aria-label="Number of visits">
+          {COUNT_OPTIONS.map((opt) => {
+            const active = opt === desiredCount;
             return (
               <button
-                key={opt.value}
+                key={opt}
                 type="button"
                 className={`bw-chip${active ? ' bw-chip--on' : ''}`}
                 aria-pressed={active}
-                onClick={() => onFrequencyChange(opt.value)}
+                onClick={() => onCountChange(opt)}
               >
-                {opt.label}
+                {opt} {opt === 1 ? 'visit' : 'visits'}
               </button>
             );
           })}
         </div>
       </div>
 
-      {isRecurring && (
-        <div className="bw-bookahead__field">
-          <span className="bw-field__label">Total visits</span>
-          <div className="bw-chip-row" role="group" aria-label="Number of visits">
-            {COUNT_OPTIONS.map((opt) => {
-              const active = opt === count;
-              return (
-                <button
-                  key={opt}
-                  type="button"
-                  className={`bw-chip${active ? ' bw-chip--on' : ''}`}
-                  aria-pressed={active}
-                  onClick={() => onCountChange(opt)}
-                >
-                  {opt} visits
-                </button>
-              );
-            })}
-          </div>
-        </div>
+      {toast && (
+        <p className="bw-bookahead__toast" role="status">
+          {toast}
+        </p>
       )}
     </section>
   );

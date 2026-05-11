@@ -1,49 +1,24 @@
-// Book Ahead — the booking-plan panel that appears below the calendar
-// once the customer has picked their first slot AND a recurring
-// frequency. Renders the full series (first visit + all generated
-// visits) as a compact vertical list. Each row shows date/time,
-// availability badge, and a remove button.
+// Book Ahead — list of slots the customer has picked so far.
 //
-// PR 1 keeps this read-mostly: removed rows drop from the plan, but
-// 'taken' / 'barber-off' rows show an inert "Unavailable" badge.
-// PR 2 wires the inline alternatives picker so unavailable rows can
-// be swapped without leaving the screen.
+// Renders only when desiredCount > 1. Every entry is a real
+// Square slot (no resolution status, no badges, no inline
+// alternatives picker — those existed in the old auto-generated
+// model and are gone). Sorted chronologically regardless of
+// pick order so the customer reads their plan in calendar
+// terms, not pick terms.
 
-import { useState } from 'react';
 import type { AvailabilitySlot } from '../../lib/square/types';
-import type { GeneratedSlot, GeneratedSlotStatus } from './wizardState';
-import { SlotAlternativesPopover } from './SlotAlternativesPopover';
-
-interface PlanRow {
-  /** Stable key — for the first visit, the real slot's startAtUtc; for
-   *  generated rows, the intendedStartAtUtc (which equals slot.startAtUtc
-   *  when status === 'available'). */
-  key: string;
-  startAtUtc: string;
-  status: GeneratedSlotStatus;
-  /** True for the customer's hand-picked first visit. Drives the
-   *  "First visit" badge and disables the remove button (you can't
-   *  drop the slot you just clicked). */
-  isFirst: boolean;
-}
 
 interface Props {
-  firstSlot: AvailabilitySlot;
-  generatedSlots: GeneratedSlot[];
-  resolving: boolean;
-  /** Service price in cents, used to compute the total. Same across
-   *  every visit (Book Ahead locks one service for the whole series). */
+  /** All picks combined: state.selectedSlot (when set) + every
+   *  entry in state.series.pickedSlots. The parent collects them
+   *  so this component stays presentational. Sorted here. */
+  picks: AvailabilitySlot[];
+  desiredCount: number;
+  /** Service price in cents — same across every visit (Book
+   *  Ahead locks one service for the whole session). */
   pricePerVisitCents: number | null;
-  /** Locked across the whole series — Book Ahead doesn't let the
-   *  customer change service or barber per-visit. Used by the
-   *  alternatives popover to query Square for nearby openings. */
-  serviceVariationId: string;
-  teamMemberId: string | undefined;
-  onRemoveSlot: (intendedStartAtUtc: string) => void;
-  /** Replace the slot at intendedStartAtUtc with the picked
-   *  alternative. The reducer pivots the row to status 'available'
-   *  with the new slot bound. */
-  onReplaceSlot: (intendedStartAtUtc: string, replacement: AvailabilitySlot) => void;
+  onRemoveSlot: (startAtUtc: string) => void;
 }
 
 const SHOP_TZ = 'America/New_York';
@@ -60,137 +35,60 @@ function formatRowDateTime(utc: string): string {
   }).format(new Date(utc));
 }
 
-function statusBadge(status: GeneratedSlotStatus): { label: string; tone: 'ok' | 'warn' | 'dim' } {
-  switch (status) {
-    case 'available':
-      return { label: 'Available', tone: 'ok' };
-    case 'taken':
-      return { label: 'Time taken', tone: 'warn' };
-    case 'barber-off':
-      return { label: 'Barber off', tone: 'warn' };
-    case 'out-of-horizon':
-      return { label: 'Past 1-year limit', tone: 'dim' };
-    case 'pending':
-      return { label: 'Checking…', tone: 'dim' };
-  }
-}
-
 export function BookingPlanPanel({
-  firstSlot,
-  generatedSlots,
-  resolving,
+  picks,
+  desiredCount,
   pricePerVisitCents,
-  serviceVariationId,
-  teamMemberId,
   onRemoveSlot,
-  onReplaceSlot,
 }: Props) {
-  // Which row's alternatives popover is open. At most one at a time
-  // so the panel doesn't bloat on mobile. The key is the row's
-  // intendedStartAtUtc — stable across re-renders and unique across
-  // rows.
-  const [pickerOpenFor, setPickerOpenFor] = useState<string | null>(null);
-  const rows: PlanRow[] = [
-    {
-      key: firstSlot.startAtUtc,
-      startAtUtc: firstSlot.startAtUtc,
-      status: 'available',
-      isFirst: true,
-    },
-    ...generatedSlots.map<PlanRow>((g) => ({
-      key: g.intendedStartAtUtc,
-      startAtUtc: g.intendedStartAtUtc,
-      status: g.status,
-      isFirst: false,
-    })),
-  ];
-
-  const bookableCount = rows.filter((r) => r.status === 'available').length;
+  const sorted = [...picks].sort(
+    (a, b) => Date.parse(a.startAtUtc) - Date.parse(b.startAtUtc),
+  );
+  const planFull = picks.length >= desiredCount;
   const totalCents =
-    pricePerVisitCents !== null ? pricePerVisitCents * bookableCount : null;
+    pricePerVisitCents !== null ? pricePerVisitCents * picks.length : null;
 
   return (
     <section className="bw-plan" aria-label="Your booking plan">
       <header className="bw-plan__head">
         <h3 className="bw-plan__title">Your booking plan</h3>
         <p className="bw-plan__sub">
-          {resolving
-            ? 'Checking availability…'
-            : `${bookableCount} of ${rows.length} ${rows.length === 1 ? 'visit' : 'visits'} ready to book`}
+          {planFull
+            ? `All ${desiredCount} ${desiredCount === 1 ? 'visit' : 'visits'} picked`
+            : `${picks.length} of ${desiredCount} picked`}
         </p>
       </header>
 
-      <ol className="bw-plan__list">
-        {rows.map((row, idx) => {
-          const badge = statusBadge(row.status);
-          const showRemove = !row.isFirst && row.status !== 'pending';
-          // Picker only makes sense for rows that have a real
-          // intended time but no Square slot — i.e. taken or
-          // barber-off. Out-of-horizon rows can't be alternatives'd
-          // (they're past Square's bookable window) and pending /
-          // available rows don't need it.
-          const canPickAlternative =
-            !row.isFirst && (row.status === 'taken' || row.status === 'barber-off');
-          const pickerOpen = pickerOpenFor === row.startAtUtc;
-          return (
-            <li key={row.key} className={`bw-plan__row bw-plan__row--${badge.tone}`}>
+      {sorted.length === 0 ? (
+        <p className="bw-plan__empty">
+          Pick a date and time on the calendar above to get started.
+        </p>
+      ) : (
+        <ol className="bw-plan__list">
+          {sorted.map((slot, idx) => (
+            <li key={slot.startAtUtc} className="bw-plan__row bw-plan__row--ok">
               <span className="bw-plan__num" aria-hidden="true">
                 {idx + 1}
               </span>
               <div className="bw-plan__content">
-                <div className="bw-plan__when">{formatRowDateTime(row.startAtUtc)}</div>
-                <div className="bw-plan__meta">
-                  {row.isFirst ? (
-                    <span className="bw-plan__pill bw-plan__pill--first">First visit</span>
-                  ) : null}
-                  <span className={`bw-plan__pill bw-plan__pill--${badge.tone}`}>
-                    {badge.label}
-                  </span>
-                </div>
-                {canPickAlternative && pickerOpen ? (
-                  <SlotAlternativesPopover
-                    intendedStartAtUtc={row.startAtUtc}
-                    serviceVariationId={serviceVariationId}
-                    teamMemberId={teamMemberId}
-                    onPick={(slot) => {
-                      onReplaceSlot(row.startAtUtc, slot);
-                      setPickerOpenFor(null);
-                    }}
-                    onClose={() => setPickerOpenFor(null)}
-                  />
-                ) : null}
+                <div className="bw-plan__when">{formatRowDateTime(slot.startAtUtc)}</div>
               </div>
               <div className="bw-plan__actions">
-                {canPickAlternative ? (
-                  <button
-                    type="button"
-                    className="bw-plan__alt"
-                    onClick={() =>
-                      setPickerOpenFor(pickerOpen ? null : row.startAtUtc)
-                    }
-                    aria-expanded={pickerOpen}
-                    aria-label={`Pick another time for visit ${idx + 1}`}
-                  >
-                    {pickerOpen ? 'Cancel' : 'Pick another time'}
-                  </button>
-                ) : null}
-                {showRemove ? (
-                  <button
-                    type="button"
-                    className="bw-plan__remove"
-                    onClick={() => onRemoveSlot(row.startAtUtc)}
-                    aria-label={`Remove visit on ${formatRowDateTime(row.startAtUtc)}`}
-                  >
-                    Remove
-                  </button>
-                ) : null}
+                <button
+                  type="button"
+                  className="bw-plan__remove"
+                  onClick={() => onRemoveSlot(slot.startAtUtc)}
+                  aria-label={`Remove visit on ${formatRowDateTime(slot.startAtUtc)}`}
+                >
+                  Remove
+                </button>
               </div>
             </li>
-          );
-        })}
-      </ol>
+          ))}
+        </ol>
+      )}
 
-      {totalCents !== null && bookableCount > 1 ? (
+      {totalCents !== null && picks.length > 1 ? (
         <footer className="bw-plan__foot">
           <span className="bw-plan__total-label">Total today</span>
           <span className="bw-plan__total">${(totalCents / 100).toFixed(0)}</span>

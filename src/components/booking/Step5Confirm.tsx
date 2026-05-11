@@ -72,24 +72,29 @@ export function Step5Confirm({
   onBookAnother,
   series,
 }: Props) {
-  const isSeries = series.frequencyWeeks > 0 && series.generatedSlots.length > 0;
-  // First-slot row + every generated row that's at least pending. Used
-  // for the visit list in both pre-confirm and post-confirm states.
+  const isSeries = series.desiredCount > 1 && series.pickedSlots.length > 0;
+  // First slot + every extra in the plan. Sorted chronologically
+  // for display — pick order is an implementation detail.
   const seriesRows = isSeries
-    ? [
-        { startAtUtc: slot.startAtUtc, isFirst: true as const, status: 'available' as const, bookingId: undefined as string | undefined, bookingError: undefined as string | undefined },
-        ...series.generatedSlots.map((g) => ({
-          startAtUtc: g.intendedStartAtUtc,
-          isFirst: false as const,
-          status: g.status,
-          bookingId: g.bookingId,
-          bookingError: g.bookingError,
-        })),
-      ]
+    ? [{ startAtUtc: slot.startAtUtc, isFirst: true as const }, ...series.pickedSlots.map((p) => ({
+        startAtUtc: p.startAtUtc,
+        isFirst: false as const,
+      }))]
+        .slice()
+        .sort((a, b) => Date.parse(a.startAtUtc) - Date.parse(b.startAtUtc))
+        .map((row) => {
+          const result = series.bookingResults[row.startAtUtc];
+          return {
+            ...row,
+            bookingId: result?.bookingId,
+            bookingError: result?.error,
+          };
+        })
     : [];
-  const seriesBookableCount = isSeries
-    ? seriesRows.filter((r) => r.status === 'available').length
-    : 0;
+  // Every picked slot is guaranteed available at pick time, so the
+  // "bookable count" is just the total pick count. Kept as a named
+  // variable for the Confirm-button label.
+  const seriesBookableCount = isSeries ? seriesRows.length : 0;
   const [existingContact, setExistingContact] = useState<{ phone?: string; givenName?: string; familyName?: string } | null>(null);
   const [calendarSheetOpen, setCalendarSheetOpen] = useState(false);
 
@@ -158,7 +163,10 @@ export function Step5Confirm({
             {rescheduleMode
               ? "You're rescheduled."
               : isSeries
-                ? `You're booked for ${seriesRows.filter((r) => r.isFirst || r.bookingId).length} ${seriesRows.filter((r) => r.isFirst || r.bookingId).length === 1 ? 'visit' : 'visits'}.`
+                ? (() => {
+                    const succeeded = seriesRows.filter((r) => !!r.bookingId && !r.bookingError).length;
+                    return `You're booked for ${succeeded} ${succeeded === 1 ? 'visit' : 'visits'}.`;
+                  })()
                 : "You're booked."}
           </h2>
           <p>
@@ -184,30 +192,20 @@ export function Step5Confirm({
             <>
               <ol className="bw-success-visits">
                 {seriesRows.map((row, idx) => {
-                  const ok = row.isFirst || (!!row.bookingId && !row.bookingError);
-                  const wasUnavailableFromStart =
-                    row.status === 'taken' ||
-                    row.status === 'barber-off' ||
-                    row.status === 'out-of-horizon';
+                  const ok = !!row.bookingId && !row.bookingError;
                   // Sequential loop stops on first failure — anything
-                  // after the failed visit was never attempted, so its
-                  // status is still 'available' but it has no bookingId
-                  // and no bookingError. Surface that as "Not attempted"
-                  // so the customer knows it wasn't a per-slot issue.
-                  const wasSkipped =
-                    !row.isFirst &&
-                    !ok &&
-                    !row.bookingError &&
-                    row.status === 'available';
+                  // after the failed visit was never attempted, so it
+                  // has no bookingId and no bookingError. Surface that
+                  // as "Not attempted" so the customer knows it wasn't
+                  // a per-slot issue.
+                  const wasSkipped = !ok && !row.bookingError;
                   const tag = ok
                     ? 'Confirmed'
                     : row.bookingError
                       ? row.bookingError
                       : wasSkipped
                         ? 'Not attempted'
-                        : wasUnavailableFromStart
-                          ? 'Was unavailable'
-                          : 'Not booked';
+                        : 'Not booked';
                   return (
                     <li
                       key={row.startAtUtc + idx}
@@ -222,7 +220,7 @@ export function Step5Confirm({
               </ol>
               {(() => {
                 const total = seriesRows.length;
-                const succeeded = seriesRows.filter((r) => r.isFirst || (!!r.bookingId && !r.bookingError)).length;
+                const succeeded = seriesRows.filter((r) => !!r.bookingId && !r.bookingError).length;
                 if (succeeded === total) return null;
                 const missing = total - succeeded;
                 return (
@@ -324,12 +322,9 @@ export function Step5Confirm({
             <span className="bw-summary-label">Visits ({seriesRows.length})</span>
             <ol className="bw-summary-visits">
               {seriesRows.map((row, idx) => (
-                <li key={row.startAtUtc + idx} className={`bw-summary-visits__row bw-summary-visits__row--${row.status === 'available' ? 'ok' : 'warn'}`}>
+                <li key={row.startAtUtc + idx} className="bw-summary-visits__row bw-summary-visits__row--ok">
                   <span className="bw-summary-visits__num">{idx + 1}.</span>
                   <span className="bw-summary-visits__when">{formatLocal(row.startAtUtc)}</span>
-                  {row.status !== 'available' ? (
-                    <span className="bw-summary-visits__tag">Unavailable</span>
-                  ) : null}
                 </li>
               ))}
             </ol>
