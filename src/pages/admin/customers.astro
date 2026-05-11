@@ -3,6 +3,7 @@ export const prerender = false;
 
 import {
   findCustomerByEmail,
+  findCustomersByName,
   findCustomersByPhone,
   getCustomerById,
 } from '../../lib/square/customers';
@@ -34,11 +35,17 @@ function looksLikePhone(s: string): boolean {
   const d = s.replace(/[^0-9]/g, '');
   return d.length >= 7 && d.length <= 16;
 }
+function looksLikeName(s: string): boolean {
+  // After ruling out email + phone, treat any query with at least
+  // 2 alphabetic chars as a name. Allows hyphens/apostrophes for
+  // names like O'Brien or Smith-Jones. Single letters won't trigger.
+  return /^[A-Za-z][A-Za-z\s'\-.]{1,}$/.test(s.trim());
+}
 
 let customer: Customer | null = null;
 let searchError: string | null = null;
 let notFound = false;
-let lookupMethod: 'email' | 'phone' | null = null;
+let lookupMethod: 'email' | 'phone' | 'name' | null = null;
 let bookings: CustomerBookings | null = null;
 let bookingsError: string | null = null;
 // When the focused customer is linked as someone's kid, the parent's
@@ -74,6 +81,7 @@ if (focusId) {
 } else if (rawQuery) {
   const isEmail = looksLikeEmail(rawQuery);
   const isPhone = !isEmail && looksLikePhone(rawQuery);
+  const isName = !isEmail && !isPhone && looksLikeName(rawQuery);
   try {
     if (isEmail) {
       customer = await findCustomerByEmail(rawQuery);
@@ -86,8 +94,19 @@ if (focusId) {
       } else if (matches.length === 1) {
         customer = matches[0];
       }
+    } else if (isName) {
+      // Name search reuses the same chooser UI as the phone path —
+      // any multi-match surfaces a list of records the operator
+      // can pick from. Single-result lands on the edit form.
+      const matches = await findCustomersByName(rawQuery);
+      lookupMethod = 'name';
+      if (matches.length > 1) {
+        phoneMatches = matches;
+      } else if (matches.length === 1) {
+        customer = matches[0];
+      }
     } else {
-      searchError = "That doesn't look like an email or a phone number.";
+      searchError = "That doesn't look like an email, phone number, or name.";
     }
     if (!searchError && !customer && phoneMatches.length === 0) notFound = true;
   } catch (err) {
@@ -706,14 +725,14 @@ const defaultRescheduleDate = tomorrowInNyDate();
           type="text"
           name="q"
           value={rawQuery}
-          placeholder="Email or phone — e.g. jane@example.com or (740) 555-0123"
+          placeholder="Email, phone, or name — e.g. jane@example.com / (740) 555-0123 / Briar"
           autocapitalize="none"
           spellcheck="false"
           autocomplete="off"
         />
         <button type="submit">Search</button>
       </form>
-      <p class="helper">Lookup is exact then fuzzy on Square. Phone digits only matter (formatting ignored).</p>
+      <p class="helper">Lookup is exact then fuzzy on Square. Phone digits only matter (formatting ignored). Name search is fuzzy — type "Briar" or "Briar Chicha" to see every match.</p>
 
       {searchError && <p class="err">Search failed: {searchError}</p>}
 
@@ -726,9 +745,9 @@ const defaultRescheduleDate = tomorrowInNyDate();
 
       {phoneMatches.length > 1 && (
         <div class="card">
-          <h2>{phoneMatches.length} customers share this phone</h2>
+          <h2>{phoneMatches.length} customers matched</h2>
           <p class="sub">
-            Phone <strong>{rawQuery}</strong> matches multiple records. Pick one to manage.
+            <strong>{rawQuery}</strong> matches multiple records. Pick one to manage.
             If they're duplicates, manage one to update or delete the other.
           </p>
           <table class="bookings">
