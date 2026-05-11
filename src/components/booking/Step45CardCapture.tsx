@@ -306,6 +306,38 @@ export function Step45CardCapture({
             {sdkState === 'loading' && (
               <p className="bw-cardstep-form__hint">Loading secure card form…</p>
             )}
+            {sdkState !== 'error' && (
+              <p className="bw-cardstep-form__secure">
+                <svg
+                  className="bw-cardstep-form__secure-icon"
+                  width="12"
+                  height="14"
+                  viewBox="0 0 12 14"
+                  fill="none"
+                  aria-hidden="true"
+                >
+                  <path
+                    d="M3 6V4a3 3 0 1 1 6 0v2"
+                    stroke="currentColor"
+                    strokeWidth="1.4"
+                    strokeLinecap="round"
+                  />
+                  <rect
+                    x="1.5"
+                    y="6"
+                    width="9"
+                    height="7"
+                    rx="1.5"
+                    stroke="currentColor"
+                    strokeWidth="1.4"
+                  />
+                </svg>
+                <span>
+                  Secured by Square. Your card details are encrypted and never
+                  touch our servers.
+                </span>
+              </p>
+            )}
           </div>
         </>
       )}
