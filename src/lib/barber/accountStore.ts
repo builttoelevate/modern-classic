@@ -46,6 +46,11 @@ export interface BarberAccountRecord {
   /** True until the barber sets their own password after a provision/reset.
    *  Login still succeeds, but the dashboard routes them to /barber/change-password. */
   mustChangePassword: boolean;
+  /** Inbox where waitlist notifications for this barber are sent.
+   *  Optional — when unset we fall back to Square's TeamMember.email_address,
+   *  and if that's also missing we skip the barber notification silently.
+   *  Lowercased + trimmed on write. */
+  email?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -96,6 +101,20 @@ export interface UpsertAccountInput {
   username: string;
   passwordHash: string;
   mustChangePassword: boolean;
+  /** Optional inbox for waitlist notifications. Pass undefined to leave
+   *  the existing email alone (or to keep none, on initial provision). */
+  email?: string;
+}
+
+/** Validates + normalizes an email address. Returns the lowercased
+ *  trimmed form, or null if it doesn't pass the basic shape check. */
+export function normalizeEmail(raw: string | undefined | null): string | null {
+  if (typeof raw !== 'string') return null;
+  const trimmed = raw.trim().toLowerCase();
+  if (!trimmed) return null;
+  if (!/^\S+@\S+\.\S+$/.test(trimmed)) return null;
+  if (trimmed.length > 254) return null;
+  return trimmed;
 }
 
 /** Creates a new account or replaces an existing one for the same
@@ -119,11 +138,27 @@ export async function upsertAccount(input: UpsertAccountInput): Promise<BarberAc
 
   const existing = await getAccount(input.teamMemberId);
   const now = new Date().toISOString();
+  // Email handling: an explicit string in input.email overwrites
+  // (after normalization); undefined means "leave the existing value
+  // alone"; an empty string clears it.
+  let email = existing?.email;
+  if (input.email !== undefined) {
+    if (input.email === '') {
+      email = undefined;
+    } else {
+      const normalizedEmail = normalizeEmail(input.email);
+      if (normalizedEmail === null) {
+        throw new Error('email is not a valid address');
+      }
+      email = normalizedEmail;
+    }
+  }
   const record: BarberAccountRecord = {
     teamMemberId: input.teamMemberId,
     username: normalized,
     passwordHash: input.passwordHash,
     mustChangePassword: input.mustChangePassword,
+    ...(email ? { email } : {}),
     createdAt: existing?.createdAt ?? now,
     updatedAt: now,
   };
@@ -155,6 +190,37 @@ export async function updateAccountPassword(
     mustChangePassword,
     updatedAt: new Date().toISOString(),
   };
+  await r.set(kAccount(teamMemberId), updated);
+  return updated;
+}
+
+/** Updates only the email field, leaving username, password, and
+ *  mustChangePassword intact. Pass an empty string to clear the email.
+ *  Throws on a malformed address. */
+export async function updateAccountEmail(
+  teamMemberId: string,
+  email: string,
+): Promise<BarberAccountRecord | null> {
+  const r = getRedis();
+  const existing = await getAccount(teamMemberId);
+  if (!existing) return null;
+  const trimmed = email.trim();
+  let nextEmail: string | undefined;
+  if (trimmed === '') {
+    nextEmail = undefined;
+  } else {
+    const normalized = normalizeEmail(trimmed);
+    if (normalized === null) {
+      throw new Error('email is not a valid address');
+    }
+    nextEmail = normalized;
+  }
+  const updated: BarberAccountRecord = {
+    ...existing,
+    ...(nextEmail ? { email: nextEmail } : {}),
+    updatedAt: new Date().toISOString(),
+  };
+  if (!nextEmail) delete updated.email;
   await r.set(kAccount(teamMemberId), updated);
   return updated;
 }

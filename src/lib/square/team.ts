@@ -24,12 +24,14 @@ function toBarber(member: TeamMember): Barber {
   const given = toTitleCase((member.given_name ?? '').trim());
   const family = toTitleCase((member.family_name ?? '').trim());
   const displayName = given || family || 'Barber';
+  const email = (member.email_address ?? '').trim();
   return {
     id: member.id,
     givenName: given,
     familyName: family,
     displayName,
     role: ROLE_BY_ID[member.id] ?? 'Barber',
+    ...(email ? { email } : {}),
   };
 }
 

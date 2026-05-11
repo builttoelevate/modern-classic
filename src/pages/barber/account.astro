@@ -41,6 +41,36 @@ const account = await getAccount(session.barberId);
       </header>
 
       <section>
+        <h2>Waitlist notification email</h2>
+        <p class="bb-auth__lede" style="text-align: left;">
+          When a customer joins the waitlist and asks for you by name, we'll
+          forward the details — name, phone, what they want — to this inbox so
+          you can reach out. Leave blank to silence these notifications.
+        </p>
+        {!account?.email && (
+          <p class="bb-form__error" style="margin-bottom: 14px;">
+            You don't have a notification email set yet — add one below so
+            waitlist customers who ask for you aren't lost.
+          </p>
+        )}
+        <form class="bb-form" id="email-form" novalidate>
+          <label class="bb-field">
+            <span class="bb-field__label">Email address</span>
+            <input
+              type="email"
+              name="email"
+              value={account?.email ?? ''}
+              autocomplete="email"
+              placeholder="you@example.com"
+            />
+          </label>
+          <p class="bb-form__error" id="email-error" hidden></p>
+          <p class="bb-form__ok" id="email-ok" hidden>Email saved.</p>
+          <button type="submit" class="bb-btn" id="email-submit">Save email</button>
+        </form>
+      </section>
+
+      <section>
         <h2>Change password</h2>
         <form class="bb-form" id="cp-form" novalidate>
           <label class="bb-field">
@@ -69,6 +99,47 @@ const account = await getAccount(session.barberId);
         const okEl = document.getElementById('cp-ok');
         const submit = document.getElementById('cp-submit');
         const signout = document.getElementById('signout-btn');
+        const emailForm = document.getElementById('email-form');
+        const emailError = document.getElementById('email-error');
+        const emailOk = document.getElementById('email-ok');
+        const emailSubmit = document.getElementById('email-submit');
+        if (emailForm) {
+          emailForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            emailError.hidden = true;
+            emailOk.hidden = true;
+            const data = new FormData(emailForm);
+            const email = String(data.get('email') ?? '');
+            emailSubmit.disabled = true;
+            const original = emailSubmit.textContent;
+            emailSubmit.textContent = 'Saving…';
+            try {
+              const res = await fetch('/api/barber/auth/update-email', {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email }),
+              });
+              const body = await res.json();
+              if (!body.ok) {
+                emailError.textContent =
+                  body?.error?.detail || 'Could not save email.';
+                emailError.hidden = false;
+                emailSubmit.disabled = false;
+                emailSubmit.textContent = original;
+                return;
+              }
+              emailOk.hidden = false;
+              emailSubmit.disabled = false;
+              emailSubmit.textContent = original;
+            } catch (_err) {
+              emailError.textContent = 'Network error. Try again.';
+              emailError.hidden = false;
+              emailSubmit.disabled = false;
+              emailSubmit.textContent = original;
+            }
+          });
+        }
         if (form) {
           form.addEventListener('submit', async (e) => {
             e.preventDefault();

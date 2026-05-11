@@ -333,6 +333,18 @@ Astro.response.headers.append('Set-Cookie', refreshBarberSessionCookie(session))
         </nav>
       </header>
 
+      {!account.email && (
+        <div class="bb-banner">
+          <p>
+            <strong>Set your notification email</strong> so waitlist customers who
+            ask for you reach you directly.
+          </p>
+          <a class="bb-btn bb-btn--ghost bb-btn--sm" href={`${base}/barber/account`}>
+            Add email →
+          </a>
+        </div>
+      )}
+
       <nav class="bb-tabs" role="tablist" aria-label="Dashboard sections">
         <a
           class={`bb-tab ${activeTab === 'appointments' ? 'is-active' : ''}`}

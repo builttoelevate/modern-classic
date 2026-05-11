@@ -91,6 +91,24 @@
 }
 .bb-head__nav a:hover, .bb-head__nav .bb-link:hover { color: var(--bb-gold); }
 
+/* ---------- Banner (e.g. "set your email") ---------- */
+.bb-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  background: rgba(201, 163, 92, 0.08);
+  border: 1px solid rgba(201, 163, 92, 0.4);
+  border-radius: var(--bb-radius);
+  padding: 12px 16px;
+  margin-bottom: 18px;
+  color: var(--bb-text);
+  font-size: 0.92rem;
+}
+.bb-banner p { margin: 0; }
+.bb-banner strong { color: var(--bb-gold-light); }
+
 /* ---------- Tabs (Appointments | Waitlist) ---------- */
 .bb-tabs {
   display: flex;

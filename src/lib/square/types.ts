@@ -82,6 +82,10 @@ export interface Barber {
   familyName: string;
   displayName: string;
   role: string;
+  /** Email pulled from Square's TeamMember.email_address, when set.
+   *  Used as a fallback inbox for waitlist barber notifications when
+   *  the barber hasn't customized their email in their account. */
+  email?: string;
 }
 
 // ---------- Catalog ----------

@@ -1,7 +1,13 @@
 import type { APIRoute } from 'astro';
-import { sendWaitlistConfirmation, sendWaitlistRequest } from '../../lib/email/resend';
+import {
+  sendWaitlistBarberNotification,
+  sendWaitlistConfirmation,
+  sendWaitlistRequest,
+} from '../../lib/email/resend';
 import { redactEmail } from '../../lib/booking/log';
 import { recordWaitlistEntry } from '../../lib/marketing/waitlistLog';
+import { getAccount } from '../../lib/barber/accountStore';
+import { getBarbers } from '../../lib/square/team';
 
 export const prerender = false;
 
@@ -28,6 +34,27 @@ function formatWindow(dateFrom: string | undefined, dateTo: string | undefined):
   if (dateTo) return `Through ${fmt(dateTo)}`;
   return '';
 }
+// Summarize day-of-week + time-of-day chips into a single human line
+// for the barber notification email ("Mon, Tue, Wed · afternoon").
+// Returns empty when neither field has anything actionable.
+function buildPreferenceLabel(
+  days: string[] | undefined,
+  times: string[] | undefined,
+): string {
+  const dayLabels: Record<string, string> = {
+    mon: 'Mon', tue: 'Tue', wed: 'Wed', thu: 'Thu', fri: 'Fri', sat: 'Sat',
+  };
+  const timeLabels: Record<string, string> = {
+    morning: 'morning', afternoon: 'afternoon', evening: 'evening',
+  };
+  const d = (days ?? []).map((k) => dayLabels[k]).filter(Boolean);
+  const t = (times ?? []).map((k) => timeLabels[k]).filter(Boolean);
+  const parts: string[] = [];
+  if (d.length > 0) parts.push(d.join(', '));
+  if (t.length > 0) parts.push(t.join(', '));
+  return parts.join(' · ');
+}
+
 const RATE_LIMIT_SECONDS = 60;
 const lastSubmittedAt = new Map<string, number>();
 
@@ -266,13 +293,14 @@ export const POST: APIRoute = async ({ request, clientAddress }) => {
     // (email sent above + KV record), and the form has its own success
     // state, so a missing acknowledgment email shouldn't surface as an
     // error to the customer.
+    const windowLabel = formatWindow(dateFrom, dateTo);
     try {
       const confirmResult = await sendWaitlistConfirmation({
         to: email,
         customerName: name,
         serviceName,
         barberName,
-        windowLabel: formatWindow(dateFrom, dateTo),
+        windowLabel,
         shopAddress: SHOP_ADDRESS,
         shopPhone: SHOP_PHONE,
       });
@@ -284,6 +312,87 @@ export const POST: APIRoute = async ({ request, clientAddress }) => {
     } catch (err) {
       const detail = err instanceof Error ? err.message : String(err);
       logWaitlist({ phase: 'confirmation-send-failed', email: redactEmail(email), detail });
+    }
+
+    // Barber notification — fired when the customer specifically named
+    // one or more barbers on the form. Each requested barber gets their
+    // own email (with customer phone / email surfaced for quick text or
+    // call back). "Any barber" entries don't trigger this — they're
+    // generic and would spam every barber's inbox on every submit.
+    //
+    // Email resolution: barber's own account-store email wins; if unset
+    // we fall back to Square's TeamMember.email_address. If neither is
+    // present, we skip that barber silently. Failures are logged but
+    // never fatal — the shop already has the request and the customer
+    // already got their confirmation.
+    const requestedIds = teamMemberIds.length > 0
+      ? teamMemberIds
+      : teamMemberId
+        ? [teamMemberId]
+        : [];
+    if (requestedIds.length > 0) {
+      try {
+        const baseUrl = new URL(request.url).origin;
+        const dashboardUrl = `${baseUrl}/barber/dashboard?tab=waitlist`;
+        const preferenceLabel = buildPreferenceLabel(daysOfWeek, timesOfDay);
+        // Look up account + Square roster in parallel so the barber
+        // notifications kick off as fast as possible.
+        const [squareRoster, accounts] = await Promise.all([
+          getBarbers().catch(() => []),
+          Promise.all(requestedIds.map((id) => getAccount(id).catch(() => null))),
+        ]);
+        const squareById = new Map(squareRoster.map((b) => [b.id, b] as const));
+        const sentTo = new Set<string>();
+        await Promise.all(
+          requestedIds.map(async (id, i) => {
+            const account = accounts[i];
+            const squareEntry = squareById.get(id);
+            const inbox = (account?.email && account.email.trim())
+              || (squareEntry?.email && squareEntry.email.trim())
+              || '';
+            if (!inbox) {
+              logWaitlist({ phase: 'barber-notify-skipped-no-email', teamMemberId: id });
+              return;
+            }
+            const inboxKey = inbox.toLowerCase();
+            if (sentTo.has(inboxKey)) return; // de-dup duplicate inboxes
+            sentTo.add(inboxKey);
+            const displayName = barberDisplayNames[i] || squareEntry?.displayName || barberName;
+            try {
+              const r = await sendWaitlistBarberNotification({
+                to: inbox,
+                barberDisplayName: displayName,
+                customerName: name,
+                customerEmail: email,
+                customerPhone: phone,
+                serviceName,
+                windowLabel,
+                preferenceLabel,
+                note,
+                dashboardUrl,
+                shopPhone: SHOP_PHONE,
+              });
+              logWaitlist({
+                phase: 'barber-notify-sent',
+                teamMemberId: id,
+                inbox: redactEmail(inbox),
+                messageId: r.id,
+              });
+            } catch (err) {
+              const detail = err instanceof Error ? err.message : String(err);
+              logWaitlist({
+                phase: 'barber-notify-failed',
+                teamMemberId: id,
+                inbox: redactEmail(inbox),
+                detail,
+              });
+            }
+          }),
+        );
+      } catch (err) {
+        const detail = err instanceof Error ? err.message : String(err);
+        logWaitlist({ phase: 'barber-notify-resolve-failed', detail });
+      }
     }
 
     return Response.json({ ok: true });

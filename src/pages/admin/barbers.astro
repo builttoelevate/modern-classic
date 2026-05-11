@@ -27,6 +27,12 @@ interface Row {
   role: string;
   hasAccount: boolean;
   username?: string;
+  /** Notification email currently stored on the account. */
+  accountEmail?: string;
+  /** Email from Square's TeamMember.email_address — used as the
+   *  pre-fill default on provisioning, and as the fallback inbox when
+   *  the account email is empty. */
+  squareEmail?: string;
   mustChangePassword?: boolean;
   updatedAt?: string;
   /** Default username we'd use if Michael clicks "Provision" without
@@ -51,6 +57,8 @@ const rows: Row[] = barbers.map((b) => {
     role: b.role,
     hasAccount: Boolean(acct),
     username: acct?.username,
+    accountEmail: acct?.email,
+    squareEmail: b.email,
     mustChangePassword: acct?.mustChangePassword,
     updatedAt: acct?.updatedAt,
     suggestedUsername: suggestUsername(b),
@@ -226,6 +234,12 @@ const unprovisioned = rows.filter((r) => !r.hasAccount);
         font-size: 0.85rem;
         margin-top: 8px;
       }
+      .email-form {
+        margin-top: 4px;
+        padding-top: 10px;
+        border-top: 1px dashed var(--border);
+      }
+      .email-form .actions { margin-top: 4px; }
     </style>
   </head>
   <body>
@@ -287,6 +301,13 @@ const unprovisioned = rows.filter((r) => !r.hasAccount);
                 {r.hasAccount ? (
                   <>
                     <strong>Username:</strong> {r.username}<br />
+                    <strong>Waitlist inbox:</strong>{' '}
+                    {r.accountEmail
+                      ? r.accountEmail
+                      : r.squareEmail
+                        ? <>{r.squareEmail} <em style="color: var(--dim);">(from Square)</em></>
+                        : <em style="color: var(--dim);">not set — barber will miss waitlist alerts</em>}
+                    <br />
                     {r.updatedAt && (
                       <><strong>Last update:</strong> {new Date(r.updatedAt).toLocaleString()}</>
                     )}
@@ -301,16 +322,41 @@ const unprovisioned = rows.filter((r) => !r.hasAccount);
                     <label>Username</label>
                     <input type="text" data-username-input value={r.suggestedUsername} />
                   </div>
+                  <div class="field">
+                    <label>Waitlist email (optional)</label>
+                    <input
+                      type="email"
+                      data-email-input
+                      value={r.squareEmail ?? ''}
+                      placeholder="barber@example.com"
+                    />
+                  </div>
                   <div class="actions">
                     <button type="button" class="btn" data-provision-btn>Provision login</button>
                   </div>
                 </div>
               )}
               {r.hasAccount && (
-                <div class="actions">
-                  <button type="button" class="btn btn--ghost" data-reset-btn>Reset password</button>
-                  <button type="button" class="btn btn--danger" data-remove-btn>Remove login</button>
-                </div>
+                <>
+                  <div class="email-form">
+                    <div class="field">
+                      <label>Waitlist email</label>
+                      <input
+                        type="email"
+                        data-email-edit-input
+                        value={r.accountEmail ?? ''}
+                        placeholder={r.squareEmail ? `Defaults to ${r.squareEmail}` : 'barber@example.com'}
+                      />
+                    </div>
+                    <div class="actions">
+                      <button type="button" class="btn btn--ghost" data-email-save-btn>Save email</button>
+                    </div>
+                  </div>
+                  <div class="actions">
+                    <button type="button" class="btn btn--ghost" data-reset-btn>Reset password</button>
+                    <button type="button" class="btn btn--danger" data-remove-btn>Remove login</button>
+                  </div>
+                </>
               )}
               <div class="credentials" data-credentials hidden></div>
               <p class="err-row" data-error hidden></p>
@@ -366,12 +412,14 @@ const unprovisioned = rows.filter((r) => !r.hasAccount);
           if (el) el.hidden = true;
         }
 
-        async function provision(teamMemberId, username) {
+        async function provision(teamMemberId, username, email) {
+          const payload = { teamMemberId, username };
+          if (typeof email === 'string') payload.email = email;
           const res = await fetch('/api/admin/barbers/upsert', {
             method: 'POST',
             credentials: 'same-origin',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ teamMemberId, username }),
+            body: JSON.stringify(payload),
           });
           return res.json();
         }
@@ -393,6 +441,15 @@ const unprovisioned = rows.filter((r) => !r.hasAccount);
           });
           return res.json();
         }
+        async function updateEmail(teamMemberId, email) {
+          const res = await fetch('/api/admin/barbers/update-email', {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ teamMemberId, email }),
+          });
+          return res.json();
+        }
 
         document.querySelectorAll('[data-team-member-id]').forEach((card) => {
           const teamMemberId = card.dataset.teamMemberId;
@@ -402,7 +459,9 @@ const unprovisioned = rows.filter((r) => !r.hasAccount);
             provisionBtn.addEventListener('click', async () => {
               clearError(card);
               const usernameInput = card.querySelector('[data-username-input]');
+              const emailInput = card.querySelector('[data-email-input]');
               const username = (usernameInput && usernameInput.value) || '';
+              const email = emailInput ? emailInput.value : undefined;
               if (!username) {
                 showError(card, 'Username is required.');
                 return;
@@ -411,7 +470,7 @@ const unprovisioned = rows.filter((r) => !r.hasAccount);
               const original = provisionBtn.textContent;
               provisionBtn.textContent = 'Provisioning…';
               try {
-                const body = await provision(teamMemberId, username);
+                const body = await provision(teamMemberId, username, email);
                 if (!body.ok) {
                   showError(card, body?.error?.detail || 'Could not provision.');
                   provisionBtn.disabled = false;
@@ -424,6 +483,36 @@ const unprovisioned = rows.filter((r) => !r.hasAccount);
                 showError(card, 'Network error. Try again.');
                 provisionBtn.disabled = false;
                 provisionBtn.textContent = original;
+              }
+            });
+          }
+
+          const emailSaveBtn = card.querySelector('[data-email-save-btn]');
+          if (emailSaveBtn) {
+            emailSaveBtn.addEventListener('click', async () => {
+              clearError(card);
+              const input = card.querySelector('[data-email-edit-input]');
+              const email = input ? input.value : '';
+              emailSaveBtn.disabled = true;
+              const original = emailSaveBtn.textContent;
+              emailSaveBtn.textContent = 'Saving…';
+              try {
+                const body = await updateEmail(teamMemberId, email);
+                if (!body.ok) {
+                  showError(card, body?.error?.detail || 'Could not save email.');
+                  emailSaveBtn.disabled = false;
+                  emailSaveBtn.textContent = original;
+                  return;
+                }
+                emailSaveBtn.textContent = 'Saved';
+                setTimeout(() => {
+                  emailSaveBtn.disabled = false;
+                  emailSaveBtn.textContent = original;
+                }, 1200);
+              } catch (_err) {
+                showError(card, 'Network error. Try again.');
+                emailSaveBtn.disabled = false;
+                emailSaveBtn.textContent = original;
               }
             });
           }
@@ -493,8 +582,10 @@ const unprovisioned = rows.filter((r) => !r.hasAccount);
             for (const card of cards) {
               const teamMemberId = card.dataset.teamMemberId;
               const username = card.querySelector('[data-username-input]').value;
+              const emailInput = card.querySelector('[data-email-input]');
+              const email = emailInput ? emailInput.value : undefined;
               try {
-                const body = await provision(teamMemberId, username);
+                const body = await provision(teamMemberId, username, email);
                 if (body.ok) {
                   showCreds(card, body.account.username, body.generatedPassword);
                   const btn = card.querySelector('[data-provision-btn]');
