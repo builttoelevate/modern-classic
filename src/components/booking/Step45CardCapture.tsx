@@ -17,6 +17,12 @@ import { useEffect, useRef, useState } from 'react';
 interface Props {
   customerId: string;
   cardholderName: string;
+  /** First name from the booking form. Passed to Square's verifyBuyer
+   *  as billingContact.givenName — required for the SCA verification
+   *  Square does before allowing a card to be stored on file. */
+  customerGivenName: string;
+  /** Last name — paired with customerGivenName for billingContact. */
+  customerFamilyName: string;
   /** Charge amount preview displayed next to the policy callout, e.g. "$45". */
   servicePriceDisplay: string;
   acknowledgedPolicy: boolean;
@@ -34,26 +40,47 @@ interface Props {
 const SDK_PROD_URL = 'https://web.squarecdn.com/v1/square.js';
 const SDK_SANDBOX_URL = 'https://sandbox.web.squarecdn.com/v1/square.js';
 
+interface SquareCardInstance {
+  attach: (selector: string) => Promise<void>;
+  tokenize: () => Promise<{
+    status: 'OK' | 'ERROR' | string;
+    token?: string;
+    errors?: Array<{ message?: string; field?: string }>;
+    details?: { card?: { brand?: string; last4?: string } };
+  }>;
+  destroy: () => Promise<void> | void;
+}
+
+interface SquarePaymentsInstance {
+  card: (options?: unknown) => Promise<SquareCardInstance>;
+  // Square's SCA / 3DS step. Required for storing a card on file —
+  // CreateCard rejects with "Invalid card data." when source_id came from
+  // a nonce that wasn't paired with a verifyBuyer token.
+  verifyBuyer: (
+    sourceId: string,
+    verificationDetails: {
+      amount: string;
+      currencyCode: string;
+      intent: 'CHARGE' | 'STORE' | 'CHARGE_AND_STORE';
+      billingContact?: {
+        givenName?: string;
+        familyName?: string;
+        countryCode?: string;
+        email?: string;
+        phone?: string;
+      };
+      customerInitiated: boolean;
+      sellerKeyedIn: boolean;
+    },
+  ) => Promise<{ token: string; details?: { cardBrand?: string } }>;
+}
+
 declare global {
   interface Window {
     // Square Web Payments SDK is attached to window.Square at runtime.
     // We type only the bits we use.
     Square?: {
-      payments: (
-        appId: string,
-        locationId: string,
-      ) => Promise<{
-        card: (options?: unknown) => Promise<{
-          attach: (selector: string) => Promise<void>;
-          tokenize: () => Promise<{
-            status: 'OK' | 'ERROR' | string;
-            token?: string;
-            errors?: Array<{ message?: string; field?: string }>;
-            details?: { card?: { brand?: string; last4?: string } };
-          }>;
-          destroy: () => Promise<void> | void;
-        }>;
-      }>;
+      payments: (appId: string, locationId: string) => Promise<SquarePaymentsInstance>;
     };
   }
 }
@@ -112,6 +139,8 @@ async function loadSdk(sandbox: boolean): Promise<void> {
 export function Step45CardCapture({
   customerId,
   cardholderName,
+  customerGivenName,
+  customerFamilyName,
   servicePriceDisplay,
   acknowledgedPolicy,
   onAcknowledgeChange,
@@ -124,7 +153,11 @@ export function Step45CardCapture({
   const [sdkError, setSdkError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
-  const cardRef = useRef<{ tokenize: () => Promise<unknown>; destroy: () => unknown } | null>(null);
+  const cardRef = useRef<SquareCardInstance | null>(null);
+  // Held across renders so submit() can call verifyBuyer() with the same
+  // payments instance that produced the card form. Re-initializing the
+  // instance mid-submit would lose the SCA challenge context.
+  const paymentsRef = useRef<SquarePaymentsInstance | null>(null);
   const cardContainerId = 'mc-square-card-container';
 
   // SDK + card-form lifecycle. Once a card has been saved we leave the
@@ -151,6 +184,7 @@ export function Step45CardCapture({
         if (!window.Square) throw new Error('Square SDK did not initialize');
         const payments = await window.Square.payments(env.appId!, env.locationId!);
         if (cancelled) return;
+        paymentsRef.current = payments;
         const card = await payments.card({
           style: {
             input: {
@@ -211,16 +245,11 @@ export function Step45CardCapture({
   }, [customerId, existingCard]);
 
   const submit = async () => {
-    if (!cardRef.current) return;
+    if (!cardRef.current || !paymentsRef.current) return;
     setSubmitting(true);
     setSubmitError(null);
     try {
-      const result = (await cardRef.current.tokenize()) as {
-        status: string;
-        token?: string;
-        errors?: Array<{ message?: string }>;
-        details?: { card?: { brand?: string; last4?: string } };
-      };
+      const result = await cardRef.current.tokenize();
       if (result.status !== 'OK' || !result.token) {
         const msg =
           result.errors && result.errors[0]?.message
@@ -230,6 +259,36 @@ export function Step45CardCapture({
         setSubmitting(false);
         return;
       }
+
+      // Square requires an SCA verification token paired with the nonce
+      // before it'll let us store the card on file. STORE intent +
+      // amount '0.00' is the standard "vault for later" pattern — the
+      // policy callout above already disclosed the worst-case charge.
+      let verificationToken: string | undefined;
+      try {
+        const verify = await paymentsRef.current.verifyBuyer(result.token, {
+          amount: '0.00',
+          currencyCode: 'USD',
+          intent: 'STORE',
+          billingContact: {
+            givenName: customerGivenName || undefined,
+            familyName: customerFamilyName || undefined,
+            countryCode: 'US',
+          },
+          customerInitiated: true,
+          sellerKeyedIn: false,
+        });
+        verificationToken = verify.token;
+      } catch (verifyErr) {
+        setSubmitError(
+          verifyErr instanceof Error
+            ? `Could not verify card with your bank: ${verifyErr.message}`
+            : 'Could not verify card with your bank. Please try again.',
+        );
+        setSubmitting(false);
+        return;
+      }
+
       const res = await fetch('/api/booking/save-card', {
         method: 'POST',
         credentials: 'same-origin',
@@ -237,6 +296,7 @@ export function Step45CardCapture({
         body: JSON.stringify({
           customerId,
           sourceId: result.token,
+          verificationToken,
           cardholderName: cardholderName || undefined,
         }),
       });

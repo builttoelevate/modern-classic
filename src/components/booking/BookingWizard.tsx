@@ -833,6 +833,8 @@ export default function BookingWizard({
         <Step45CardCapture
           customerId={state.cardCapture.customerId}
           cardholderName={`${state.customer.givenName} ${state.customer.familyName}`.trim()}
+          customerGivenName={state.customer.givenName}
+          customerFamilyName={state.customer.familyName}
           servicePriceDisplay={priceDisplayForBooking(state.selectedService, state.selectedVariation)}
           acknowledgedPolicy={state.cardCapture.acknowledgedPolicy}
           onAcknowledgeChange={(value) =>
