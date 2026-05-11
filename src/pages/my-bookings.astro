@@ -10,11 +10,11 @@ import NewCustomerCard from '../components/bookings/NewCustomerCard.tsx';
 import { ProductRecommendations } from '../components/bookings/ProductRecommendations.tsx';
 import { getSession, refreshSessionCookie } from '../lib/auth/middleware';
 import { isAuthConfigured } from '../lib/auth/session';
-import { getCustomerBookings } from '../lib/square/customerBookings';
 import { adoptMissingGroupSiblings } from '../lib/customer/groupSelfHeal';
 import { getRetailProducts } from '../lib/square/products';
 import { getBarbers } from '../lib/square/team';
 import { listLinkedPeople } from '../lib/customer/profileLinks';
+import { getMergedBookingsForSession } from '../lib/customer/familyBookings';
 import { recommendForBooking, generalRecommendations } from '../lib/recommendations/forBooking';
 import { findUsualCombo, type UsualCombo } from '../lib/booking/usual';
 import { shouldShowRebookCard } from '../lib/booking/rebookEligibility';
@@ -61,90 +61,82 @@ let loadError: string | null = null;
 const debugMode = new URL(Astro.request.url).searchParams.get('debug') === '1';
 interface DebugInfo {
   sessionCustomerId: string;
+  family: {
+    familyId: string;
+    memberCount: number;
+    members: Array<{ customerId: string; role: string; displayName: string }>;
+  } | null;
   linkedPeople: Array<{ customerId: string; displayName: string }>;
-  parentBookingsCount: { upcoming: number; past: number };
-  kidFetchResults: Array<{
-    displayName: string;
-    customerId: string;
-    upcomingCount: number;
-    pastCount: number;
-    upcomingSummary: string[];
-  }>;
+  /** customerIds whose bookings were fetched + merged into the view.
+   *  Helps confirm Brook's record (or anyone else's) is being pulled
+   *  in via the family path. */
+  fetchedCustomerIds: string[];
+  mergedBookingCount: { upcoming: number; past: number };
   groupGapsBefore: Array<{ groupId: string; total: number; visible: number }>;
   adoptedFromSelfHeal: number;
 }
 const debugInfo: DebugInfo | null = debugMode
   ? {
       sessionCustomerId: session.customerId,
+      family: null,
       linkedPeople: [],
-      parentBookingsCount: { upcoming: 0, past: 0 },
-      kidFetchResults: [],
+      fetchedCustomerIds: [],
+      mergedBookingCount: { upcoming: 0, past: 0 },
       groupGapsBefore: [],
       adoptedFromSelfHeal: 0,
     }
   : null;
 
 try {
-  const linkedPeople = await listLinkedPeople(session.customerId).catch(() => []);
-  const [b, p, bs, ...kidBookingResults] = await Promise.all([
-    getCustomerBookings(session.customerId),
+  // getMergedBookingsForSession handles BOTH the family path (every
+  // family member + each adult's legacy linked kids) AND the legacy
+  // path (session customer + their own linked kids). The page no
+  // longer needs to know which model is in play.
+  const [merged, p, bs, legacyKidsForDebug] = await Promise.all([
+    getMergedBookingsForSession(session.customerId),
     getRetailProducts(),
     getBarbers(),
-    // Each linked person's bookings, parallel. Failures fall through to
-    // empty so one bad lookup doesn't blank the whole page.
-    ...linkedPeople.map((lp) =>
-      getCustomerBookings(lp.customerId)
-        .then((kb) => ({ person: lp, bookings: kb }))
-        .catch(() => ({ person: lp, bookings: { upcoming: [], past: [] } })),
-    ),
+    // Surfaced only for the debug overlay; the helper already
+    // includes these kids in the merged view.
+    debugInfo
+      ? listLinkedPeople(session.customerId).catch(() => [])
+      : Promise.resolve([]),
   ]);
-  bookings = b;
+  bookings = merged.bookings;
   products = p;
   activeBarberIds = new Set(bs.map((m) => m.id));
 
   if (debugInfo) {
-    debugInfo.linkedPeople = linkedPeople.map((lp) => ({
+    debugInfo.family = merged.family
+      ? {
+          familyId: merged.family.familyId,
+          memberCount: merged.family.members.length,
+          members: merged.family.members.map((m) => ({
+            customerId: m.customerId,
+            role: m.role,
+            displayName: m.displayName,
+          })),
+        }
+      : null;
+    debugInfo.linkedPeople = legacyKidsForDebug.map((lp) => ({
       customerId: lp.customerId,
       displayName: lp.displayName,
     }));
-    debugInfo.parentBookingsCount = {
-      upcoming: b.upcoming.length,
-      past: b.past.length,
+    debugInfo.fetchedCustomerIds = [...merged.knownCustomerIds];
+    debugInfo.mergedBookingCount = {
+      upcoming: bookings.upcoming.length,
+      past: bookings.past.length,
     };
-    for (const r of kidBookingResults as Array<{ person: { displayName: string; customerId: string }; bookings: typeof bookings }>) {
-      debugInfo.kidFetchResults.push({
-        displayName: r.person.displayName,
-        customerId: r.person.customerId,
-        upcomingCount: r.bookings.upcoming.length,
-        pastCount: r.bookings.past.length,
-        upcomingSummary: r.bookings.upcoming.map(
-          (bk) => `${bk.startAtLocal} · ${bk.serviceName}${bk.groupId ? ` · group ${bk.groupPosition}/${bk.groupTotal}` : ''}`,
-        ),
-      });
-    }
   }
 
-  // Merge linked-person bookings into the parent's lists, decorating each
-  // with the person's name so the BookingCard can show "for Briar".
-  for (const result of kidBookingResults as Array<{ person: { displayName: string }; bookings: typeof bookings }>) {
-    for (const ub of result.bookings.upcoming) {
-      bookings.upcoming.push({ ...ub, bookingFor: result.person.displayName });
-    }
-    for (const pb of result.bookings.past) {
-      bookings.past.push({ ...pb, bookingFor: result.person.displayName });
-    }
-  }
-  // Pull in any group-booking siblings we'd otherwise be missing. Safe
-  // when there are no incomplete groups — the helper is a no-op then.
-  // Errors are swallowed so the page still renders.
+  // Phone-based self-heal for any group-booking siblings whose
+  // customerId we don't already know about (booking flow's linkPerson
+  // failed at create time, etc.). The helper's knownCustomerIds
+  // already covers every record that contributed to the merge — both
+  // family members and legacy linked kids — so the self-heal only
+  // adopts truly orphaned records.
   try {
-    const knownIds = new Set<string>([
-      session.customerId,
-      ...linkedPeople.map((lp) => lp.customerId),
-    ]);
     if (debugInfo) {
-      // Capture pre-self-heal gaps so the overlay can tell whether
-      // the self-heal had work to do at all.
       const gaps = new Map<string, { total: number; visible: number }>();
       for (const bk of [...bookings.upcoming, ...bookings.past]) {
         if (!bk.groupId || !bk.groupTotal) continue;
@@ -158,7 +150,11 @@ try {
         visible: v.visible,
       }));
     }
-    const adopted = await adoptMissingGroupSiblings(session.customerId, knownIds, bookings);
+    const adopted = await adoptMissingGroupSiblings(
+      session.customerId,
+      merged.knownCustomerIds,
+      bookings,
+    );
     if (debugInfo) debugInfo.adoptedFromSelfHeal = adopted;
     if (adopted > 0) {
       // eslint-disable-next-line no-console
