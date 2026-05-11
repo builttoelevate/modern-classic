@@ -75,6 +75,57 @@ export interface WizardState {
   status: WizardStatus;
   /** Phase 8 — card-on-file capture for new customers. */
   cardCapture: CardCaptureState;
+  /** Book Ahead — when frequencyWeeks > 0, the wizard reserves
+   *  state.selectedSlot AND every entry in series.generatedSlots in
+   *  one Confirm. When frequencyWeeks === 0 (the default), behaves
+   *  exactly like a single-visit booking. The generator runs the
+   *  moment the customer picks a first slot with frequencyWeeks > 0
+   *  set; UI lives in BookAheadCard / BookingPlanPanel. */
+  series: SeriesState;
+}
+
+export type FrequencyWeeks = 0 | 2 | 3 | 4 | 6;
+export type SeriesCount = 3 | 6 | 12;
+export type GeneratedSlotStatus =
+  /** Initial state before availability resolution finishes. */
+  | 'pending'
+  /** A real Square slot matches the intended date at the same wall-clock
+   *  time as the first visit. Bookable as-is. */
+  | 'available'
+  /** Square returned slots for the day but none at the intended time —
+   *  the barber's calendar already has something there. */
+  | 'taken'
+  /** Square returned no slots at all for the day (barber off, holiday,
+   *  shop closed). */
+  | 'barber-off'
+  /** The intended date is past the booking horizon. */
+  | 'out-of-horizon';
+
+export interface GeneratedSlot {
+  /** Wall-clock-matched intended start time in UTC. Stable across
+   *  availability re-resolutions. */
+  intendedStartAtUtc: string;
+  status: GeneratedSlotStatus;
+  /** The actual Square slot to book against. Set only when
+   *  status === 'available'. */
+  slot: AvailabilitySlot | null;
+  /** Booking outcome after Confirm — populated per-slot as the submit
+   *  loop runs so the success screen can show partial results. */
+  bookingId?: string;
+  bookingError?: string;
+}
+
+export interface SeriesState {
+  frequencyWeeks: FrequencyWeeks;
+  count: SeriesCount;
+  /** Positions 2..N of the series. Position 1 is always
+   *  state.selectedSlot (already a real Square AvailabilitySlot), so
+   *  generatedSlots.length is at most count - 1. Empty when
+   *  frequencyWeeks === 0. */
+  generatedSlots: GeneratedSlot[];
+  /** True while seriesAvailability is fetching/resolving the generated
+   *  dates so the panel can show a spinner instead of stale data. */
+  resolving: boolean;
 }
 
 export const initialCustomer: CustomerInfo = {
@@ -85,6 +136,13 @@ export const initialCustomer: CustomerInfo = {
   note: '',
   updateContact: false,
   marketingConsent: false,
+};
+
+export const initialSeries: SeriesState = {
+  frequencyWeeks: 0,
+  count: 3,
+  generatedSlots: [],
+  resolving: false,
 };
 
 export const initialCardCapture: CardCaptureState = {
@@ -109,6 +167,7 @@ export const initialState: WizardState = {
   customer: initialCustomer,
   status: { kind: 'idle' },
   cardCapture: initialCardCapture,
+  series: initialSeries,
 };
 
 export type WizardAction =
@@ -130,6 +189,13 @@ export type WizardAction =
    *  person. Without a full reset, a leftover cardId from one customer
    *  would silently get attached to a different customer's booking. */
   | { type: 'RESET_CARD_CAPTURE'; required?: boolean | null }
+  | { type: 'SET_SERIES_FREQUENCY'; frequencyWeeks: FrequencyWeeks }
+  | { type: 'SET_SERIES_COUNT'; count: SeriesCount }
+  | { type: 'START_SERIES_RESOLVE' }
+  | { type: 'SET_GENERATED_SLOTS'; slots: GeneratedSlot[] }
+  | { type: 'REMOVE_GENERATED_SLOT'; intendedStartAtUtc: string }
+  | { type: 'REPLACE_GENERATED_SLOT'; intendedStartAtUtc: string; replacement: AvailabilitySlot }
+  | { type: 'MARK_GENERATED_SLOT_RESULT'; intendedStartAtUtc: string; bookingId?: string; bookingError?: string }
   /** "Book another visit" on the success screen — wipes the slot,
    *  service, barber, and status so the wizard goes back to Step 1
    *  ready for a fresh appointment, but KEEPS the customer's name,
@@ -162,6 +228,7 @@ export function reducer(state: WizardState, action: WizardAction): WizardState {
             anyBarber: false,
             selectedSlot: null,
             blockedSlots: [],
+            series: { ...state.series, generatedSlots: [], resolving: false },
             step: 3,
           };
         }
@@ -175,6 +242,7 @@ export function reducer(state: WizardState, action: WizardAction): WizardState {
         selectedSlot: null,
         blockedSlots: [],
         candidateVariations: [],
+        series: { ...state.series, generatedSlots: [], resolving: false },
         step: 2,
       };
     }
@@ -187,6 +255,7 @@ export function reducer(state: WizardState, action: WizardAction): WizardState {
         anyBarber: action.anyBarber ?? false,
         selectedSlot: null,
         blockedSlots: [],
+        series: { ...state.series, generatedSlots: [], resolving: false },
         step: 3,
       };
     case 'SET_ANY_BARBER':
@@ -198,6 +267,7 @@ export function reducer(state: WizardState, action: WizardAction): WizardState {
         anyBarber: true,
         selectedSlot: null,
         blockedSlots: [],
+        series: { ...state.series, generatedSlots: [], resolving: false },
         step: 3,
       };
     case 'SET_ANY_BARBER_MULTI':
@@ -211,6 +281,7 @@ export function reducer(state: WizardState, action: WizardAction): WizardState {
         anyBarber: true,
         selectedSlot: null,
         blockedSlots: [],
+        series: { ...state.series, generatedSlots: [], resolving: false },
         step: 3,
       };
     case 'SET_SLOT': {
@@ -226,6 +297,10 @@ export function reducer(state: WizardState, action: WizardAction): WizardState {
         ...state,
         selectedSlot: action.slot,
         selectedVariation: resolvedVariation,
+        // The generated series is keyed off the first-visit slot. A new
+        // first slot means we need to regenerate from scratch; clear the
+        // old list so Step 3's resolver can populate it fresh.
+        series: { ...state.series, generatedSlots: [], resolving: false },
         step: 4,
       };
     }
@@ -256,6 +331,79 @@ export function reducer(state: WizardState, action: WizardAction): WizardState {
         cardCapture: {
           ...initialCardCapture,
           required: action.required === undefined ? null : action.required,
+        },
+      };
+    case 'SET_SERIES_FREQUENCY':
+      // Changing frequency invalidates any previously-generated slots —
+      // every visit's date depends on the gap between visits.
+      return {
+        ...state,
+        series: {
+          ...state.series,
+          frequencyWeeks: action.frequencyWeeks,
+          generatedSlots: [],
+          resolving: false,
+        },
+      };
+    case 'SET_SERIES_COUNT':
+      // Same — count drives how many slots we need to generate.
+      return {
+        ...state,
+        series: {
+          ...state.series,
+          count: action.count,
+          generatedSlots: [],
+          resolving: false,
+        },
+      };
+    case 'START_SERIES_RESOLVE':
+      return { ...state, series: { ...state.series, resolving: true } };
+    case 'SET_GENERATED_SLOTS':
+      return {
+        ...state,
+        series: {
+          ...state.series,
+          generatedSlots: action.slots,
+          resolving: false,
+        },
+      };
+    case 'REMOVE_GENERATED_SLOT':
+      return {
+        ...state,
+        series: {
+          ...state.series,
+          generatedSlots: state.series.generatedSlots.filter(
+            (g) => g.intendedStartAtUtc !== action.intendedStartAtUtc,
+          ),
+        },
+      };
+    case 'REPLACE_GENERATED_SLOT':
+      return {
+        ...state,
+        series: {
+          ...state.series,
+          generatedSlots: state.series.generatedSlots.map((g) =>
+            g.intendedStartAtUtc === action.intendedStartAtUtc
+              ? {
+                  ...g,
+                  status: 'available' as const,
+                  slot: action.replacement,
+                  intendedStartAtUtc: action.replacement.startAtUtc,
+                }
+              : g,
+          ),
+        },
+      };
+    case 'MARK_GENERATED_SLOT_RESULT':
+      return {
+        ...state,
+        series: {
+          ...state.series,
+          generatedSlots: state.series.generatedSlots.map((g) =>
+            g.intendedStartAtUtc === action.intendedStartAtUtc
+              ? { ...g, bookingId: action.bookingId, bookingError: action.bookingError }
+              : g,
+          ),
         },
       };
     case 'START_ANOTHER_BOOKING':

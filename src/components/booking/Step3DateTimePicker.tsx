@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { AvailabilitySlot, Barber, DayOfWeek, Location, ServiceVariation } from '../../lib/square/types';
 import { WaitlistSheet } from './WaitlistSheet';
+import { BookAheadCard } from './BookAheadCard';
+import { BookingPlanPanel } from './BookingPlanPanel';
+import type { FrequencyWeeks, GeneratedSlot, SeriesCount } from './wizardState';
 
 interface Props {
   /**
@@ -28,6 +31,19 @@ interface Props {
    * customer can opt into being notified about ANY of several barbers
    * (e.g. "let me know if Michael OR Rick has an opening"). */
   barbers?: Barber[];
+  /** Book Ahead — current series picks. The card sits above the
+   *  calendar and the plan panel renders below once a first slot is
+   *  picked AND frequencyWeeks > 0. Series resolution itself lives
+   *  in BookingWizard so the dispatch wiring stays in one place. */
+  seriesFrequencyWeeks: FrequencyWeeks;
+  seriesCount: SeriesCount;
+  generatedSlots: GeneratedSlot[];
+  seriesResolving: boolean;
+  /** Service price snapshot used for the plan-panel total. */
+  pricePerVisitCents: number | null;
+  onSeriesFrequencyChange: (f: FrequencyWeeks) => void;
+  onSeriesCountChange: (c: SeriesCount) => void;
+  onRemoveGeneratedSlot: (intendedStartAtUtc: string) => void;
 }
 
 const SHOP_TZ = 'America/New_York';
@@ -200,6 +216,14 @@ export function Step3DateTimePicker({
   prefillEmail,
   prefillPhone,
   barbers,
+  seriesFrequencyWeeks,
+  seriesCount,
+  generatedSlots,
+  seriesResolving,
+  pricePerVisitCents,
+  onSeriesFrequencyChange,
+  onSeriesCountChange,
+  onRemoveGeneratedSlot,
 }: Props) {
   const variationKey = variations.map((v) => v.id).join(',');
   const today = useMemo(() => todayInShopTz(), []);
@@ -347,6 +371,13 @@ export function Step3DateTimePicker({
         <h2>Pick a date and time</h2>
         <p>All times shown in shop time (Eastern). Closed Sundays.</p>
       </div>
+
+      <BookAheadCard
+        frequencyWeeks={seriesFrequencyWeeks}
+        count={seriesCount}
+        onFrequencyChange={onSeriesFrequencyChange}
+        onCountChange={onSeriesCountChange}
+      />
 
       <div className="bw-cal">
         <div className="bw-cal-head">
@@ -510,6 +541,16 @@ export function Step3DateTimePicker({
           </div>
         </div>
       )}
+
+      {selected && seriesFrequencyWeeks > 0 ? (
+        <BookingPlanPanel
+          firstSlot={selected}
+          generatedSlots={generatedSlots}
+          resolving={seriesResolving}
+          pricePerVisitCents={pricePerVisitCents}
+          onRemoveSlot={onRemoveGeneratedSlot}
+        />
+      ) : null}
 
       {/*
         Persistent waitlist offer. Visible enough that customers who don't

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { AvailabilitySlot, Barber, Service, ServiceVariation } from '../../lib/square/types';
-import type { CustomerInfo, WizardStatus } from './wizardState';
+import type { CustomerInfo, SeriesState, WizardStatus } from './wizardState';
 import { digits, priceForService } from './wizardState';
 
 interface Props {
@@ -15,12 +15,17 @@ interface Props {
   onEditSlot: () => void;
   onEditCustomer: () => void;
   onUpdateContactToggle: (value: boolean) => void;
-  /** Fired from the success screen's "Book another" button. When
-   *  provided, the button does a soft wizard reset (preserving the
-   *  customer's contact info) instead of a hard navigation back to
-   *  /book. Optional so the wizard can decide per-mount whether to
-   *  surface it. */
+  /** Fired from the success screen's "Book Ahead" button (replaces
+   *  the previous "Book another" CTA). When provided, the button
+   *  does a soft wizard reset (preserving the customer's contact
+   *  info) instead of a hard navigation back to /book. Optional so
+   *  the wizard can decide per-mount whether to surface it. */
   onBookAnother?: () => void;
+  /** Book Ahead series state. When series.frequencyWeeks > 0 the
+   *  summary renders the full visit list (pre-confirm) or the
+   *  per-visit booking results (post-confirm) in place of the
+   *  single-slot "When" row. */
+  series: SeriesState;
   rescheduleMode?: boolean;
   /** When set, the customer captured a card on file in Step 4.5. We
    *  surface it on the summary so they know what's being held, and we
@@ -65,7 +70,26 @@ export function Step5Confirm({
   rescheduleMode = false,
   cardOnFile = null,
   onBookAnother,
+  series,
 }: Props) {
+  const isSeries = series.frequencyWeeks > 0 && series.generatedSlots.length > 0;
+  // First-slot row + every generated row that's at least pending. Used
+  // for the visit list in both pre-confirm and post-confirm states.
+  const seriesRows = isSeries
+    ? [
+        { startAtUtc: slot.startAtUtc, isFirst: true as const, status: 'available' as const, bookingId: undefined as string | undefined, bookingError: undefined as string | undefined },
+        ...series.generatedSlots.map((g) => ({
+          startAtUtc: g.intendedStartAtUtc,
+          isFirst: false as const,
+          status: g.status,
+          bookingId: g.bookingId,
+          bookingError: g.bookingError,
+        })),
+      ]
+    : [];
+  const seriesBookableCount = isSeries
+    ? seriesRows.filter((r) => r.status === 'available').length
+    : 0;
   const [existingContact, setExistingContact] = useState<{ phone?: string; givenName?: string; familyName?: string } | null>(null);
   const [calendarSheetOpen, setCalendarSheetOpen] = useState(false);
 
@@ -130,12 +154,24 @@ export function Step5Confirm({
       <div className="bw-step">
         <div className="bw-success">
           <div className="bw-success-icon" aria-hidden="true">✓</div>
-          <h2>{rescheduleMode ? "You're rescheduled." : "You're booked."}</h2>
+          <h2>
+            {rescheduleMode
+              ? "You're rescheduled."
+              : isSeries
+                ? `You're booked for ${seriesRows.filter((r) => r.isFirst || r.bookingId).length} ${seriesRows.filter((r) => r.isFirst || r.bookingId).length === 1 ? 'visit' : 'visits'}.`
+                : "You're booked."}
+          </h2>
           <p>
             {rescheduleMode ? (
               <>
                 Your appointment is now <strong>{formatLocal(slot.startAtUtc)}</strong>. We'll
                 email a fresh confirmation shortly.
+              </>
+            ) : isSeries ? (
+              <>
+                Confirmation emails are on their way to <strong>{status.emailDestination}</strong>{' '}
+                — one per visit. Your first chair is{' '}
+                <strong>{formatLocal(slot.startAtUtc)}</strong>.
               </>
             ) : (
               <>
@@ -144,6 +180,61 @@ export function Step5Confirm({
               </>
             )}
           </p>
+          {isSeries && (
+            <>
+              <ol className="bw-success-visits">
+                {seriesRows.map((row, idx) => {
+                  const ok = row.isFirst || (!!row.bookingId && !row.bookingError);
+                  const wasUnavailableFromStart =
+                    row.status === 'taken' ||
+                    row.status === 'barber-off' ||
+                    row.status === 'out-of-horizon';
+                  // Sequential loop stops on first failure — anything
+                  // after the failed visit was never attempted, so its
+                  // status is still 'available' but it has no bookingId
+                  // and no bookingError. Surface that as "Not attempted"
+                  // so the customer knows it wasn't a per-slot issue.
+                  const wasSkipped =
+                    !row.isFirst &&
+                    !ok &&
+                    !row.bookingError &&
+                    row.status === 'available';
+                  const tag = ok
+                    ? 'Confirmed'
+                    : row.bookingError
+                      ? row.bookingError
+                      : wasSkipped
+                        ? 'Not attempted'
+                        : wasUnavailableFromStart
+                          ? 'Was unavailable'
+                          : 'Not booked';
+                  return (
+                    <li
+                      key={row.startAtUtc + idx}
+                      className={`bw-success-visits__row bw-success-visits__row--${ok ? 'ok' : 'warn'}`}
+                    >
+                      <span className="bw-success-visits__num">{idx + 1}.</span>
+                      <span className="bw-success-visits__when">{formatLocal(row.startAtUtc)}</span>
+                      <span className="bw-success-visits__tag">{tag}</span>
+                    </li>
+                  );
+                })}
+              </ol>
+              {(() => {
+                const total = seriesRows.length;
+                const succeeded = seriesRows.filter((r) => r.isFirst || (!!r.bookingId && !r.bookingError)).length;
+                if (succeeded === total) return null;
+                const missing = total - succeeded;
+                return (
+                  <p className="bw-success-partial">
+                    {succeeded} of {total} visits confirmed. {missing}{' '}
+                    {missing === 1 ? "couldn't be booked" : "couldn't be booked"} —
+                    visit /my-bookings or call the shop to fill those in.
+                  </p>
+                );
+              })()}
+            </>
+          )}
           <p>819 Linden Avenue, Zanesville, OH 43701</p>
           <div className="bw-success-id">Booking ref: {status.bookingId}</div>
           <div className="bw-success-actions">
@@ -178,11 +269,11 @@ export function Step5Confirm({
                   className="bw-btn"
                   onClick={onBookAnother}
                 >
-                  Book another
+                  Book ahead
                 </button>
               ) : (
                 <a className="bw-btn" href="/book">
-                  Book another
+                  Book ahead
                 </a>
               ))}
             {rescheduleMode && (
@@ -228,16 +319,35 @@ export function Step5Confirm({
           <span className="bw-summary-label">Barber</span>
           <span className="bw-summary-value">{anyBarber ? 'First available' : barber?.displayName ?? '—'}</span>
         </div>
-        <div className="bw-summary-row">
-          <span className="bw-summary-label">{rescheduleMode ? 'New time' : 'When'}</span>
-          <span className="bw-summary-value">{formatLocal(slot.startAtUtc)}</span>
-        </div>
+        {isSeries ? (
+          <div className="bw-summary-row bw-summary-row--list">
+            <span className="bw-summary-label">Visits ({seriesRows.length})</span>
+            <ol className="bw-summary-visits">
+              {seriesRows.map((row, idx) => (
+                <li key={row.startAtUtc + idx} className={`bw-summary-visits__row bw-summary-visits__row--${row.status === 'available' ? 'ok' : 'warn'}`}>
+                  <span className="bw-summary-visits__num">{idx + 1}.</span>
+                  <span className="bw-summary-visits__when">{formatLocal(row.startAtUtc)}</span>
+                  {row.status !== 'available' ? (
+                    <span className="bw-summary-visits__tag">Unavailable</span>
+                  ) : null}
+                </li>
+              ))}
+            </ol>
+          </div>
+        ) : (
+          <div className="bw-summary-row">
+            <span className="bw-summary-label">{rescheduleMode ? 'New time' : 'When'}</span>
+            <span className="bw-summary-value">{formatLocal(slot.startAtUtc)}</span>
+          </div>
+        )}
         <div className="bw-summary-row">
           <span className="bw-summary-label">Duration</span>
           <span className="bw-summary-value">{variation.durationMinutes} min</span>
         </div>
         <div className="bw-summary-row">
-          <span className="bw-summary-label">Price</span>
+          <span className="bw-summary-label">
+            {isSeries ? `Price per visit` : 'Price'}
+          </span>
           <span className="bw-summary-value">
             {priceLabel}
             {isVariablePrice && (
@@ -250,6 +360,14 @@ export function Step5Confirm({
             )}
           </span>
         </div>
+        {isSeries && variation.priceCents !== null && variation.priceCents !== undefined ? (
+          <div className="bw-summary-row">
+            <span className="bw-summary-label">Total ({seriesBookableCount} {seriesBookableCount === 1 ? 'visit' : 'visits'})</span>
+            <span className="bw-summary-value">
+              ${((variation.priceCents * seriesBookableCount) / 100).toFixed(0)}
+            </span>
+          </div>
+        ) : null}
         {!rescheduleMode && (
           <>
             <div className="bw-summary-row">
@@ -348,7 +466,9 @@ export function Step5Confirm({
             ? (rescheduleMode ? 'Rescheduling…' : 'Booking…')
             : rescheduleMode
               ? 'Confirm new time'
-              : 'Confirm booking'}
+              : isSeries
+                ? `Confirm ${seriesBookableCount} bookings`
+                : 'Confirm booking'}
         </button>
       </div>
     </div>
