@@ -128,9 +128,8 @@ export function Step4CustomerInfo({ customer, onChange, onNext }: Props) {
             onChange={(e) => onChange({ marketingConsent: e.target.checked })}
           />
           <span>
-            Send me appointment reminders, review requests, occasional offers, and
-            product recommendations from Modern Classic Barbershop. I can unsubscribe
-            anytime.
+            Send me occasional offers, product recommendations, and shop updates from
+            Modern Classic Barbershop. I can unsubscribe anytime.
           </span>
         </label>
 

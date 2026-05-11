@@ -15,6 +15,7 @@ import type { APIRoute } from 'astro';
 import { verifyUnsubscribeToken } from '../../../lib/marketing/unsubscribeToken';
 import {
   MARKETING_UNSUBSCRIBED_AT_KEY,
+  REVIEW_REQUESTS_UNSUBSCRIBED_AT_KEY,
   setCustomAttribute,
 } from '../../../lib/square/customAttributes';
 import { SquareApiError } from '../../../lib/square/client';
@@ -22,6 +23,17 @@ import { SquareApiError } from '../../../lib/square/client';
 export const prerender = false;
 
 type Action = 'unsubscribe' | 'resubscribe';
+type Scope = 'marketing' | 'review';
+
+function parseScope(raw: string | null): Scope {
+  return raw?.toLowerCase() === 'review' ? 'review' : 'marketing';
+}
+
+function attributeKeyFor(scope: Scope): string {
+  return scope === 'review'
+    ? REVIEW_REQUESTS_UNSUBSCRIBED_AT_KEY
+    : MARKETING_UNSUBSCRIBED_AT_KEY;
+}
 
 function htmlResponse(body: string, status: number): Response {
   return new Response(body, {
@@ -89,8 +101,24 @@ function renderError(message: string): string {
   });
 }
 
-function renderUnsubscribed(token: string): string {
-  const resubUrl = `/api/marketing/unsubscribe?token=${encodeURIComponent(token)}&action=resubscribe`;
+function renderUnsubscribed(token: string, scope: Scope): string {
+  const resubUrl =
+    `/api/marketing/unsubscribe?token=${encodeURIComponent(token)}` +
+    `&action=resubscribe&scope=${scope}`;
+  if (scope === 'review') {
+    return pageShell({
+      title: "You won't get review requests anymore",
+      body: `
+        <div class="eyebrow">Modern Classic</div>
+        <h1>You won't get review requests anymore</h1>
+        <p>We won't email you a "how'd we do?" request after your visits. Thanks for being a customer.</p>
+        <p>You'll still get booking confirmations, sign-in links, and anything else you actively request — and you're not opted in to any marketing list either.</p>
+        <div class="actions">
+          <a class="link" href="${resubUrl}">I changed my mind — let me get review requests again</a>
+        </div>
+      `,
+    });
+  }
   return pageShell({
     title: "You've been unsubscribed",
     body: `
@@ -105,13 +133,26 @@ function renderUnsubscribed(token: string): string {
   });
 }
 
-function renderResubscribed(): string {
+function renderResubscribed(scope: Scope): string {
+  if (scope === 'review') {
+    return pageShell({
+      title: "Review requests are back on",
+      body: `
+        <div class="eyebrow">Modern Classic</div>
+        <h1>Review requests are back on</h1>
+        <p>We'll send you the occasional post-visit "how'd we do?" email again. Thanks for the second chance.</p>
+        <div class="actions">
+          <a class="btn" href="https://mdrnclassic.com/">Back to Modern Classic</a>
+        </div>
+      `,
+    });
+  }
   return pageShell({
     title: "You're back on the list",
     body: `
       <div class="eyebrow">Modern Classic</div>
       <h1>Welcome back</h1>
-      <p>You're resubscribed to Modern Classic emails — appointment reminders, the occasional review request, and a heads-up when we launch something new in the shop.</p>
+      <p>You're resubscribed to Modern Classic marketing emails — the occasional offer, product launch, or shop update.</p>
       <div class="actions">
         <a class="btn" href="https://mdrnclassic.com/">Back to Modern Classic</a>
       </div>
@@ -132,6 +173,8 @@ async function handle(request: Request): Promise<Response> {
   const token = url.searchParams.get('token') ?? '';
   const actionParam = (url.searchParams.get('action') ?? 'unsubscribe').toLowerCase();
   const action: Action = actionParam === 'resubscribe' ? 'resubscribe' : 'unsubscribe';
+  const scope: Scope = parseScope(url.searchParams.get('scope'));
+  const attributeKey = attributeKeyFor(scope);
 
   if (!token) {
     return htmlResponse(renderError('No unsubscribe token was supplied.'), 400);
@@ -149,15 +192,15 @@ async function handle(request: Request): Promise<Response> {
     if (action === 'unsubscribe') {
       await setCustomAttribute(
         verified.customerId,
-        MARKETING_UNSUBSCRIBED_AT_KEY,
+        attributeKey,
         new Date().toISOString(),
       );
-      logUnsub({ phase: 'unsubscribe', customerId: verified.customerId });
-      return htmlResponse(renderUnsubscribed(token), 200);
+      logUnsub({ phase: 'unsubscribe', scope, customerId: verified.customerId });
+      return htmlResponse(renderUnsubscribed(token, scope), 200);
     }
-    await setCustomAttribute(verified.customerId, MARKETING_UNSUBSCRIBED_AT_KEY, null);
-    logUnsub({ phase: 'resubscribe', customerId: verified.customerId });
-    return htmlResponse(renderResubscribed(), 200);
+    await setCustomAttribute(verified.customerId, attributeKey, null);
+    logUnsub({ phase: 'resubscribe', scope, customerId: verified.customerId });
+    return htmlResponse(renderResubscribed(scope), 200);
   } catch (err) {
     const detail =
       err instanceof SquareApiError

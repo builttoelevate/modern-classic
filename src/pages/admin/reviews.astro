@@ -34,7 +34,7 @@ function summariseSkip(run: NonNullable<typeof lastRun>): string | null {
     ['not yet a completed appointment', s.notAccepted],
     ['already emailed for this booking', s.alreadySent],
     ['no email / unknown customer', s.customerMissing],
-    ['customer hasn\'t opted in to marketing', s.optedOut],
+    ['customer opted out of review emails', s.optedOut],
     ['recently emailed (180-day cooldown)', s.recentRequest],
     ['service or barber lookup failed', s.serviceMissing + s.barberMissing],
   ];
@@ -318,7 +318,7 @@ const recent = last30?.recent ?? [];
               </p>
               <div class="panel__skip-grid">
                 <div class="panel__skip">
-                  <div class="panel__skip-label">Opted out</div>
+                  <div class="panel__skip-label">Opted out of reviews</div>
                   <div class="panel__skip-value"><strong>{lastRun.skipped.optedOut}</strong></div>
                 </div>
                 <div class="panel__skip">
