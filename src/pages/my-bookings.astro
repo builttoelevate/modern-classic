@@ -11,17 +11,15 @@ import { ProductRecommendations } from '../components/bookings/ProductRecommenda
 import { getSession, refreshSessionCookie } from '../lib/auth/middleware';
 import { isAuthConfigured } from '../lib/auth/session';
 import { adoptMissingGroupSiblings } from '../lib/customer/groupSelfHeal';
-import { getRetailProducts } from '../lib/square/products';
 import { getBarbers } from '../lib/square/team';
 import { listLinkedPeople } from '../lib/customer/profileLinks';
 import { getMergedBookingsForSession } from '../lib/customer/familyBookings';
-import { recommendForBooking, generalRecommendations } from '../lib/recommendations/forBooking';
+import { pickFeaturedProduct, type FeaturedProduct } from '../lib/recommendations/featuredProduct';
 import { findUsualCombo, type UsualCombo } from '../lib/booking/usual';
 import { shouldShowRebookCard } from '../lib/booking/rebookEligibility';
 import { getNextSlotsForCombo } from '../lib/availability/nextAvailable';
 import { isWithinDays } from '../lib/availability/timing';
 import type { CustomerBookings } from '../lib/square/customerBookings';
-import type { Product } from '../lib/square/products';
 import type { AvailabilitySlot } from '../lib/square/types';
 
 import '../styles/booking.css';
@@ -47,7 +45,6 @@ if (!session) {
 }
 
 let bookings: CustomerBookings = { upcoming: [], past: [] };
-let products: Product[] = [];
 let activeBarberIds = new Set<string>();
 let loadError: string | null = null;
 
@@ -92,9 +89,8 @@ try {
   // family member + each adult's legacy linked kids) AND the legacy
   // path (session customer + their own linked kids). The page no
   // longer needs to know which model is in play.
-  const [merged, p, bs, legacyKidsForDebug] = await Promise.all([
+  const [merged, bs, legacyKidsForDebug] = await Promise.all([
     getMergedBookingsForSession(session.customerId),
-    getRetailProducts(),
     getBarbers(),
     // Surfaced only for the debug overlay; the helper already
     // includes these kids in the merged view.
@@ -103,7 +99,6 @@ try {
       : Promise.resolve([]),
   ]);
   bookings = merged.bookings;
-  products = p;
   activeBarberIds = new Set(bs.map((m) => m.id));
 
   if (debugInfo) {
@@ -228,13 +223,19 @@ const isTrueNewCustomer =
   !showRebook && bookings.upcoming.length === 0 && bookings.past.length === 0;
 
 const seedBooking = bookings.upcoming[0] ?? bookings.past[0];
-const recs = seedBooking
-  ? recommendForBooking({
-      barberId: seedBooking.barberId,
-      serviceVariationId: seedBooking.serviceVariationId,
-      allProducts: products,
-    })
-  : generalRecommendations(products);
+// Single featured product from the same Astro content collection
+// that powers /shop. Intent matching (haircut → Soft Clay, beard →
+// Beard Oil, etc.) lives inside pickFeaturedProduct. Returns null
+// when the content collection is empty — the recs section just
+// won't render. Failure is non-fatal.
+let featuredProduct: FeaturedProduct | null = null;
+try {
+  featuredProduct = await pickFeaturedProduct({
+    seedServiceVariationId: seedBooking?.serviceVariationId,
+  });
+} catch {
+  featuredProduct = null;
+}
 
 const customerLabel = session.email;
 
@@ -293,7 +294,7 @@ Astro.response.headers.append('Set-Cookie', refreshSessionCookie(session));
       </>
     )}
 
-    {recs.length > 0 && <ProductRecommendations products={recs} />}
+    {featuredProduct && <ProductRecommendations product={featuredProduct} />}
   </main>
   <Footer />
 </BaseLayout>

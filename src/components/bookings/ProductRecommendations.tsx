@@ -1,70 +1,92 @@
-import type { Product } from '../../lib/square/products';
-import { stripBarberPrefix } from '../../lib/square/products';
+// Single-product recommendation card for /my-bookings.
+//
+// Reads from the same source as /shop (the Astro content collection
+// in src/content/products/*.json), so the image, name, and product
+// URL match exactly. The picker (lib/recommendations/featuredProduct)
+// applies intent matching against the customer's last service to pick
+// which featured product to surface here.
+//
+// Why one card instead of the prior three-up grid: keeps the surface
+// tightly scoped to the highest-intent pick. A returning customer
+// who just got a haircut sees one Soft Clay card with the same photo
+// they'd see on /shop, not three differently-imaged tiles pulled
+// from Square's catalog.
+
+import type { FeaturedProduct } from '../../lib/recommendations/featuredProduct';
 
 interface Props {
-  products: Product[];
-  intentLabel?: string;
+  product: FeaturedProduct | null;
 }
 
-const SHOPIFY_BASE = 'https://mdrnclassic.com';
-
-// TODO: replace search-link fallback with direct Shopify product URLs once
-// SKU mapping is provided. Square's ecom_uri points at the
-// modern-classic.square.site storefront, not the live mdrnclassic.com
-// Shopify shop, so we send the user to a Shopify search keyed off the
-// product name without the barber prefix.
-function shopifyLinkFor(product: Product): string {
-  const stripped = stripBarberPrefix(product.name);
-  const q = encodeURIComponent(stripped);
-  return `${SHOPIFY_BASE}/search?q=${q}`;
-}
-
-function priceLabel(cents: number): string {
-  return `$${(cents / 100).toFixed(0)}`;
-}
-
-export function ProductRecommendations({ products, intentLabel }: Props) {
-  if (!products || products.length === 0) return null;
-
-  const heading = intentLabel ?? 'Continue your look at home';
+export function ProductRecommendations({ product }: Props) {
+  if (!product) return null;
 
   return (
     <section className="mb-recs" aria-labelledby="mb-recs-heading">
       <header className="mb-recs__head">
         <span className="mb-recs__eyebrow">From the Modern Classic shop</span>
-        <h2 id="mb-recs-heading">{heading}</h2>
+        <h2 id="mb-recs-heading">Continue your look at home</h2>
         <p className="mb-recs__copy">
           Hand-picked for your last visit. Same products we use in the chair.
         </p>
       </header>
-      <div className="mb-recs__grid">
-        {products.map((p) => (
-          <a
-            key={p.id}
-            className="mb-rec"
-            href={shopifyLinkFor(p)}
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            {p.imageUrl ? (
-              <img
-                className="mb-rec__img"
-                src={p.imageUrl}
-                alt={p.displayName}
-                loading="lazy"
-                decoding="async"
-              />
-            ) : (
-              <div className="mb-rec__img" aria-hidden="true" />
-            )}
-            <h3 className="mb-rec__name">{p.displayName}</h3>
-            <span className="mb-rec__price">{priceLabel(p.priceCents)}</span>
+      <a
+        className="mb-rec mb-rec--solo"
+        href={product.productUrl}
+        target="_blank"
+        rel="noopener noreferrer"
+      >
+        <div
+          className={
+            'mb-rec__img-wrap' +
+            (product.whiteBg ? ' mb-rec__img-wrap--white' : '')
+          }
+        >
+          <img
+            className="mb-rec__img"
+            src={product.imageUrl}
+            alt={`${product.name} — ${product.size}`}
+            loading="lazy"
+            decoding="async"
+          />
+        </div>
+        <div className="mb-rec__body">
+          <span className="mb-rec__collection">{product.collection}</span>
+          <h3 className="mb-rec__name">{product.name}</h3>
+          <p className="mb-rec__size">{product.size}</p>
+          <div className="mb-rec__row">
+            <span className="mb-rec__price">{product.priceLabel}</span>
             <span className="mb-rec__cta">
               Shop <span aria-hidden="true">→</span>
             </span>
-          </a>
-        ))}
-      </div>
+          </div>
+        </div>
+      </a>
+      {/* SVG color-key filter used by mb-rec__img-wrap--white. Same
+          matrix as /shop's #mc-key-white so white-seamless studio
+          shots render with the white background masked out, matching
+          the visual treatment on the shop page. Inline so the
+          component is self-contained — only emitted when a product
+          actually renders. */}
+      {product.whiteBg && (
+        <svg
+          width="0"
+          height="0"
+          aria-hidden="true"
+          focusable="false"
+          style={{ position: 'absolute' }}
+        >
+          <filter id="mc-key-white" colorInterpolationFilters="sRGB">
+            <feColorMatrix
+              type="matrix"
+              values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  -1 -1 -1 3 0"
+            />
+            <feComponentTransfer>
+              <feFuncA type="table" tableValues="0 0 0 1 1" />
+            </feComponentTransfer>
+          </filter>
+        </svg>
+      )}
     </section>
   );
 }
