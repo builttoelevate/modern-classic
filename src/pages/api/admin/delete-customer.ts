@@ -2,6 +2,7 @@ import type { APIRoute } from 'astro';
 import { checkBasicAuth } from '../../../lib/admin/auth';
 import { SquareApiError } from '../../../lib/square/client';
 import { deleteCustomer, getCustomerById } from '../../../lib/square/customers';
+import { getLinkedParent, unlinkPerson } from '../../../lib/customer/profileLinks';
 import { getCustomerBookings } from '../../../lib/square/customerBookings';
 
 export const prerender = false;
@@ -104,6 +105,22 @@ export const POST: APIRoute = async ({ request }) => {
 
   try {
     await deleteCustomer(customerId);
+    // Defensive: if this customer was linked as someone's kid,
+    // drop the link too. Without this the parent's Redis still
+    // points at a now-deleted Square id, /my-bookings tries to
+    // fetch bookings for a 404 customer and silently shows
+    // nothing — same disappearing-act bug we fixed for Briar.
+    try {
+      const parentId = await getLinkedParent(customerId);
+      if (parentId) {
+        await unlinkPerson(parentId, customerId);
+        logAdmin({ phase: 'customer-deleted-unlink', customerId, parentId });
+      }
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : 'Unknown error';
+      logAdmin({ phase: 'customer-deleted-unlink-failed', customerId, detail });
+      // Non-fatal — the delete already succeeded.
+    }
     logAdmin({
       phase: 'customer-deleted',
       customerId,
