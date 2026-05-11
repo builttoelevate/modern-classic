@@ -8,6 +8,10 @@ import {
   getCustomerById,
 } from '../../lib/square/customers';
 import { getCustomerBookings, type CustomerBookings } from '../../lib/square/customerBookings';
+import {
+  getFamilyForCustomer,
+  type FamilyRecord,
+} from '../../lib/customer/familyAccount';
 import { getBarbers } from '../../lib/square/team';
 import { getBookingCardRecords, type BookingCardRecord } from '../../lib/booking/cardIndex';
 import { checkBasicAuth } from '../../lib/admin/auth';
@@ -66,6 +70,12 @@ let linkedKids: LinkedPerson[] = [];
 // daughter. Keyed by customerId; missing entries (the record was
 // deleted or Square errored) leave the row with name-only.
 const linkedKidsById: Map<string, Customer> = new Map();
+// Family-account membership for the focused customer. null when
+// they aren't in a family. When set, members are hydrated via
+// familyMemberCustomers so the admin section can show real names
+// + emails (vs. just the stored displayName snapshot).
+let family: FamilyRecord | null = null;
+const familyMemberCustomers: Map<string, Customer> = new Map();
 let cardRecords = new Map<string, BookingCardRecord>();
 let barbers: Array<{ id: string; displayName: string }> = [];
 // When a phone lookup hits multiple records (test accounts, pre-dedup
@@ -187,11 +197,12 @@ if (customer) {
   // Look up the parent link in parallel with bookings/barbers so the
   // Family-link row can render without an extra render cycle. Failure
   // is non-fatal — the row just shows "— none —".
-  const [bookingsResult, barbersResult, parentIdResult, kidsResult] = await Promise.allSettled([
+  const [bookingsResult, barbersResult, parentIdResult, kidsResult, familyResult] = await Promise.allSettled([
     getCustomerBookings(customerId),
     getBarbers(),
     getLinkedParent(customerId),
     listLinkedPeople(customerId),
+    getFamilyForCustomer(customerId),
   ]);
   if (kidsResult.status === 'fulfilled') {
     linkedKids = kidsResult.value;
@@ -217,6 +228,23 @@ if (customer) {
       // If the parent record is gone, fall back to null — the Family
       // link row will still show "linked to (deleted)" semantics.
       linkedParent = null;
+    }
+  }
+  if (familyResult.status === 'fulfilled' && familyResult.value) {
+    family = familyResult.value;
+    // Hydrate each family member's Square record so the admin row
+    // can show real email + given/family name (the stored
+    // displayName is a snapshot from accept/create time and may be
+    // stale, e.g. "Briar Bone" when the customer is actually Brook).
+    // Graceful per-member degradation — a missing record just shows
+    // the snapshot.
+    const memberRecords = await Promise.all(
+      family.members.map((m) =>
+        getCustomerById(m.customerId).catch(() => null),
+      ),
+    );
+    for (const rec of memberRecords) {
+      if (rec) familyMemberCustomers.set(rec.id, rec);
     }
   }
   if (bookingsResult.status === 'fulfilled') {
@@ -667,6 +695,71 @@ const defaultRescheduleDate = tomorrowInNyDate();
         border-radius: 8px;
         display: grid;
         gap: 0.75rem;
+      }
+      .family-account {
+        margin-top: 32px;
+        padding: 18px 20px;
+        border: 1px solid rgba(120, 160, 220, 0.4);
+        background: rgba(120, 160, 220, 0.05);
+        border-radius: 8px;
+        display: grid;
+        gap: 0.75rem;
+      }
+      .family-account h3 { margin: 0; font-size: 1.05rem; }
+      .family-account .helper--strong { color: var(--text); font-weight: 600; }
+      .family-account__list {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        display: grid;
+        gap: 0.4rem;
+      }
+      .family-account__list li {
+        padding: 0.55rem 0.7rem;
+        border: 1px solid rgba(120, 160, 220, 0.3);
+        border-radius: 6px;
+        background: rgba(0, 0, 0, 0.15);
+      }
+      .family-account__row {
+        display: flex;
+        gap: 0.6rem;
+        align-items: flex-start;
+        justify-content: space-between;
+        flex-wrap: wrap;
+      }
+      .family-account__id { color: var(--muted); font-size: 0.78rem; }
+      .family-account__email { color: var(--muted); }
+      .family-account__actions {
+        display: flex;
+        gap: 0.4rem;
+        align-items: center;
+        flex-shrink: 0;
+      }
+      .family-account__form {
+        display: grid;
+        gap: 0.6rem;
+        margin-top: 0.5rem;
+      }
+      .family-account__form label {
+        display: grid;
+        gap: 0.25rem;
+        font-size: 0.85rem;
+      }
+      .family-account__danger { margin-top: 0.6rem; }
+      .family-account__danger summary { cursor: pointer; color: var(--muted); }
+      .family-account__status {
+        margin: 0;
+        font-size: 0.85rem;
+        padding: 0.4rem 0.55rem;
+        border-radius: 4px;
+      }
+      .family-account__status--ok {
+        background: rgba(60, 180, 100, 0.15);
+        color: rgb(130, 220, 160);
+      }
+      .family-account__status--error {
+        background: rgba(220, 80, 80, 0.15);
+        color: rgb(255, 160, 160);
       }
       .family-link h3 {
         margin: 0;
@@ -1209,6 +1302,121 @@ const defaultRescheduleDate = tomorrowInNyDate();
                 </div>
               </div>
 
+              <div class="family-account" data-customer-id={customer.id}>
+                <h3>Family account</h3>
+                <p class="helper">
+                  Multi-adult shared account (a step up from the parent ↔ kid
+                  link above). When this customer is in a family, every
+                  family member sees every other member's bookings on
+                  My&nbsp;bookings.
+                </p>
+
+                {family ? (
+                  <>
+                    <p class="helper helper--strong">
+                      In family <code>{family.familyId}</code> with
+                      {' '}{family.members.length}/{6} members.
+                    </p>
+                    <ul class="family-account__list">
+                      {family.members.map((m) => {
+                        const rec = familyMemberCustomers.get(m.customerId);
+                        const liveName = rec
+                          ? `${rec.given_name ?? ''} ${rec.family_name ?? ''}`.trim()
+                          : '';
+                        const display = liveName || m.displayName || 'Member';
+                        const isFocused = m.customerId === customer!.id;
+                        return (
+                          <li>
+                            <div class="family-account__row">
+                              <span>
+                                <strong>{display}</strong>
+                                {' '}<small>· {m.role}</small>
+                                {isFocused && <small> · you're viewing this one</small>}
+                                {rec?.email_address && (
+                                  <small class="family-account__email">
+                                    {' '}· {rec.email_address}
+                                  </small>
+                                )}
+                                <br />
+                                <small class="family-account__id">{m.customerId}</small>
+                              </span>
+                              <span class="family-account__actions">
+                                {!isFocused && (
+                                  <a
+                                    href={`?id=${m.customerId}`}
+                                    class="btn btn--ghost"
+                                  >
+                                    Open
+                                  </a>
+                                )}
+                                <button
+                                  type="button"
+                                  class="btn btn--ghost"
+                                  data-action="family-remove"
+                                  data-customer-id={m.customerId}
+                                  data-display-name={display}
+                                >
+                                  Remove
+                                </button>
+                              </span>
+                            </div>
+                          </li>
+                        );
+                      })}
+                    </ul>
+
+                    <details class="family-account__danger">
+                      <summary>Dissolve this family entirely</summary>
+                      <p class="helper">
+                        Drops the family record and every member→family
+                        pointer. Every member falls back to the legacy
+                        linked-people / solo path on their next
+                        My&nbsp;bookings render. Does NOT touch Square
+                        bookings or customer records.
+                      </p>
+                      <button
+                        type="button"
+                        class="btn btn--danger"
+                        data-action="family-dissolve"
+                        data-family-id={family.familyId}
+                      >
+                        Dissolve family
+                      </button>
+                    </details>
+                  </>
+                ) : (
+                  <>
+                    <p class="helper">— not in a family —</p>
+                    <form class="family-account__form" data-action="family-add">
+                      <p class="helper">
+                        Add this customer to another customer's family by
+                        the target adult's email. If the target isn't in
+                        a family yet, one is created with them as founder
+                        and this customer joins immediately.
+                      </p>
+                      <label>
+                        Target adult email
+                        <input
+                          type="email"
+                          name="targetAdultEmail"
+                          autocomplete="off"
+                          required
+                        />
+                      </label>
+                      <label>
+                        Role
+                        <select name="role">
+                          <option value="adult">Adult</option>
+                          <option value="kid">Kid</option>
+                        </select>
+                      </label>
+                      <button type="submit" class="btn">Add to family</button>
+                    </form>
+                  </>
+                )}
+                <p class="family-account__status" data-family-status hidden></p>
+              </div>
+
               <div class="danger-zone">
                 <h3>Danger zone</h3>
                 {bookings.upcoming.length + bookings.past.length > 0 ? (
@@ -1726,6 +1934,158 @@ const defaultRescheduleDate = tomorrowInNyDate();
             }
           });
         });
+      })();
+
+      // ---------- Family-account admin actions ----------
+      (function () {
+        const section = document.querySelector('.family-account');
+        if (!section) return;
+        const focusedId = section.getAttribute('data-customer-id') || '';
+        const status = section.querySelector('[data-family-status]');
+
+        function show(msg, kind) {
+          if (!status) return;
+          status.textContent = msg;
+          status.className =
+            'family-account__status family-account__status--' + kind;
+          status.hidden = false;
+        }
+
+        async function post(url, body) {
+          const res = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+          });
+          let data = {};
+          try { data = await res.json(); } catch {}
+          return { res: res, data: data };
+        }
+
+        // Remove individual member from family.
+        section.querySelectorAll('[data-action="family-remove"]').forEach((btn) => {
+          btn.addEventListener('click', async () => {
+            const customerId = btn.getAttribute('data-customer-id') || '';
+            const name = btn.getAttribute('data-display-name') || 'this member';
+            if (!customerId) return;
+            if (!confirm(`Remove ${name} from this family?`)) return;
+            btn.disabled = true;
+            const originalLabel = btn.textContent;
+            btn.textContent = 'Removing…';
+            try {
+              const { res, data } = await post(
+                '/api/admin/family/remove-member',
+                { customerId: customerId },
+              );
+              if (!res.ok || !data.ok) {
+                show(
+                  (data && data.error && data.error.detail) || 'Remove failed.',
+                  'error',
+                );
+                btn.disabled = false;
+                btn.textContent = originalLabel;
+                return;
+              }
+              show(
+                data.dissolved
+                  ? 'Removed. Family dissolved (last adult).'
+                  : 'Removed.',
+                'ok',
+              );
+              setTimeout(() => window.location.reload(), 800);
+            } catch {
+              show('Network error. Try again.', 'error');
+              btn.disabled = false;
+              btn.textContent = originalLabel;
+            }
+          });
+        });
+
+        // Dissolve entire family.
+        const dissolveBtn = section.querySelector('[data-action="family-dissolve"]');
+        if (dissolveBtn) {
+          dissolveBtn.addEventListener('click', async () => {
+            const familyId = dissolveBtn.getAttribute('data-family-id') || '';
+            if (!familyId) return;
+            if (
+              !confirm(
+                'Dissolve this family entirely? Every member loses their family-share view on /my-bookings. This does NOT cancel any bookings.',
+              )
+            ) {
+              return;
+            }
+            dissolveBtn.disabled = true;
+            const originalLabel = dissolveBtn.textContent;
+            dissolveBtn.textContent = 'Dissolving…';
+            try {
+              const { res, data } = await post('/api/admin/family/dissolve', {
+                familyId: familyId,
+              });
+              if (!res.ok || !data.ok) {
+                show(
+                  (data && data.error && data.error.detail) || 'Dissolve failed.',
+                  'error',
+                );
+                dissolveBtn.disabled = false;
+                dissolveBtn.textContent = originalLabel;
+                return;
+              }
+              show('Family dissolved.', 'ok');
+              setTimeout(() => window.location.reload(), 800);
+            } catch {
+              show('Network error. Try again.', 'error');
+              dissolveBtn.disabled = false;
+              dissolveBtn.textContent = originalLabel;
+            }
+          });
+        }
+
+        // Add this customer to another customer's family.
+        const addForm = section.querySelector('form[data-action="family-add"]');
+        if (addForm) {
+          addForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const targetAdultEmail = addForm.targetAdultEmail.value.trim();
+            const role = addForm.role.value || 'adult';
+            if (!targetAdultEmail) {
+              show('Target email is required.', 'error');
+              return;
+            }
+            const submitBtn = addForm.querySelector('button[type="submit"]');
+            submitBtn.disabled = true;
+            const originalLabel = submitBtn.textContent;
+            submitBtn.textContent = 'Adding…';
+            try {
+              const { res, data } = await post('/api/admin/family/add-member', {
+                customerId: focusedId,
+                targetAdultEmail: targetAdultEmail,
+                role: role,
+              });
+              if (!res.ok || !data.ok) {
+                show(
+                  (data && data.error && data.error.detail) || 'Add failed.',
+                  'error',
+                );
+                submitBtn.disabled = false;
+                submitBtn.textContent = originalLabel;
+                return;
+              }
+              show(
+                data.createdNewFamily
+                  ? 'Family created and customer added.'
+                  : data.alreadyMember
+                    ? 'Already a member.'
+                    : 'Added to family.',
+                'ok',
+              );
+              setTimeout(() => window.location.reload(), 800);
+            } catch {
+              show('Network error. Try again.', 'error');
+              submitBtn.disabled = false;
+              submitBtn.textContent = originalLabel;
+            }
+          });
+        }
       })();
     </script>
   </body>
