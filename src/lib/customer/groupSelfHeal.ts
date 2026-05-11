@@ -42,15 +42,49 @@ export async function adoptMissingGroupSiblings(
   const incompleteGroupIds = new Set(
     [...groupGaps.entries()].filter(([, g]) => g.visibleIds.size < g.total).map(([id]) => id),
   );
-  if (incompleteGroupIds.size === 0) return 0;
+
+  // Observability log so the next misfire (parent has an incomplete
+  // group but self-heal doesn't adopt a sibling) leaves a breadcrumb.
+  // We log the counts at every decision point so a transient Square
+  // hiccup vs. a real bug (phone format drift, groupId mismatch,
+  // etc.) is distinguishable from the [BOOK] feed without having to
+  // repro live.
+  // eslint-disable-next-line no-console
+  const log = (extra: Record<string, unknown>): void => {
+    console.log(
+      `[BOOK] ${JSON.stringify({
+        ts: new Date().toISOString(),
+        phase: 'group-self-heal',
+        parentCustomerId,
+        incompleteGroupCount: incompleteGroupIds.size,
+        knownIdCount: knownCustomerIds.size,
+        ...extra,
+      })}`,
+    );
+  };
+
+  if (incompleteGroupIds.size === 0) {
+    log({ outcome: 'no-incomplete-groups' });
+    return 0;
+  }
 
   const parent = await getCustomerById(parentCustomerId);
   const phone = parent?.phone_number?.trim();
-  if (!phone) return 0;
+  if (!phone) {
+    log({ outcome: 'no-parent-phone' });
+    return 0;
+  }
 
   const phoneMatches = await findCustomersByPhone(phone);
   const candidates = phoneMatches.filter((c) => c.id && !knownCustomerIds.has(c.id));
-  if (candidates.length === 0) return 0;
+  if (candidates.length === 0) {
+    log({
+      outcome: 'no-candidates',
+      phoneMatchCount: phoneMatches.length,
+      candidateCount: 0,
+    });
+    return 0;
+  }
 
   const candidateBookings = await Promise.all(
     candidates.map((c) =>
@@ -87,5 +121,11 @@ export async function adoptMissingGroupSiblings(
       }
     }
   }
+  log({
+    outcome: adopted > 0 ? 'adopted' : 'no-match',
+    phoneMatchCount: phoneMatches.length,
+    candidateCount: candidates.length,
+    adopted,
+  });
   return adopted;
 }
