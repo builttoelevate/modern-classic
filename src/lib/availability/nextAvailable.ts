@@ -16,6 +16,12 @@ import { slugForService } from '../catalog/liveServices';
 const CACHE_TTL_SECONDS = 600;
 const SEARCH_WINDOW_DAYS = 365;
 const WITHIN_DAYS_THRESHOLD = 7;
+// Square's availability search throws on any range > 31 days.
+// We chunk in 30-day windows and short-circuit on the first chunk
+// that returns slots — for the "next opening" use case we only
+// need the soonest, so most lookups bail after one chunk.
+const CHUNK_DAYS = 30;
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 function searchEnd(): Date {
   return new Date(Date.now() + SEARCH_WINDOW_DAYS * 24 * 60 * 60 * 1000);
@@ -97,30 +103,40 @@ async function computeNextForBarber(
 ): Promise<AvailabilitySlot | null> {
   const variations = variationsForBarber(services, barberId, kind);
   if (variations.length === 0) return null;
-  const start = searchStart();
-  const end = searchEnd();
+  const startMs = searchStart().getTime();
+  const endMs = searchEnd().getTime();
 
-  const results = await Promise.all(
-    variations.map((v) =>
-      searchAvailability({
-        serviceVariationId: v.id,
-        teamMemberId: barberId,
-        startAt: start,
-        endAt: end,
-      }).catch(() => [] as AvailabilitySlot[]),
-    ),
-  );
-
-  // Pick the soonest slot across all queried variations.
-  let soonest: AvailabilitySlot | null = null;
-  for (const slots of results) {
-    for (const s of slots) {
-      if (!soonest || s.startAtUtc < soonest.startAtUtc) {
-        soonest = s;
+  // Walk forward in 30-day chunks until we find the first chunk with
+  // any slot for ANY of the candidate variations. Most lookups bail
+  // after one chunk because the soonest slot is almost always within
+  // a few weeks. The horizon goes out to 365 days for the rare case
+  // where every variation is fully booked for months — chunking +
+  // early-exit keeps the common case fast.
+  let cursor = startMs;
+  while (cursor < endMs) {
+    const chunkEnd = Math.min(cursor + CHUNK_DAYS * DAY_MS, endMs);
+    const results = await Promise.all(
+      variations.map((v) =>
+        searchAvailability({
+          serviceVariationId: v.id,
+          teamMemberId: barberId,
+          startAt: new Date(cursor),
+          endAt: new Date(chunkEnd),
+        }).catch(() => [] as AvailabilitySlot[]),
+      ),
+    );
+    let soonest: AvailabilitySlot | null = null;
+    for (const slots of results) {
+      for (const s of slots) {
+        if (!soonest || s.startAtUtc < soonest.startAtUtc) {
+          soonest = s;
+        }
       }
     }
+    if (soonest) return soonest;
+    cursor = chunkEnd;
   }
-  return soonest;
+  return null;
 }
 
 export interface NextAvailability {
@@ -159,13 +175,27 @@ export async function getNextSlotsForCombo(
 ): Promise<AvailabilitySlot[]> {
   const key = `combo-slots:${input.serviceVariationId}:${input.teamMemberId}:${input.count}`;
   return cached(key, CACHE_TTL_SECONDS, async () => {
-    const slots = await searchAvailability({
-      serviceVariationId: input.serviceVariationId,
-      teamMemberId: input.teamMemberId,
-      startAt: searchStart(),
-      endAt: searchEnd(),
-    }).catch(() => [] as AvailabilitySlot[]);
-    return slots.slice(0, Math.max(1, input.count));
+    // Same chunking strategy as computeNextForBarber — Square caps
+    // range at 31 days, and we want enough slots to satisfy count.
+    // Walk forward in 30-day chunks, accumulating until we have
+    // enough or hit the horizon.
+    const want = Math.max(1, input.count);
+    const out: AvailabilitySlot[] = [];
+    const startMs = searchStart().getTime();
+    const endMs = searchEnd().getTime();
+    let cursor = startMs;
+    while (cursor < endMs && out.length < want) {
+      const chunkEnd = Math.min(cursor + CHUNK_DAYS * DAY_MS, endMs);
+      const slots = await searchAvailability({
+        serviceVariationId: input.serviceVariationId,
+        teamMemberId: input.teamMemberId,
+        startAt: new Date(cursor),
+        endAt: new Date(chunkEnd),
+      }).catch(() => [] as AvailabilitySlot[]);
+      out.push(...slots);
+      cursor = chunkEnd;
+    }
+    return out.slice(0, want);
   });
 }
 
