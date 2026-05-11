@@ -1772,3 +1772,239 @@
   margin-bottom: 0 !important;
   font-size: 0.88rem;
 }
+
+/* ---------- Book Ahead — card above the Step 3 calendar ---------- */
+.bw-bookahead {
+  display: grid;
+  gap: 1rem;
+  padding: clamp(1rem, 3vw, 1.4rem);
+  margin-bottom: 1.25rem;
+  background: rgba(201, 163, 92, 0.05);
+  border: 1px solid rgba(201, 163, 92, 0.32);
+  border-radius: var(--radius-lg);
+}
+.bw-bookahead__head { display: grid; gap: 0.35rem; }
+.bw-bookahead__title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: clamp(1.05rem, 0.95rem + 0.5vw, 1.25rem);
+  color: var(--color-gold-light);
+  letter-spacing: 0.01em;
+}
+.bw-bookahead__copy {
+  margin: 0;
+  font-size: 0.92rem;
+  color: var(--color-text-muted);
+  line-height: 1.45;
+}
+.bw-bookahead__field { display: grid; gap: 0.55rem; }
+
+/* ---------- Booking plan panel ---------- */
+.bw-plan {
+  display: grid;
+  gap: 0.85rem;
+  padding: clamp(1rem, 3vw, 1.4rem);
+  margin-top: 1.25rem;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+}
+.bw-plan__head { display: grid; gap: 0.2rem; }
+.bw-plan__title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: clamp(1.05rem, 0.95rem + 0.5vw, 1.25rem);
+  color: var(--color-text);
+}
+.bw-plan__sub {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
+  letter-spacing: 0.02em;
+}
+.bw-plan__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 0.5rem;
+}
+.bw-plan__row {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 0.85rem;
+  padding: 0.65rem 0.85rem;
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
+  border-left: 3px solid var(--color-border);
+  border-radius: 6px;
+}
+.bw-plan__row--ok { border-left-color: rgba(120, 180, 110, 0.7); }
+.bw-plan__row--warn { border-left-color: rgba(220, 170, 80, 0.8); }
+.bw-plan__row--dim { border-left-color: var(--color-border); opacity: 0.78; }
+.bw-plan__num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.6rem;
+  height: 1.6rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--color-text-muted);
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+}
+.bw-plan__content { display: grid; gap: 0.2rem; min-width: 0; }
+.bw-plan__when {
+  font-size: 0.95rem;
+  color: var(--color-text);
+}
+.bw-plan__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+.bw-plan__pill {
+  display: inline-block;
+  padding: 0.1rem 0.5rem;
+  font-size: 0.7rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  border-radius: 999px;
+  border: 1px solid var(--color-border);
+  background: var(--color-bg);
+  color: var(--color-text-muted);
+}
+.bw-plan__pill--ok {
+  border-color: rgba(120, 180, 110, 0.55);
+  color: rgba(170, 220, 160, 0.95);
+}
+.bw-plan__pill--warn {
+  border-color: rgba(220, 170, 80, 0.5);
+  color: rgba(240, 200, 120, 0.95);
+}
+.bw-plan__pill--dim { opacity: 0.7; }
+.bw-plan__pill--first {
+  border-color: rgba(201, 163, 92, 0.5);
+  color: var(--color-gold-light);
+}
+.bw-plan__remove {
+  appearance: none;
+  background: transparent;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  color: var(--color-text-muted);
+  padding: 0.3rem 0.7rem;
+  font: inherit;
+  font-size: 0.78rem;
+  cursor: pointer;
+  letter-spacing: 0.04em;
+}
+.bw-plan__remove:hover {
+  color: var(--color-text);
+  border-color: var(--color-gold);
+}
+.bw-plan__foot {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding-top: 0.6rem;
+  border-top: 1px solid var(--color-border);
+}
+.bw-plan__total-label {
+  font-size: 0.78rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+.bw-plan__total {
+  font-family: var(--font-display);
+  font-size: 1.15rem;
+  color: var(--color-gold-light);
+}
+
+/* ---------- Book Ahead — multi-visit summary in Step 5 ---------- */
+.bw-summary-row--list {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.5rem;
+}
+.bw-summary-visits {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 0.35rem;
+}
+.bw-summary-visits__row {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: baseline;
+  gap: 0.6rem;
+  padding: 0.4rem 0.55rem;
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
+  border-left: 3px solid var(--color-border);
+  border-radius: 4px;
+  font-size: 0.92rem;
+  color: var(--color-text);
+}
+.bw-summary-visits__row--ok { border-left-color: rgba(120, 180, 110, 0.7); }
+.bw-summary-visits__row--warn {
+  border-left-color: rgba(220, 170, 80, 0.8);
+  opacity: 0.85;
+}
+.bw-summary-visits__num { color: var(--color-text-muted); }
+.bw-summary-visits__when { min-width: 0; }
+.bw-summary-visits__tag {
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(240, 200, 120, 0.95);
+}
+
+.bw-success-visits {
+  margin: 0.6rem 0 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 0.35rem;
+  width: 100%;
+  max-width: 28rem;
+}
+.bw-success-visits__row {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: baseline;
+  gap: 0.6rem;
+  padding: 0.4rem 0.6rem;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-left: 3px solid var(--color-border);
+  border-radius: 4px;
+  font-size: 0.88rem;
+}
+.bw-success-visits__row--ok { border-left-color: rgba(120, 180, 110, 0.7); }
+.bw-success-visits__row--warn { border-left-color: rgba(220, 170, 80, 0.8); }
+.bw-success-visits__num { color: var(--color-text-muted); }
+.bw-success-visits__tag {
+  font-size: 0.7rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+.bw-success-visits__row--ok .bw-success-visits__tag {
+  color: rgba(170, 220, 160, 0.95);
+}
+.bw-success-visits__row--warn .bw-success-visits__tag {
+  color: rgba(240, 200, 120, 0.95);
+}
+.bw-success-partial {
+  margin: 0.7rem 0 0;
+  font-size: 0.9rem;
+  color: rgba(240, 200, 120, 0.95);
+  text-align: center;
+  max-width: 28rem;
+}
