@@ -59,6 +59,47 @@ function kByCustomerLatest(customerId: string): string {
 function kIndex(): string {
   return `${KEY_PREFIX}index`;
 }
+function kLastRun(): string {
+  return `${KEY_PREFIX}last-run`;
+}
+
+export interface LastCronRunSummary {
+  ranAt: string;
+  manuallyTriggered: boolean;
+  dryRun: boolean;
+  windowStartUtc: string;
+  windowEndUtc: string;
+  processed: number;
+  sent: number;
+  skipped: {
+    notAccepted: number;
+    alreadySent: number;
+    customerMissing: number;
+    optedOut: number;
+    recentRequest: number;
+    serviceMissing: number;
+    barberMissing: number;
+  };
+  failures: number;
+  /** Set when the cron returned a top-level error (auth, env, Square
+   *  list failure). Successful runs leave this undefined. */
+  error?: { code: string; detail: string };
+}
+
+/** Records the most recent cron-run summary so /admin/reviews can
+ *  show Michael "the cron ran at X, processed N bookings, skipped
+ *  reason breakdown." No TTL — there's only ever one record under
+ *  this key. */
+export async function recordReviewCronRun(summary: LastCronRunSummary): Promise<void> {
+  const redis = getRedis();
+  await redis.set(kLastRun(), summary);
+}
+
+export async function getLastReviewCronRun(): Promise<LastCronRunSummary | null> {
+  const redis = getRedis();
+  const r = await redis.get<LastCronRunSummary>(kLastRun());
+  return r ?? null;
+}
 
 export interface ReviewRequestRecord {
   reviewRequestId: string;

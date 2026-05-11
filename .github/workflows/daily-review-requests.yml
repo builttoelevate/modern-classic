@@ -1,0 +1,47 @@
+name: Daily review request emails
+
+# Hits /api/cron/review-requests daily. Belt-and-suspenders alongside
+# the schedule in vercel.json — if the Vercel scheduler is misconfigured
+# or briefly unavailable, GitHub Actions still triggers the run. The
+# cron is idempotent (bookings get a per-booking dedupe key in KV) so
+# both invocations on the same day are safe — the second one finds
+# everything already-sent and no-ops with stats.alreadySent counts.
+
+on:
+  schedule:
+    # 14:30 UTC daily (~10:30 AM ET in winter, 10:30 AM EDT in summer).
+    # 30 minutes after the vercel.json schedule so we never fight it.
+    - cron: "30 14 * * *"
+  workflow_dispatch: {}
+
+jobs:
+  notify:
+    name: Hit /api/cron/review-requests
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Trigger production review-requests
+        env:
+          PRODUCTION_URL: ${{ secrets.PRODUCTION_URL }}
+          REVIEW_CRON_SECRET: ${{ secrets.REVIEW_CRON_SECRET }}
+        run: |
+          set -euo pipefail
+          if [ -z "${PRODUCTION_URL}" ]; then
+            echo "PRODUCTION_URL secret is not set" >&2
+            exit 1
+          fi
+          if [ -z "${REVIEW_CRON_SECRET}" ]; then
+            echo "REVIEW_CRON_SECRET secret is not set" >&2
+            exit 1
+          fi
+          BASE="${PRODUCTION_URL%/}"
+          curl \
+            --fail-with-body \
+            --silent \
+            --show-error \
+            --location \
+            --max-time 180 \
+            --request GET \
+            --header "Authorization: Bearer ${REVIEW_CRON_SECRET}" \
+            --write-out "\nHTTP %{http_code} in %{time_total}s\n" \
+            "${BASE}/api/cron/review-requests"
