@@ -478,3 +478,45 @@ export async function sendFamilyInvite(
     replyTo: REPLY_TO,
   });
 }
+
+export interface SendFamilyInviteAcceptedInput {
+  /** Inviter's email — the recipient of this notification. */
+  to: string;
+  /** Display name of the inviter, used in the body greeting. */
+  inviterName: string;
+  /** Display name of whoever just joined. */
+  acceptedByName: string;
+  /** Total members in the family AFTER the accept, for copy that
+   *  says "you + N others" when more than two adults are involved. */
+  totalMembers: number;
+  /** Full URL to /my-bookings — the CTA in the email. */
+  myBookingsUrl: string;
+  shopAddress: string;
+  shopPhone: string;
+}
+
+/**
+ * "Your invite was accepted" notification. Sent to the original
+ * inviter when the invitee taps Accept and the family-member record
+ * is written. Best-effort from the caller's perspective — the accept
+ * endpoint fires this without awaiting/blocking so a Resend hiccup
+ * can't fail the accept itself.
+ */
+export async function sendFamilyInviteAccepted(
+  input: SendFamilyInviteAcceptedInput,
+): Promise<{ id: string }> {
+  const {
+    familyInviteAcceptedHtml,
+    familyInviteAcceptedText,
+    familyInviteAcceptedSubject,
+  } = await import('./templates/familyInviteAccepted');
+  const html = familyInviteAcceptedHtml(input);
+  const text = familyInviteAcceptedText(input);
+  return sendEmail({
+    to: input.to,
+    subject: familyInviteAcceptedSubject({ acceptedByName: input.acceptedByName }),
+    html,
+    text,
+    replyTo: REPLY_TO,
+  });
+}
