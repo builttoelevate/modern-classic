@@ -2113,3 +2113,20 @@
   text-transform: uppercase;
   margin-top: 0.1rem;
 }
+
+/* ---------- Book Ahead — continue button below the plan panel ---------- */
+.bw-series-continue {
+  display: grid;
+  gap: 0.45rem;
+  margin-top: 1rem;
+  text-align: center;
+}
+.bw-series-continue .bw-btn {
+  justify-self: center;
+  min-width: 16rem;
+}
+.bw-series-continue__hint {
+  margin: 0;
+  font-size: 0.82rem;
+  color: var(--color-text-muted);
+}

@@ -47,6 +47,11 @@ interface Props {
   /** Swap the slot at intendedStartAtUtc for an alternative the
    *  customer picked from the popover. */
   onReplaceGeneratedSlot: (intendedStartAtUtc: string, replacement: AvailabilitySlot) => void;
+  /** When the customer is on a Book Ahead series, the SET_SLOT
+   *  reducer stays on Step 3 so the plan panel can render. The
+   *  customer then taps the in-step Continue button to advance —
+   *  which fires this callback to dispatch GO_TO step 4. */
+  onSeriesContinue: () => void;
 }
 
 const SHOP_TZ = 'America/New_York';
@@ -228,6 +233,7 @@ export function Step3DateTimePicker({
   onSeriesCountChange,
   onRemoveGeneratedSlot,
   onReplaceGeneratedSlot,
+  onSeriesContinue,
 }: Props) {
   const variationKey = variations.map((v) => v.id).join(',');
   const today = useMemo(() => todayInShopTz(), []);
@@ -547,19 +553,36 @@ export function Step3DateTimePicker({
       )}
 
       {selected && seriesFrequencyWeeks > 0 ? (
-        <BookingPlanPanel
-          firstSlot={selected}
-          generatedSlots={generatedSlots}
-          resolving={seriesResolving}
-          pricePerVisitCents={pricePerVisitCents}
-          // The Book Ahead series locks variation + barber from the
-          // first slot for every visit, so the alternatives picker
-          // queries the same calendar the plan was generated against.
-          serviceVariationId={selected.serviceVariationId}
-          teamMemberId={selected.teamMemberId || teamMemberId}
-          onRemoveSlot={onRemoveGeneratedSlot}
-          onReplaceSlot={onReplaceGeneratedSlot}
-        />
+        <>
+          <BookingPlanPanel
+            firstSlot={selected}
+            generatedSlots={generatedSlots}
+            resolving={seriesResolving}
+            pricePerVisitCents={pricePerVisitCents}
+            // The Book Ahead series locks variation + barber from the
+            // first slot for every visit, so the alternatives picker
+            // queries the same calendar the plan was generated against.
+            serviceVariationId={selected.serviceVariationId}
+            teamMemberId={selected.teamMemberId || teamMemberId}
+            onRemoveSlot={onRemoveGeneratedSlot}
+            onReplaceSlot={onReplaceGeneratedSlot}
+          />
+          <div className="bw-series-continue">
+            <button
+              type="button"
+              className="bw-btn"
+              onClick={onSeriesContinue}
+              disabled={seriesResolving}
+            >
+              {seriesResolving
+                ? 'Checking availability…'
+                : `Continue with ${1 + generatedSlots.filter((g) => g.status === 'available').length} ${1 + generatedSlots.filter((g) => g.status === 'available').length === 1 ? 'visit' : 'visits'}`}
+            </button>
+            <p className="bw-series-continue__hint">
+              Unavailable visits can be swapped above before continuing.
+            </p>
+          </div>
+        </>
       ) : null}
 
       {/*
