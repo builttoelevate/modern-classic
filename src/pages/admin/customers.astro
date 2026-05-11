@@ -58,6 +58,14 @@ let linkedParent: Customer | null = null;
 // they're not showing up" — operator can scan this list and verify
 // the link wrote correctly.
 let linkedKids: LinkedPerson[] = [];
+// Square customer records for each linked kid, fetched in parallel
+// with everything else. Used to render email + created-date under
+// each kid's name so the operator can tell two same-name kids
+// apart — without this, "Briar Bone" and "Briar Bone" look
+// identical in the list even though one's the wife and one's the
+// daughter. Keyed by customerId; missing entries (the record was
+// deleted or Square errored) leave the row with name-only.
+const linkedKidsById: Map<string, Customer> = new Map();
 let cardRecords = new Map<string, BookingCardRecord>();
 let barbers: Array<{ id: string; displayName: string }> = [];
 // When a phone lookup hits multiple records (test accounts, pre-dedup
@@ -137,6 +145,20 @@ if (customer) {
   ]);
   if (kidsResult.status === 'fulfilled') {
     linkedKids = kidsResult.value;
+    // Hydrate each kid's Square record so the list can render
+    // email + created-date disambiguators. Parallel fetch with
+    // graceful per-kid degradation — a deleted/missing kid just
+    // shows name-only.
+    if (linkedKids.length > 0) {
+      const records = await Promise.all(
+        linkedKids.map((kid) =>
+          getCustomerById(kid.customerId).catch(() => null),
+        ),
+      );
+      for (const rec of records) {
+        if (rec) linkedKidsById.set(rec.id, rec);
+      }
+    }
   }
   if (parentIdResult.status === 'fulfilled' && parentIdResult.value) {
     try {
@@ -656,8 +678,26 @@ const defaultRescheduleDate = tomorrowInNyDate();
         border: 1px solid rgba(255, 255, 255, 0.08);
         border-radius: 4px;
       }
+      .family-link__kid-info {
+        display: grid;
+        gap: 0.15rem;
+        min-width: 0;
+      }
       .family-link__kid-name {
         font-size: 0.95rem;
+      }
+      .family-link__kid-sub {
+        font-size: 0.78rem;
+        color: var(--muted, #b0a695);
+        font-family: ui-monospace, Menlo, monospace;
+        word-break: break-all;
+      }
+      .family-link__kid-noemail {
+        font-style: italic;
+        color: var(--dim, #80776a);
+      }
+      .family-link__kid-missing {
+        color: #f0a37a;
       }
       .family-link__kid-link {
         font-size: 0.78rem;
@@ -997,7 +1037,13 @@ const defaultRescheduleDate = tomorrowInNyDate();
                 {linkedParent ? (
                   <>
                     <p class="helper">
-                      Linked as a kid of <strong>{`${linkedParent.given_name ?? ''} ${linkedParent.family_name ?? ''}`.trim() || 'Customer'}</strong>.
+                      Linked as a kid of <strong>{`${linkedParent.given_name ?? ''} ${linkedParent.family_name ?? ''}`.trim() || 'Customer'}</strong>
+                      {linkedParent.email_address?.trim() && (
+                        <> (<code>{linkedParent.email_address.trim()}</code>)</>
+                      )}
+                      {linkedParent.created_at && (
+                        <span class="meta"> · created {fmtTimestamp(linkedParent.created_at)}</span>
+                      )}.
                       {' '}
                       Their <code>/my-bookings</code> view will pull this customer's appointments
                       into the merged list and group banner.
@@ -1043,12 +1089,23 @@ const defaultRescheduleDate = tomorrowInNyDate();
                     </p>
                   ) : (
                     <ul class="family-link__kids-list">
-                      {linkedKids.map((kid) => (
+                      {linkedKids.map((kid) => {
+                        const rec = linkedKidsById.get(kid.customerId);
+                        const email = rec?.email_address?.trim();
+                        const createdLabel = fmtTimestamp(rec?.created_at);
+                        return (
                         <li>
-                          <span class="family-link__kid-name">
-                            {kid.displayName}
-                            {kid.relationship ? <span class="meta"> · {kid.relationship}</span> : null}
-                          </span>
+                          <div class="family-link__kid-info">
+                            <span class="family-link__kid-name">
+                              {kid.displayName}
+                              {kid.relationship ? <span class="meta"> · {kid.relationship}</span> : null}
+                            </span>
+                            <span class="family-link__kid-sub">
+                              {email ? email : <span class="family-link__kid-noemail">— no email —</span>}
+                              {rec?.created_at && <> · created {createdLabel}</>}
+                              {!rec && <> · <span class="family-link__kid-missing">record deleted from Square</span></>}
+                            </span>
+                          </div>
                           <a
                             href={`/admin/customers?id=${encodeURIComponent(kid.customerId)}`}
                             class="family-link__kid-link"
@@ -1056,7 +1113,8 @@ const defaultRescheduleDate = tomorrowInNyDate();
                             Manage →
                           </a>
                         </li>
-                      ))}
+                        );
+                      })}
                     </ul>
                   )}
                 </div>
