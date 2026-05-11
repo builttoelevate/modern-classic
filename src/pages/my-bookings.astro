@@ -51,6 +51,39 @@ let products: Product[] = [];
 let activeBarberIds = new Set<string>();
 let loadError: string | null = null;
 
+// One-shot debug overlay. Triggered with ?debug=1 in the URL.
+// Surfaces the exact intermediate state of the linked-people fetch
+// so we can diagnose "I linked a kid but their booking doesn't
+// show" cases without screenshot ping-pong. Includes raw session
+// customer id, linked-people list with each kid's customer id and
+// booking count, and any errors hit during fetch. Disabled in
+// production unless explicitly requested via query param.
+const debugMode = new URL(Astro.request.url).searchParams.get('debug') === '1';
+interface DebugInfo {
+  sessionCustomerId: string;
+  linkedPeople: Array<{ customerId: string; displayName: string }>;
+  parentBookingsCount: { upcoming: number; past: number };
+  kidFetchResults: Array<{
+    displayName: string;
+    customerId: string;
+    upcomingCount: number;
+    pastCount: number;
+    upcomingSummary: string[];
+  }>;
+  groupGapsBefore: Array<{ groupId: string; total: number; visible: number }>;
+  adoptedFromSelfHeal: number;
+}
+const debugInfo: DebugInfo | null = debugMode
+  ? {
+      sessionCustomerId: session.customerId,
+      linkedPeople: [],
+      parentBookingsCount: { upcoming: 0, past: 0 },
+      kidFetchResults: [],
+      groupGapsBefore: [],
+      adoptedFromSelfHeal: 0,
+    }
+  : null;
+
 try {
   const linkedPeople = await listLinkedPeople(session.customerId).catch(() => []);
   const [b, p, bs, ...kidBookingResults] = await Promise.all([
@@ -68,6 +101,28 @@ try {
   bookings = b;
   products = p;
   activeBarberIds = new Set(bs.map((m) => m.id));
+
+  if (debugInfo) {
+    debugInfo.linkedPeople = linkedPeople.map((lp) => ({
+      customerId: lp.customerId,
+      displayName: lp.displayName,
+    }));
+    debugInfo.parentBookingsCount = {
+      upcoming: b.upcoming.length,
+      past: b.past.length,
+    };
+    for (const r of kidBookingResults as Array<{ person: { displayName: string; customerId: string }; bookings: typeof bookings }>) {
+      debugInfo.kidFetchResults.push({
+        displayName: r.person.displayName,
+        customerId: r.person.customerId,
+        upcomingCount: r.bookings.upcoming.length,
+        pastCount: r.bookings.past.length,
+        upcomingSummary: r.bookings.upcoming.map(
+          (bk) => `${bk.startAtLocal} · ${bk.serviceName}${bk.groupId ? ` · group ${bk.groupPosition}/${bk.groupTotal}` : ''}`,
+        ),
+      });
+    }
+  }
 
   // Merge linked-person bookings into the parent's lists, decorating each
   // with the person's name so the BookingCard can show "for Briar".
@@ -87,7 +142,24 @@ try {
       session.customerId,
       ...linkedPeople.map((lp) => lp.customerId),
     ]);
+    if (debugInfo) {
+      // Capture pre-self-heal gaps so the overlay can tell whether
+      // the self-heal had work to do at all.
+      const gaps = new Map<string, { total: number; visible: number }>();
+      for (const bk of [...bookings.upcoming, ...bookings.past]) {
+        if (!bk.groupId || !bk.groupTotal) continue;
+        const g = gaps.get(bk.groupId) ?? { total: bk.groupTotal, visible: 0 };
+        g.visible += 1;
+        gaps.set(bk.groupId, g);
+      }
+      debugInfo.groupGapsBefore = [...gaps.entries()].map(([groupId, v]) => ({
+        groupId,
+        total: v.total,
+        visible: v.visible,
+      }));
+    }
     const adopted = await adoptMissingGroupSiblings(session.customerId, knownIds, bookings);
+    if (debugInfo) debugInfo.adoptedFromSelfHeal = adopted;
     if (adopted > 0) {
       // eslint-disable-next-line no-console
       console.log(
@@ -198,6 +270,12 @@ Astro.response.headers.append('Set-Cookie', refreshSessionCookie(session));
         cancellation &amp; no-show policy
       </a> &mdash; in short, 24-hour notice avoids any charge.
     </p>
+
+    {debugInfo && (
+      <pre style="background:#1a1814; border:1px solid #c9a35c; color:#f3ece0; padding:12px; border-radius:6px; font-size:11px; line-height:1.45; overflow:auto; margin:0 0 16px; white-space:pre-wrap; word-break:break-all;">
+{JSON.stringify(debugInfo, null, 2)}
+      </pre>
+    )}
 
     {loadError ? (
       <div class="mb-empty">
