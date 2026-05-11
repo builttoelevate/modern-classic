@@ -1040,6 +1040,7 @@ export default function BookingWizard({
           onReplaceGeneratedSlot={(intendedStartAtUtc, replacement) =>
             dispatch({ type: 'REPLACE_GENERATED_SLOT', intendedStartAtUtc, replacement })
           }
+          onSeriesContinue={() => dispatch({ type: 'GO_TO', step: 4 })}
         />
       )}
 

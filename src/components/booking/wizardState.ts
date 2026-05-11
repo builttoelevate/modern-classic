@@ -301,7 +301,13 @@ export function reducer(state: WizardState, action: WizardAction): WizardState {
         // first slot means we need to regenerate from scratch; clear the
         // old list so Step 3's resolver can populate it fresh.
         series: { ...state.series, generatedSlots: [], resolving: false },
-        step: 4,
+        // For single-visit bookings we auto-advance. For Book Ahead
+        // series, stay on Step 3 so the customer sees the plan panel
+        // assemble below the calendar — without this, picking a slot
+        // jumped straight to Step 4 (customer info) and the customer
+        // never saw the series being built. They'd hit Confirm before
+        // resolution finished and only the first visit would land.
+        step: state.series.frequencyWeeks > 0 ? 3 : 4,
       };
     }
     case 'BLOCK_SLOT':
