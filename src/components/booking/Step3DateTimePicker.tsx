@@ -38,8 +38,6 @@ interface Props {
    *  is > 1. */
   desiredCount: DesiredCount;
   picks: AvailabilitySlot[];
-  /** Service price snapshot used for the plan-panel total. */
-  pricePerVisitCents: number | null;
   onDesiredCountChange: (next: DesiredCount) => void;
   onRemovePick: (startAtUtc: string) => void;
   /** Once the plan is full and the customer has reviewed it on
@@ -219,7 +217,6 @@ export function Step3DateTimePicker({
   barbers,
   desiredCount,
   picks,
-  pricePerVisitCents,
   onDesiredCountChange,
   onRemovePick,
   onSeriesContinue,
@@ -567,7 +564,6 @@ export function Step3DateTimePicker({
           <BookingPlanPanel
             picks={picks}
             desiredCount={desiredCount}
-            pricePerVisitCents={pricePerVisitCents}
             onRemoveSlot={onRemovePick}
           />
           {picks.length >= desiredCount && (

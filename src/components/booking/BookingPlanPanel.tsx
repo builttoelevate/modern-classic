@@ -15,9 +15,6 @@ interface Props {
    *  so this component stays presentational. Sorted here. */
   picks: AvailabilitySlot[];
   desiredCount: number;
-  /** Service price in cents — same across every visit (Book
-   *  Ahead locks one service for the whole session). */
-  pricePerVisitCents: number | null;
   onRemoveSlot: (startAtUtc: string) => void;
 }
 
@@ -38,15 +35,12 @@ function formatRowDateTime(utc: string): string {
 export function BookingPlanPanel({
   picks,
   desiredCount,
-  pricePerVisitCents,
   onRemoveSlot,
 }: Props) {
   const sorted = [...picks].sort(
     (a, b) => Date.parse(a.startAtUtc) - Date.parse(b.startAtUtc),
   );
   const planFull = picks.length >= desiredCount;
-  const totalCents =
-    pricePerVisitCents !== null ? pricePerVisitCents * picks.length : null;
 
   return (
     <section className="bw-plan" aria-label="Your booking plan">
@@ -88,12 +82,6 @@ export function BookingPlanPanel({
         </ol>
       )}
 
-      {totalCents !== null && picks.length > 1 ? (
-        <footer className="bw-plan__foot">
-          <span className="bw-plan__total-label">Total today</span>
-          <span className="bw-plan__total">${(totalCents / 100).toFixed(0)}</span>
-        </footer>
-      ) : null}
     </section>
   );
 }

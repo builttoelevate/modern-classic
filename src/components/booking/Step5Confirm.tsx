@@ -355,14 +355,6 @@ export function Step5Confirm({
             )}
           </span>
         </div>
-        {isSeries && variation.priceCents !== null && variation.priceCents !== undefined ? (
-          <div className="bw-summary-row">
-            <span className="bw-summary-label">Total ({seriesBookableCount} {seriesBookableCount === 1 ? 'visit' : 'visits'})</span>
-            <span className="bw-summary-value">
-              ${((variation.priceCents * seriesBookableCount) / 100).toFixed(0)}
-            </span>
-          </div>
-        ) : null}
         {!rescheduleMode && (
           <>
             <div className="bw-summary-row">
