@@ -125,3 +125,44 @@ export function generateSeriesTimestamps(
   }
   return out;
 }
+
+/**
+ * Generate a series id. Pure data-layer hook — no UI consumes it
+ * today, but every booking in a series carries the id in its
+ * customer note so a future admin "view all bookings in this
+ * series" or "cancel whole series" feature can stitch them back
+ * together without retroactive tagging. Mirrors the mc-grp- /
+ * Group [mc-grp-...] pattern already used for group bookings.
+ */
+export function newSeriesId(): string {
+  const bytes = new Uint8Array(4);
+  crypto.getRandomValues(bytes);
+  const hex = Array.from(bytes)
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
+  return `mc-srs-${hex}`;
+}
+
+/**
+ * Build the customer-note prefix for a single visit in a series.
+ * Format mirrors the group preamble so the same admin/log parsers
+ * can recognize the pattern:
+ *
+ *   Series [mc-srs-a1b2c3d4] · 3/8 · Every 4 wk
+ *   Note: Customer's typed note     ← only on the first visit
+ *
+ * Customers never see this — getCustomerBookings strips it from
+ * the displayed customer note (parallel to how group preambles
+ * are stripped).
+ */
+export function buildSeriesNote(input: {
+  seriesId: string;
+  position: number;
+  total: number;
+  frequencyWeeks: number;
+  userNote?: string;
+}): string {
+  const head = `Series [${input.seriesId}] · ${input.position}/${input.total} · Every ${input.frequencyWeeks} wk`;
+  const trimmedUserNote = input.userNote?.trim();
+  return trimmedUserNote ? `${head}\nNote: ${trimmedUserNote}` : head;
+}

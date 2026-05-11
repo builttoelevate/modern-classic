@@ -24,7 +24,11 @@ const FREQUENCY_OPTIONS: Array<{ value: FrequencyWeeks; label: string }> = [
   { value: 6, label: 'Every 6 wk' },
 ];
 
-const COUNT_OPTIONS: SeriesCount[] = [3, 6, 12];
+// 8 visits at every 6 weeks is already ~11 months out — bumping
+// any higher pushes past the 1-year horizon for the sparser
+// frequencies, which would force "Past 1-year limit" badges on
+// every plan. 8 is the honest commitment ceiling.
+const COUNT_OPTIONS: SeriesCount[] = [3, 6, 8];
 
 export function BookAheadCard({
   frequencyWeeks,
