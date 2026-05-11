@@ -9,8 +9,30 @@ import {
   markBookingCharged,
   markBookingChargeFailed,
 } from '../../../../lib/booking/cardIndex';
+import { getCustomerById } from '../../../../lib/square/customers';
+import { resolveBarberContact } from '../../../../lib/barber/contactLookup';
+import { sendNoShowChargeBarber } from '../../../../lib/email/resend';
 
 export const prerender = false;
+
+const SHOP_TZ = 'America/New_York';
+const SHOP_PHONE = '740-297-4462';
+
+function formatWhenLabel(utc: string | undefined): string {
+  if (!utc) return 'this appointment';
+  const d = new Date(utc);
+  if (isNaN(d.getTime())) return 'this appointment';
+  return new Intl.DateTimeFormat('en-US', {
+    timeZone: SHOP_TZ,
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  }).format(d);
+}
 
 // "Mark no-show & charge" — fired from /admin/bookings when Michael
 // notices a customer didn't show. Strictly admin-gated (HTTP Basic Auth).
@@ -175,6 +197,20 @@ export const POST: APIRoute = async ({ request }) => {
       paymentId: payment.id,
       amountCents: card.servicePriceCents,
     });
+
+    // Barber notification — let the assigned barber know their slot
+    // was lost AND the shop already charged. Non-fatal; the charge has
+    // already landed by this point. We do a separate getCustomerById
+    // for the customer's display name since the booking row only has
+    // the customer_id.
+    void notifyBarberOfNoShowCharge({
+      teamMemberId: booking.appointment_segments?.[0]?.team_member_id,
+      customerId: booking.customer_id,
+      serviceName: card.serviceName,
+      whenLabelUtc: booking.start_at,
+      amountCents: card.servicePriceCents,
+    });
+
     const success: SuccessResponse = {
       ok: true,
       bookingId,
@@ -207,3 +243,56 @@ export const POST: APIRoute = async ({ request }) => {
     return Response.json(success, { status: 200 });
   }
 };
+
+// Fire-and-forget barber notification. Pulled out into a helper so we
+// can call it with `void` and never block the success response on
+// email delivery. Any failure is logged but never thrown.
+async function notifyBarberOfNoShowCharge(input: {
+  teamMemberId: string | undefined;
+  customerId: string | undefined;
+  serviceName: string;
+  whenLabelUtc: string | undefined;
+  amountCents: number;
+}): Promise<void> {
+  try {
+    if (!input.teamMemberId) {
+      logAction({ phase: 'no-show-barber-notify-skipped-no-team-member' });
+      return;
+    }
+    const [contact, customer] = await Promise.all([
+      resolveBarberContact(input.teamMemberId),
+      input.customerId ? getCustomerById(input.customerId).catch(() => null) : Promise.resolve(null),
+    ]);
+    if (!contact) {
+      logAction({
+        phase: 'no-show-barber-notify-skipped-no-email',
+        teamMemberId: input.teamMemberId,
+      });
+      return;
+    }
+    const customerName = customer
+      ? `${customer.given_name ?? ''} ${customer.family_name ?? ''}`.trim() || 'the customer'
+      : 'the customer';
+    const send = await sendNoShowChargeBarber({
+      to: contact.email,
+      barberDisplayName: contact.displayName,
+      customerName,
+      serviceName: input.serviceName,
+      whenLabel: formatWhenLabel(input.whenLabelUtc),
+      amountCents: input.amountCents,
+      shopPhone: SHOP_PHONE,
+    });
+    logAction({
+      phase: 'no-show-barber-notify-sent',
+      teamMemberId: input.teamMemberId,
+      resendId: send.id,
+    });
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
+    logAction({
+      phase: 'no-show-barber-notify-failed',
+      teamMemberId: input.teamMemberId,
+      detail,
+    });
+  }
+}

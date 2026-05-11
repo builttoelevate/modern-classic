@@ -298,3 +298,145 @@ export async function sendWaitlistOpening(
     replyTo: REPLY_TO,
   });
 }
+
+export interface SendWaitlistSlotMatchBarberInput {
+  to: string;
+  barberDisplayName: string;
+  customerName: string;
+  customerEmail: string;
+  customerPhone: string;
+  serviceName: string;
+  whenLabel: string;
+  dashboardUrl: string;
+  shopPhone: string;
+}
+
+/**
+ * Sister to sendWaitlistOpening. The cron sends this to the
+ * specifically-requested barber when a customer's waitlist slot
+ * matches an opening — so the barber is prepped before the customer
+ * calls. Reply-to goes to the customer so a quick reply from the
+ * barber's phone threads back to them.
+ */
+export async function sendWaitlistSlotMatchBarber(
+  input: SendWaitlistSlotMatchBarberInput,
+): Promise<{ id: string }> {
+  const {
+    waitlistSlotMatchBarberHtml,
+    waitlistSlotMatchBarberText,
+    waitlistSlotMatchBarberSubject,
+  } = await import('./templates/waitlistSlotMatchBarber');
+  const html = waitlistSlotMatchBarberHtml(input);
+  const text = waitlistSlotMatchBarberText(input);
+  return sendEmail({
+    to: input.to,
+    subject: waitlistSlotMatchBarberSubject({
+      customerName: input.customerName,
+      whenLabel: input.whenLabel,
+    }),
+    html,
+    text,
+    replyTo: input.customerEmail,
+  });
+}
+
+export interface SendPasswordResetBarberInput {
+  to: string;
+  barberDisplayName: string;
+  username: string;
+  signInUrl: string;
+  shopPhone: string;
+}
+
+/**
+ * Security notification when an admin resets the barber's password.
+ * Does NOT contain the new plaintext — Michael hands that over by
+ * text. Reply-to is the shop inbox so the barber can flag an
+ * unexpected reset.
+ */
+export async function sendPasswordResetBarber(
+  input: SendPasswordResetBarberInput,
+): Promise<{ id: string }> {
+  const {
+    passwordResetBarberHtml,
+    passwordResetBarberText,
+    passwordResetBarberSubject,
+  } = await import('./templates/passwordResetBarber');
+  const html = passwordResetBarberHtml(input);
+  const text = passwordResetBarberText(input);
+  return sendEmail({
+    to: input.to,
+    subject: passwordResetBarberSubject(),
+    html,
+    text,
+    replyTo: REPLY_TO,
+  });
+}
+
+export interface SendNoShowChargeBarberInput {
+  to: string;
+  barberDisplayName: string;
+  customerName: string;
+  serviceName: string;
+  whenLabel: string;
+  amountCents: number;
+  shopPhone: string;
+}
+
+/**
+ * Fired after the no-show charge endpoint successfully captures the
+ * card on file. Tells the assigned barber that the slot is lost AND
+ * that the shop already collected.
+ */
+export async function sendNoShowChargeBarber(
+  input: SendNoShowChargeBarberInput,
+): Promise<{ id: string }> {
+  const {
+    noShowChargeBarberHtml,
+    noShowChargeBarberText,
+    noShowChargeBarberSubject,
+  } = await import('./templates/noShowChargeBarber');
+  const html = noShowChargeBarberHtml(input);
+  const text = noShowChargeBarberText(input);
+  return sendEmail({
+    to: input.to,
+    subject: noShowChargeBarberSubject({ customerName: input.customerName }),
+    html,
+    text,
+    replyTo: REPLY_TO,
+  });
+}
+
+export interface SendReviewClickBarberInput {
+  to: string;
+  barberDisplayName: string;
+  customerName: string;
+  serviceName: string;
+  appointmentDate: string;
+  googleReviewUrl: string;
+  shopPhone: string;
+}
+
+/**
+ * Fired by /r/review.ts when a customer clicks through their review
+ * request. Strong signal a review is incoming — the barber can watch
+ * for it on Google and reply.
+ */
+export async function sendReviewClickBarber(
+  input: SendReviewClickBarberInput,
+): Promise<{ id: string }> {
+  const {
+    reviewClickBarberHtml,
+    reviewClickBarberText,
+    reviewClickBarberSubject,
+  } = await import('./templates/reviewClickBarber');
+  const html = reviewClickBarberHtml(input);
+  const text = reviewClickBarberText(input);
+  return sendEmail({
+    to: input.to,
+    subject: reviewClickBarberSubject({ customerName: input.customerName }),
+    html,
+    text,
+    replyTo: REPLY_TO,
+  });
+}

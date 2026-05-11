@@ -65,8 +65,19 @@ export interface ReviewRequestRecord {
   customerId: string;
   bookingId: string;
   customerEmailRedacted: string;
+  /** Customer display name at send time, used by the click handler to
+   *  populate the barber notification email. Optional for back-compat
+   *  with older records written before this field was added. */
+  customerName?: string;
   serviceName: string;
   barberName: string;
+  /** Square team_member_id of the barber the review request is for.
+   *  Optional for back-compat with older records; the click handler
+   *  skips the barber-notify path when it's missing. */
+  teamMemberId?: string;
+  /** Pre-formatted appointment date string for the click email
+   *  (e.g. "Fri, Jun 26, 2026"). Optional for back-compat. */
+  appointmentDate?: string;
   sentAt: string;
   clickedAt: string | null;
   clickCount: number;
@@ -78,8 +89,11 @@ export interface RecordSentInput {
   customerId: string;
   bookingId: string;
   customerEmailRedacted: string;
+  customerName?: string;
   serviceName: string;
   barberName: string;
+  teamMemberId?: string;
+  appointmentDate?: string;
   sentAt: string;
   resendId?: string;
 }
@@ -91,8 +105,11 @@ export async function recordReviewRequestSent(input: RecordSentInput): Promise<v
     customerId: input.customerId,
     bookingId: input.bookingId,
     customerEmailRedacted: input.customerEmailRedacted,
+    ...(input.customerName ? { customerName: input.customerName } : {}),
     serviceName: input.serviceName,
     barberName: input.barberName,
+    ...(input.teamMemberId ? { teamMemberId: input.teamMemberId } : {}),
+    ...(input.appointmentDate ? { appointmentDate: input.appointmentDate } : {}),
     sentAt: input.sentAt,
     clickedAt: null,
     clickCount: 0,
@@ -125,9 +142,17 @@ export async function getLastReviewRequestForCustomer(
   return typeof ts === 'string' && ts.length > 0 ? ts : null;
 }
 
+/**
+ * Records a click on a review request CTA. Returns the previous
+ * `clickedAt` value (or null) along with the up-to-date record — the
+ * caller uses the null-previous case to fire a one-time "customer is
+ * leaving a review" notification to the barber on the first click, and
+ * skip subsequent clicks so the barber doesn't get re-pinged each time
+ * the customer revisits the link.
+ */
 export async function recordReviewRequestClicked(
   reviewRequestId: string,
-): Promise<void> {
+): Promise<{ record: ReviewRequestRecord; wasFirstClick: boolean } | null> {
   const redis = getRedis();
   const key = kSent(reviewRequestId);
   const current = await redis.get<ReviewRequestRecord>(key);
@@ -142,14 +167,16 @@ export async function recordReviewRequestClicked(
         reviewRequestId,
       })}`,
     );
-    return;
+    return null;
   }
+  const wasFirstClick = current.clickedAt === null;
   const updated: ReviewRequestRecord = {
     ...current,
     clickedAt: current.clickedAt ?? new Date().toISOString(),
     clickCount: (current.clickCount ?? 0) + 1,
   };
   await redis.set(key, updated, { keepTtl: true });
+  return { record: updated, wasFirstClick };
 }
 
 export async function getReviewStats(opts: {

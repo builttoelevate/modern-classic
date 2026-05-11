@@ -6,8 +6,7 @@ import {
 } from '../../lib/email/resend';
 import { redactEmail } from '../../lib/booking/log';
 import { recordWaitlistEntry } from '../../lib/marketing/waitlistLog';
-import { getAccount } from '../../lib/barber/accountStore';
-import { getBarbers } from '../../lib/square/team';
+import { resolveBarberContacts } from '../../lib/barber/contactLookup';
 
 export const prerender = false;
 
@@ -335,32 +334,21 @@ export const POST: APIRoute = async ({ request, clientAddress }) => {
         const baseUrl = new URL(request.url).origin;
         const dashboardUrl = `${baseUrl}/barber/dashboard?tab=waitlist`;
         const preferenceLabel = buildPreferenceLabel(daysOfWeek, timesOfDay);
-        // Look up account + Square roster in parallel so the barber
-        // notifications kick off as fast as possible.
-        const [squareRoster, accounts] = await Promise.all([
-          getBarbers().catch(() => []),
-          Promise.all(requestedIds.map((id) => getAccount(id).catch(() => null))),
-        ]);
-        const squareById = new Map(squareRoster.map((b) => [b.id, b] as const));
+        const contacts = await resolveBarberContacts(requestedIds);
         const sentTo = new Set<string>();
         await Promise.all(
           requestedIds.map(async (id, i) => {
-            const account = accounts[i];
-            const squareEntry = squareById.get(id);
-            const inbox = (account?.email && account.email.trim())
-              || (squareEntry?.email && squareEntry.email.trim())
-              || '';
-            if (!inbox) {
+            const contact = contacts.get(id);
+            if (!contact) {
               logWaitlist({ phase: 'barber-notify-skipped-no-email', teamMemberId: id });
               return;
             }
-            const inboxKey = inbox.toLowerCase();
-            if (sentTo.has(inboxKey)) return; // de-dup duplicate inboxes
-            sentTo.add(inboxKey);
-            const displayName = barberDisplayNames[i] || squareEntry?.displayName || barberName;
+            if (sentTo.has(contact.email)) return; // de-dup duplicate inboxes
+            sentTo.add(contact.email);
+            const displayName = barberDisplayNames[i] || contact.displayName || barberName;
             try {
               const r = await sendWaitlistBarberNotification({
-                to: inbox,
+                to: contact.email,
                 barberDisplayName: displayName,
                 customerName: name,
                 customerEmail: email,
@@ -375,7 +363,7 @@ export const POST: APIRoute = async ({ request, clientAddress }) => {
               logWaitlist({
                 phase: 'barber-notify-sent',
                 teamMemberId: id,
-                inbox: redactEmail(inbox),
+                inbox: redactEmail(contact.email),
                 messageId: r.id,
               });
             } catch (err) {
@@ -383,7 +371,7 @@ export const POST: APIRoute = async ({ request, clientAddress }) => {
               logWaitlist({
                 phase: 'barber-notify-failed',
                 teamMemberId: id,
-                inbox: redactEmail(inbox),
+                inbox: redactEmail(contact.email),
                 detail,
               });
             }
