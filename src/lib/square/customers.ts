@@ -131,40 +131,52 @@ export async function findCustomersByPhone(phone: string): Promise<Customer[]> {
 /**
  * Lookup by display name — used by the admin /admin/customers
  * search field so the operator can find a customer they know by
- * name even when phone or email isn't to hand. The phone-and-email-
- * only flow misses cases like "I deleted a Briar but I'm not sure
- * which one — let me look up every Briar in Square."
+ * name even when phone or email isn't to hand.
  *
- * Query handling:
- *   - Single word ("Briar") → fuzzy match on given_name only.
- *   - Two+ words ("Briar Chicha") → split on first space; given_name
- *     fuzzy on the first token AND family_name fuzzy on the rest.
+ * Square's structured customer search filter does NOT support name
+ * fields (only email/phone/reference_id/etc). The Square Dashboard
+ * works around this by listing all customers and filtering client-
+ * side; we mirror that approach. List in pages of 100, filter each
+ * page on a tokenized match (every whitespace-separated token in
+ * the query must appear as a substring of the customer's combined
+ * "given family" name), bail out once we have 20 hits or hit the
+ * 3-page (300-record) cap.
  *
- * Both filters use Square's `fuzzy` matcher because the goal is
- * discoverability, not exactness — operators won't always remember
- * the exact spelling. Caller renders the results as a chooser
- * when there's more than one.
+ * Bounded latency vs. coverage: 3 × 100-record pages × ~300ms per
+ * page is ~1 second worst case. For Modern Classic's customer
+ * volume that's well above headroom. If we ever outgrow it, the
+ * answer is a Redis-backed name index, not more pages.
  */
 export async function findCustomersByName(query: string): Promise<Customer[]> {
   const trimmed = query.trim();
   if (!trimmed) return [];
+  const tokens = trimmed.toLowerCase().split(/\s+/).filter(Boolean);
+  if (tokens.length === 0) return [];
 
-  const firstSpace = trimmed.indexOf(' ');
-  const givenName = firstSpace === -1 ? trimmed : trimmed.slice(0, firstSpace);
-  const familyName = firstSpace === -1 ? '' : trimmed.slice(firstSpace + 1).trim();
+  const MAX_PAGES = 3;
+  const MAX_RESULTS = 20;
+  const out: Customer[] = [];
+  let cursor: string | undefined;
 
-  const filter: Record<string, unknown> = {};
-  if (givenName) filter.given_name = { fuzzy: givenName };
-  if (familyName) filter.family_name = { fuzzy: familyName };
-
-  const res = await squareFetch<SearchCustomersResponse>('/v2/customers/search', {
-    method: 'POST',
-    body: {
-      query: { filter },
-      limit: 20,
-    },
-  });
-  return res.customers ?? [];
+  for (let page = 0; page < MAX_PAGES; page++) {
+    const res = await squareFetch<{ customers?: Customer[]; cursor?: string }>(
+      '/v2/customers',
+      { query: { limit: 100, cursor } },
+    );
+    const customers = res.customers ?? [];
+    for (const c of customers) {
+      const given = (c.given_name ?? '').toLowerCase();
+      const family = (c.family_name ?? '').toLowerCase();
+      const full = `${given} ${family}`.trim();
+      if (tokens.every((t) => full.includes(t))) {
+        out.push(c);
+        if (out.length >= MAX_RESULTS) return out;
+      }
+    }
+    cursor = res.cursor;
+    if (!cursor) break;
+  }
+  return out;
 }
 
 function pickBestPhoneMatch(matches: Customer[]): Customer | null {
