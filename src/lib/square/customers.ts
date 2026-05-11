@@ -136,16 +136,21 @@ export async function findCustomersByPhone(phone: string): Promise<Customer[]> {
  * Square's structured customer search filter does NOT support name
  * fields (only email/phone/reference_id/etc). The Square Dashboard
  * works around this by listing all customers and filtering client-
- * side; we mirror that approach. List in pages of 100, filter each
- * page on a tokenized match (every whitespace-separated token in
- * the query must appear as a substring of the customer's combined
- * "given family" name), bail out once we have 20 hits or hit the
- * 3-page (300-record) cap.
+ * side; we mirror that approach.
  *
- * Bounded latency vs. coverage: 3 × 100-record pages × ~300ms per
- * page is ~1 second worst case. For Modern Classic's customer
- * volume that's well above headroom. If we ever outgrow it, the
- * answer is a Redis-backed name index, not more pages.
+ * Sort by CREATED_AT DESC so the newest customers surface first —
+ * the practical hit rate for admin name search skews heavily
+ * toward recent customers (recently-booked, newly-added kids,
+ * etc.). The initial implementation used the default order
+ * (oldest first), which buried recent customers like Bill (Sep
+ * 2025) and the Briar Bone records (May 2026) under hundreds of
+ * older records, making the search miss them entirely.
+ *
+ * Cap at 8 pages (800 records). At ~300ms per page that's ~2.5s
+ * worst case when no match is found — acceptable. The hit rate
+ * for "look up someone created more than 800 records ago by
+ * name" is low enough to not justify scanning deeper; for those
+ * the operator can fall back to email or phone.
  */
 export async function findCustomersByName(query: string): Promise<Customer[]> {
   const trimmed = query.trim();
@@ -153,7 +158,7 @@ export async function findCustomersByName(query: string): Promise<Customer[]> {
   const tokens = trimmed.toLowerCase().split(/\s+/).filter(Boolean);
   if (tokens.length === 0) return [];
 
-  const MAX_PAGES = 3;
+  const MAX_PAGES = 8;
   const MAX_RESULTS = 20;
   const out: Customer[] = [];
   let cursor: string | undefined;
@@ -161,7 +166,14 @@ export async function findCustomersByName(query: string): Promise<Customer[]> {
   for (let page = 0; page < MAX_PAGES; page++) {
     const res = await squareFetch<{ customers?: Customer[]; cursor?: string }>(
       '/v2/customers',
-      { query: { limit: 100, cursor } },
+      {
+        query: {
+          limit: 100,
+          cursor,
+          sort_field: 'CREATED_AT',
+          sort_order: 'DESC',
+        },
+      },
     );
     const customers = res.customers ?? [];
     for (const c of customers) {
