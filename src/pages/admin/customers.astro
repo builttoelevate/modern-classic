@@ -73,6 +73,18 @@ let barbers: Array<{ id: string; displayName: string }> = [];
 // at once. The single-record path stays the dominant case.
 let phoneMatches: Customer[] = [];
 
+// For each multi-match result, the parent's name + email when that
+// record is linked as a kid in our profile-links graph. Lets the
+// chooser surface "Linked to Bill Chicha (bilsonxnc@gmail.com)" as
+// a sub-line under each name — critical when two records share a
+// first+last (e.g. two "Briar Bone" entries) and you need to know
+// at a glance which parent each one belongs to.
+interface ParentTag {
+  name: string;
+  email: string | null;
+}
+const searchResultParents: Map<string, ParentTag> = new Map();
+
 if (focusId) {
   // ?id=... is the direct-fetch path, set when the operator clicks
   // "Manage" from the multi-match list. Skip search entirely.
@@ -123,6 +135,44 @@ if (focusId) {
     } else {
       searchError = err instanceof Error ? err.message : 'Lookup failed.';
     }
+  }
+}
+
+// Hydrate parent tags for the multi-match chooser so each result row
+// can show who it's linked to. Per-row failures are swallowed — a
+// missing tag just leaves the row without the "Linked to" sub-line.
+if (phoneMatches.length > 1) {
+  const parentIds = await Promise.all(
+    phoneMatches.map((c) =>
+      getLinkedParent(c.id)
+        .then((pid) => ({ kidId: c.id, parentId: pid }))
+        .catch(() => ({ kidId: c.id, parentId: null })),
+    ),
+  );
+  const uniqueParentIds = [
+    ...new Set(parentIds.map((p) => p.parentId).filter((id): id is string => !!id)),
+  ];
+  const parentRecords = await Promise.all(
+    uniqueParentIds.map((pid) =>
+      getCustomerById(pid)
+        .then((rec) => ({ id: pid, rec }))
+        .catch(() => ({ id: pid, rec: null as Customer | null })),
+    ),
+  );
+  const parentById = new Map<string, Customer>();
+  for (const { id, rec } of parentRecords) {
+    if (rec) parentById.set(id, rec);
+  }
+  for (const { kidId, parentId } of parentIds) {
+    if (!parentId) continue;
+    const rec = parentById.get(parentId);
+    if (!rec) continue;
+    const name =
+      `${rec.given_name ?? ''} ${rec.family_name ?? ''}`.trim() || '(no name)';
+    searchResultParents.set(kidId, {
+      name,
+      email: rec.email_address?.trim() || null,
+    });
   }
 }
 
@@ -801,19 +851,30 @@ const defaultRescheduleDate = tomorrowInNyDate();
               </tr>
             </thead>
             <tbody>
-              {phoneMatches.map((c) => (
-                <tr>
-                  <td>{`${c.given_name ?? ''} ${c.family_name ?? ''}`.trim() || '(no name)'}</td>
-                  <td>{c.email_address || <span class="meta">— no email —</span>}</td>
-                  <td>{fmtTimestamp(c.created_at)}</td>
-                  <td class="meta">{c.id}</td>
-                  <td>
-                    <a href={`/admin/customers?q=${encodeURIComponent(rawQuery)}&id=${encodeURIComponent(c.id)}`}>
-                      Manage →
-                    </a>
-                  </td>
-                </tr>
-              ))}
+              {phoneMatches.map((c) => {
+                const parentTag = searchResultParents.get(c.id);
+                return (
+                  <tr>
+                    <td>
+                      {`${c.given_name ?? ''} ${c.family_name ?? ''}`.trim() || '(no name)'}
+                      {parentTag && (
+                        <div class="meta">
+                          Linked to <strong>{parentTag.name}</strong>
+                          {parentTag.email && ` (${parentTag.email})`}
+                        </div>
+                      )}
+                    </td>
+                    <td>{c.email_address || <span class="meta">— no email —</span>}</td>
+                    <td>{fmtTimestamp(c.created_at)}</td>
+                    <td class="meta">{c.id}</td>
+                    <td>
+                      <a href={`/admin/customers?q=${encodeURIComponent(rawQuery)}&id=${encodeURIComponent(c.id)}`}>
+                        Manage →
+                      </a>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
