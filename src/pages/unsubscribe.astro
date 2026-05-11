@@ -11,6 +11,7 @@ export const prerender = false;
 import { verifyUnsubscribeToken } from '../lib/marketing/unsubscribeToken';
 import {
   MARKETING_UNSUBSCRIBED_AT_KEY,
+  REVIEW_REQUESTS_UNSUBSCRIBED_AT_KEY,
   setCustomAttribute,
 } from '../lib/square/customAttributes';
 import { SquareApiError } from '../lib/square/client';
@@ -20,6 +21,15 @@ const token = url.searchParams.get('token') ?? '';
 const action = (url.searchParams.get('action') ?? 'unsubscribe').toLowerCase() === 'resubscribe'
   ? 'resubscribe'
   : 'unsubscribe';
+// "review" unsubscribes only from post-visit review-request emails;
+// anything else (or absent) unsubscribes from marketing only. Review
+// requests are transactional — we expose a separate per-channel opt-
+// out so the customer can silence them without giving up booking
+// confirmations or magic-link sign-ins.
+const scope: 'marketing' | 'review' =
+  url.searchParams.get('scope')?.toLowerCase() === 'review' ? 'review' : 'marketing';
+const attributeKey =
+  scope === 'review' ? REVIEW_REQUESTS_UNSUBSCRIBED_AT_KEY : MARKETING_UNSUBSCRIBED_AT_KEY;
 
 let state: 'unsubscribed' | 'resubscribed' | 'error' = 'error';
 let errorMessage = "This unsubscribe link isn't valid. It may have been mistyped or tampered with.";
@@ -39,12 +49,12 @@ if (!import.meta.env.UNSUBSCRIBE_SECRET) {
       if (action === 'unsubscribe') {
         await setCustomAttribute(
           verified.customerId,
-          MARKETING_UNSUBSCRIBED_AT_KEY,
+          attributeKey,
           new Date().toISOString(),
         );
         state = 'unsubscribed';
       } else {
-        await setCustomAttribute(verified.customerId, MARKETING_UNSUBSCRIBED_AT_KEY, null);
+        await setCustomAttribute(verified.customerId, attributeKey, null);
         state = 'resubscribed';
       }
     } catch (err) {
@@ -64,7 +74,7 @@ if (!import.meta.env.UNSUBSCRIBE_SECRET) {
   }
 }
 
-const resubscribeUrl = `/unsubscribe?token=${encodeURIComponent(token)}&action=resubscribe`;
+const resubscribeUrl = `/unsubscribe?token=${encodeURIComponent(token)}&action=resubscribe&scope=${scope}`;
 ---
 <!doctype html>
 <html lang="en">
@@ -147,7 +157,24 @@ const resubscribeUrl = `/unsubscribe?token=${encodeURIComponent(token)}&action=r
     <main class="card">
       <div class="eyebrow">Modern Classic</div>
 
-      {state === 'unsubscribed' && (
+      {state === 'unsubscribed' && scope === 'review' && (
+        <>
+          <h1>You won't get review requests anymore</h1>
+          <p>
+            We won't email you a "how'd we do?" request after your visits. Thanks for being a
+            customer.
+          </p>
+          <p>
+            You'll still get booking confirmations, sign-in links, and anything else you actively
+            request.
+          </p>
+          <div class="actions">
+            <a class="link" href={resubscribeUrl}>I changed my mind — let me get review requests again</a>
+          </div>
+        </>
+      )}
+
+      {state === 'unsubscribed' && scope === 'marketing' && (
         <>
           <h1>You've been unsubscribed</h1>
           <p>
@@ -155,8 +182,8 @@ const resubscribeUrl = `/unsubscribe?token=${encodeURIComponent(token)}&action=r
             see you go — thanks for stopping by the shop.
           </p>
           <p>
-            You'll still get transactional emails (booking confirmations, sign-in links, anything
-            you actively requested).
+            You'll still get transactional emails (booking confirmations, sign-in links, post-visit
+            review requests, anything you actively requested).
           </p>
           <div class="actions">
             <a class="link" href={resubscribeUrl}>I changed my mind — resubscribe me</a>
@@ -164,12 +191,25 @@ const resubscribeUrl = `/unsubscribe?token=${encodeURIComponent(token)}&action=r
         </>
       )}
 
-      {state === 'resubscribed' && (
+      {state === 'resubscribed' && scope === 'review' && (
+        <>
+          <h1>Review requests are back on</h1>
+          <p>
+            We'll send you the occasional post-visit "how'd we do?" email again. Thanks for the
+            second chance.
+          </p>
+          <div class="actions">
+            <a class="btn" href="/">Back to Modern Classic</a>
+          </div>
+        </>
+      )}
+
+      {state === 'resubscribed' && scope === 'marketing' && (
         <>
           <h1>Welcome back</h1>
           <p>
-            You're resubscribed to Modern Classic emails — appointment reminders, the occasional
-            review request, and a heads-up when we launch something new in the shop.
+            You're resubscribed to Modern Classic marketing emails — the occasional offer, product
+            launch, or shop update.
           </p>
           <div class="actions">
             <a class="btn" href="/">Back to Modern Classic</a>

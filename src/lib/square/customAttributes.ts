@@ -7,9 +7,23 @@
 //   - marketing_consented_at (datetime)   — when they opted in
 //   - marketing_consent_source (string)   — which surface (booking, etc.)
 //   - marketing_unsubscribed_at (datetime, nullable)
-//                                          — set when they click our
-//                                            unsubscribe link, cleared on
-//                                            resubscribe
+//                                          — set when they click the
+//                                            unsubscribe link on a
+//                                            marketing email (offers,
+//                                            newsletters, etc.). Does
+//                                            NOT block review requests
+//                                            — those are transactional
+//                                            and use their own opt-out
+//                                            flag below.
+//   - review_requests_unsubscribed_at (datetime, nullable)
+//                                          — set when they click the
+//                                            unsubscribe link on a
+//                                            review-request email
+//                                            specifically. Default empty
+//                                            (review requests are
+//                                            transactional + sent by
+//                                            default per CAN-SPAM
+//                                            relationship-message rules).
 //
 // We also store per-customer rate-limit state for review-request emails
 // here so that our cron stays idempotent even without the KV store
@@ -22,13 +36,20 @@ export const MARKETING_CONSENT_KEY = 'marketing_consent';
 export const MARKETING_CONSENTED_AT_KEY = 'marketing_consented_at';
 export const MARKETING_CONSENT_SOURCE_KEY = 'marketing_consent_source';
 export const MARKETING_UNSUBSCRIBED_AT_KEY = 'marketing_unsubscribed_at';
+export const REVIEW_REQUESTS_UNSUBSCRIBED_AT_KEY = 'review_requests_unsubscribed_at';
 export const LAST_REVIEW_REQUEST_SENT_AT_KEY = 'last_review_request_sent_at';
 
 export interface MarketingAttributes {
   consent: boolean;
   consentedAt: string | null;
   consentSource: string | null;
+  /** Set when the customer unsubscribes from MARKETING emails (offers,
+   *  newsletters, etc.). Does not block review requests. */
   unsubscribedAt: string | null;
+  /** Set when the customer unsubscribes from REVIEW REQUEST emails
+   *  specifically. Default null — review requests are transactional
+   *  and sent by default. */
+  reviewRequestsUnsubscribedAt: string | null;
   lastReviewRequestSentAt: string | null;
 }
 
@@ -76,6 +97,14 @@ const DEFINITIONS: CustomAttributeDefinitionDescriptor[] = [
     name: 'Marketing unsubscribed at',
     description:
       'ISO 8601 timestamp of when the customer unsubscribed from our marketing emails. Empty when they have not unsubscribed.',
+    schema: STRING_SCHEMA,
+    visibility: 'VISIBILITY_READ_WRITE_VALUES',
+  },
+  {
+    key: REVIEW_REQUESTS_UNSUBSCRIBED_AT_KEY,
+    name: 'Review requests unsubscribed at',
+    description:
+      'ISO 8601 timestamp of when the customer opted out of post-visit review-request emails. Review requests are transactional (CAN-SPAM relationship messages) and default to on; this flag is set only when the customer clicks the unsubscribe link in a review-request email.',
     schema: STRING_SCHEMA,
     visibility: 'VISIBILITY_READ_WRITE_VALUES',
   },
@@ -240,6 +269,7 @@ export async function getAllMarketingAttributes(
   const consentedAt = map.get(MARKETING_CONSENTED_AT_KEY);
   const consentSource = map.get(MARKETING_CONSENT_SOURCE_KEY);
   const unsubscribedAt = map.get(MARKETING_UNSUBSCRIBED_AT_KEY);
+  const reviewRequestsUnsubscribedAt = map.get(REVIEW_REQUESTS_UNSUBSCRIBED_AT_KEY);
   const lastReviewRequestSentAt = map.get(LAST_REVIEW_REQUEST_SENT_AT_KEY);
 
   return {
@@ -247,6 +277,7 @@ export async function getAllMarketingAttributes(
     consentedAt: stringOrNull(consentedAt),
     consentSource: stringOrNull(consentSource),
     unsubscribedAt: stringOrNull(unsubscribedAt),
+    reviewRequestsUnsubscribedAt: stringOrNull(reviewRequestsUnsubscribedAt),
     lastReviewRequestSentAt: stringOrNull(lastReviewRequestSentAt),
   };
 }
@@ -257,6 +288,7 @@ function emptyMarketingAttributes(): MarketingAttributes {
     consentedAt: null,
     consentSource: null,
     unsubscribedAt: null,
+    reviewRequestsUnsubscribedAt: null,
     lastReviewRequestSentAt: null,
   };
 }

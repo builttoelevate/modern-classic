@@ -128,8 +128,8 @@ export function reviewRequestHtml(props: ReviewRequestProps): string {
                   ${phone}
                 </p>
                 <p style="margin:0;font-size:11px;line-height:1.6;color:${COLORS.muted};">
-                  You're receiving this because you opted in when you booked your appointment.
-                  <a href="${unsub}" style="color:${COLORS.gold};text-decoration:underline;">Unsubscribe</a>.
+                  You're getting this one-time post-visit email because you booked an appointment with us.
+                  Don't want these? <a href="${unsub}" style="color:${COLORS.gold};text-decoration:underline;">Turn off review requests</a>.
                 </p>
               </td>
             </tr>
@@ -161,5 +161,5 @@ Modern Classic Barbershop
 ${props.shopAddress}
 ${props.shopPhone}
 
-You're receiving this because you opted in when you booked your appointment. Unsubscribe: ${props.unsubscribeUrl}`;
+You're getting this one-time post-visit email because you booked an appointment with us. Don't want these? Turn off review requests: ${props.unsubscribeUrl}`;
 }

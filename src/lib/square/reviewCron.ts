@@ -16,7 +16,7 @@ import {
   getAllMarketingAttributes,
   setCustomAttribute,
 } from './customAttributes';
-import { isOptedInForMarketing } from '../marketing/eligibility';
+import { isEligibleForReviewRequest } from '../marketing/eligibility';
 import {
   hasReviewRequestBeenSent,
   recordReviewCronRun,
@@ -282,7 +282,10 @@ export async function runReviewRequestCron(
       }
 
       const marketing = await getAllMarketingAttributes(customer.id);
-      if (!isOptedInForMarketing({ customer, marketingAttributes: marketing })) {
+      // Review requests are transactional — we do NOT require the
+      // marketing consent checkbox. The per-channel unsubscribe link
+      // in the review email itself is the customer's opt-out path.
+      if (!isEligibleForReviewRequest({ customer, marketingAttributes: marketing })) {
         stats.skipped.optedOut++;
         continue;
       }
@@ -310,9 +313,13 @@ export async function runReviewRequestCron(
       const clickUrl = `${opts.origin}/r/review?t=${encodeURIComponent(
         signClickToken({ reviewRequestId, destination: googleReviewUrl }),
       )}`;
+      // scope=review so clicking the link in a post-visit review email
+      // opts the customer out of REVIEW REQUESTS specifically — not
+      // every marketing email we might send them later. Per CAN-SPAM,
+      // the per-channel opt-out is what the link is for.
       const unsubscribeUrl = `${opts.origin}/unsubscribe?token=${encodeURIComponent(
         signUnsubscribeToken(customer.id),
-      )}`;
+      )}&scope=review`;
 
       const customerName = [customer.given_name, customer.family_name]
         .filter((s): s is string => Boolean(s && s.trim()))
