@@ -485,12 +485,36 @@ const defaultRescheduleDate = tomorrowInNyDate();
         font-size: 1.1rem;
         margin: 28px 0 12px;
       }
+      /* Tables sit in a horizontal-scroll wrapper so a phone-narrow
+         viewport doesn't squeeze cell contents one character per line.
+         Cards keep their normal layout; only the table scrolls. */
+      .bookings-wrap {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        max-width: 100%;
+        margin: 0 0 6px;
+      }
       table.bookings { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
       table.bookings th, table.bookings td {
         padding: 9px 10px;
         text-align: left;
         border-bottom: 1px solid var(--border);
         vertical-align: top;
+      }
+      /* Keep date/time strings and action buttons on a single line so
+         "Friday, June 26, 2026 at 12:00 PM" doesn't break into seven
+         vertical fragments on mobile. The horizontal scroll wrapper
+         catches the overflow. */
+      table.bookings td:first-child,
+      table.bookings td .table-actions {
+        white-space: nowrap;
+      }
+      /* Multi-line sub-content (parent tag, group badge, free-text
+         notes) inside a nowrap first cell must opt back into wrapping
+         or it'll render in a single overflow line. */
+      table.bookings td:first-child .meta--tag,
+      table.bookings td:first-child .group-badge {
+        white-space: normal;
       }
       table.bookings th {
         font-size: 0.68rem;
@@ -840,13 +864,13 @@ const defaultRescheduleDate = tomorrowInNyDate();
             <strong>{rawQuery}</strong> matches multiple records. Pick one to manage.
             If they're duplicates, manage one to update or delete the other.
           </p>
+          <div class="bookings-wrap">
           <table class="bookings">
             <thead>
               <tr>
                 <th>Name</th>
                 <th>Email</th>
                 <th>Created</th>
-                <th>ID</th>
                 <th></th>
               </tr>
             </thead>
@@ -858,7 +882,7 @@ const defaultRescheduleDate = tomorrowInNyDate();
                     <td>
                       {`${c.given_name ?? ''} ${c.family_name ?? ''}`.trim() || '(no name)'}
                       {parentTag && (
-                        <div class="meta">
+                        <div class="meta meta--tag">
                           Linked to <strong>{parentTag.name}</strong>
                           {parentTag.email && ` (${parentTag.email})`}
                         </div>
@@ -866,7 +890,6 @@ const defaultRescheduleDate = tomorrowInNyDate();
                     </td>
                     <td>{c.email_address || <span class="meta">— no email —</span>}</td>
                     <td>{fmtTimestamp(c.created_at)}</td>
-                    <td class="meta">{c.id}</td>
                     <td>
                       <a href={`/admin/customers?q=${encodeURIComponent(rawQuery)}&id=${encodeURIComponent(c.id)}`}>
                         Manage →
@@ -877,6 +900,7 @@ const defaultRescheduleDate = tomorrowInNyDate();
               })}
             </tbody>
           </table>
+          </div>
         </div>
       )}
 
@@ -954,6 +978,7 @@ const defaultRescheduleDate = tomorrowInNyDate();
               {bookings.upcoming.length === 0 ? (
                 <p class="empty">No upcoming bookings.</p>
               ) : (
+                <div class="bookings-wrap">
                 <table class="bookings">
                   <thead>
                     <tr>
@@ -1027,12 +1052,14 @@ const defaultRescheduleDate = tomorrowInNyDate();
                     })}
                   </tbody>
                 </table>
+                </div>
               )}
 
               <h3>Past bookings ({bookings.past.length})</h3>
               {bookings.past.length === 0 ? (
                 <p class="empty">No past bookings on file (last 6 months).</p>
               ) : (
+                <div class="bookings-wrap">
                 <table class="bookings">
                   <thead>
                     <tr>
@@ -1091,6 +1118,7 @@ const defaultRescheduleDate = tomorrowInNyDate();
                     })}
                   </tbody>
                 </table>
+                </div>
               )}
 
               <div class="family-link" data-customer-id={customer.id}>
