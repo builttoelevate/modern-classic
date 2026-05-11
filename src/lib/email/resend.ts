@@ -221,6 +221,45 @@ export async function sendWaitlistConfirmation(
   });
 }
 
+export interface SendWaitlistBarberNotificationInput {
+  to: string;
+  barberDisplayName: string;
+  customerName: string;
+  customerEmail: string;
+  customerPhone: string;
+  serviceName: string;
+  windowLabel?: string;
+  preferenceLabel?: string;
+  note?: string;
+  dashboardUrl: string;
+  shopPhone: string;
+}
+
+/**
+ * Fired alongside the shop + customer waitlist emails when the
+ * customer specifically requested this barber. Reply-to goes to the
+ * customer's own email so a quick reply from the barber's phone
+ * threads straight to them.
+ */
+export async function sendWaitlistBarberNotification(
+  input: SendWaitlistBarberNotificationInput,
+): Promise<{ id: string }> {
+  const {
+    waitlistBarberNotificationHtml,
+    waitlistBarberNotificationText,
+    waitlistBarberNotificationSubject,
+  } = await import('./templates/waitlistBarberNotification');
+  const html = waitlistBarberNotificationHtml(input);
+  const text = waitlistBarberNotificationText(input);
+  return sendEmail({
+    to: input.to,
+    subject: waitlistBarberNotificationSubject({ customerName: input.customerName }),
+    html,
+    text,
+    replyTo: input.customerEmail,
+  });
+}
+
 export interface SendWaitlistOpeningInput {
   to: string;
   customerName: string;

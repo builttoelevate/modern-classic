@@ -11,7 +11,12 @@ import { getBarbers } from '../../../../lib/square/team';
 export const prerender = false;
 
 // Provision (or rename) a barber's login. Body:
-//   { teamMemberId: string, username: string, password?: string }
+//   {
+//     teamMemberId: string,
+//     username: string,
+//     password?: string,    // omit → random 10-char default
+//     email?: string,       // optional inbox for waitlist alerts
+//   }
 //
 // Behavior:
 //   - teamMemberId must belong to a current Square team member.
@@ -19,6 +24,10 @@ export const prerender = false;
 //     return the plaintext in the response so the admin page can show
 //     it once. Either way, the returned password is the one the barber
 //     should use on next login.
+//   - If email is omitted on initial provision, we seed from the
+//     TeamMember.email_address pulled from Square so the barber gets
+//     waitlist notifications without an extra admin step. The admin
+//     can edit it explicitly on a follow-up upsert.
 //   - mustChangePassword is always set to true on upsert — the barber
 //     is expected to set their own after first login.
 
@@ -39,6 +48,13 @@ export const POST: APIRoute = async ({ request }) => {
   const teamMemberId = typeof b.teamMemberId === 'string' ? b.teamMemberId.trim() : '';
   const rawUsername = typeof b.username === 'string' ? b.username : '';
   const rawPassword = typeof b.password === 'string' && b.password.length > 0 ? b.password : null;
+  // Three states for email:
+  //   - undefined → caller didn't include the field at all; fall back
+  //     to Square's email_address on initial provision, leave alone on
+  //     re-upsert.
+  //   - empty string → caller explicitly wants to clear the email.
+  //   - non-empty string → caller-supplied address (validated downstream).
+  const rawEmail = typeof b.email === 'string' ? b.email : undefined;
 
   if (!teamMemberId) {
     return Response.json(
@@ -58,10 +74,13 @@ export const POST: APIRoute = async ({ request }) => {
 
   // Sanity-check: refuse to provision an account for a team_member_id
   // that doesn't appear in the active Square roster. Avoids creating
-  // logins for ex-employees or typo'd IDs.
+  // logins for ex-employees or typo'd IDs. Also lets us seed the
+  // barber's email from Square if the admin didn't override it.
+  let squareEmailFallback: string | null = null;
   try {
     const barbers = await getBarbers();
-    if (!barbers.some((m) => m.id === teamMemberId)) {
+    const match = barbers.find((m) => m.id === teamMemberId);
+    if (!match) {
       return Response.json(
         {
           ok: false,
@@ -73,6 +92,7 @@ export const POST: APIRoute = async ({ request }) => {
         { status: 400 },
       );
     }
+    squareEmailFallback = match.email && match.email.trim() ? match.email.trim() : null;
   } catch (err) {
     const detail = err instanceof Error ? err.message : 'Could not load Square team.';
     return Response.json(
@@ -93,18 +113,30 @@ export const POST: APIRoute = async ({ request }) => {
     );
   }
 
+  // Resolve which email value to upsert. Explicit value > Square
+  // fallback on first-time provision > leave-as-is on re-upsert.
+  const existingAccount = await getAccount(teamMemberId);
+  let emailForUpsert: string | undefined;
+  if (rawEmail !== undefined) {
+    emailForUpsert = rawEmail;
+  } else if (!existingAccount && squareEmailFallback) {
+    emailForUpsert = squareEmailFallback;
+  }
+
   try {
     const record = await upsertAccount({
       teamMemberId,
       username,
       passwordHash,
       mustChangePassword: true,
+      email: emailForUpsert,
     });
     return Response.json({
       ok: true,
       account: {
         teamMemberId: record.teamMemberId,
         username: record.username,
+        email: record.email ?? null,
         mustChangePassword: record.mustChangePassword,
         createdAt: record.createdAt,
         updatedAt: record.updatedAt,
@@ -113,6 +145,7 @@ export const POST: APIRoute = async ({ request }) => {
       // out-of-band. The client should not store this anywhere durable.
       generatedPassword: plaintextPassword,
       generated: rawPassword === null,
+      squareEmailFallback,
     });
   } catch (err) {
     const detail = err instanceof Error ? err.message : 'Could not save the account.';
@@ -143,6 +176,7 @@ export const GET: APIRoute = async ({ request, url }) => {
       ? {
           teamMemberId: rec.teamMemberId,
           username: rec.username,
+          email: rec.email ?? null,
           mustChangePassword: rec.mustChangePassword,
           createdAt: rec.createdAt,
           updatedAt: rec.updatedAt,
