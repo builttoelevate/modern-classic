@@ -205,18 +205,47 @@ Astro.response.headers.append('Set-Cookie', refreshSessionCookie(session));
         </header>
 
         {!family && (
-          <div class="mb-people__add">
+          <form id="create-family-form" class="mb-people__add">
             <p class="mb-profile__empty">
               You're not in a family account yet. Create one, then invite the
               other adult by email.
             </p>
+            <p class="mb-profile__sub">
+              Confirm how your name should appear on the family list. If Square
+              has the wrong name for you (some bookings can mint records under
+              a kid's name by accident), correct it here — we'll update your
+              account everywhere so reminder texts go out under the right name too.
+            </p>
+            <div class="mb-profile__row mb-profile__row--two">
+              <label class="mb-profile__field">
+                <span class="mb-profile__label">First name</span>
+                <input
+                  type="text"
+                  name="givenName"
+                  value={customer?.given_name ?? ''}
+                  autocomplete="given-name"
+                  maxlength="80"
+                  required
+                />
+              </label>
+              <label class="mb-profile__field">
+                <span class="mb-profile__label">Last name</span>
+                <input
+                  type="text"
+                  name="familyName"
+                  value={customer?.family_name ?? ''}
+                  autocomplete="family-name"
+                  maxlength="80"
+                />
+              </label>
+            </div>
             <div class="mb-profile__actions">
-              <button type="button" class="mb-btn" id="create-family-btn">
+              <button type="submit" class="mb-btn">
                 Create family account
               </button>
             </div>
             <p class="mb-profile__status" data-create-status hidden></p>
-          </div>
+          </form>
         )}
 
         {family && (
@@ -561,16 +590,24 @@ Astro.response.headers.append('Set-Cookie', refreshSessionCookie(session));
 
   // ---------- Family account ----------
   (function () {
-    const createBtn = document.getElementById('create-family-btn');
-    if (createBtn) {
+    const createForm = document.getElementById('create-family-form');
+    if (createForm) {
       const createStatus = document.querySelector('[data-create-status]');
+      const createBtn = createForm.querySelector('button[type="submit"]');
       function showCreate(msg, kind) {
         if (!createStatus) return;
         createStatus.textContent = msg;
         createStatus.className = 'mb-profile__status mb-profile__status--' + kind;
         createStatus.hidden = false;
       }
-      createBtn.addEventListener('click', async () => {
+      createForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const givenName = createForm.givenName.value.trim();
+        const familyName = createForm.familyName.value.trim();
+        if (!givenName) {
+          showCreate('First name is required.', 'error');
+          return;
+        }
         createBtn.disabled = true;
         createBtn.textContent = 'Creating…';
         try {
@@ -578,7 +615,7 @@ Astro.response.headers.append('Set-Cookie', refreshSessionCookie(session));
             method: 'POST',
             credentials: 'same-origin',
             headers: { 'Content-Type': 'application/json' },
-            body: '{}',
+            body: JSON.stringify({ givenName: givenName, familyName: familyName }),
           });
           const data = await res.json();
           if (!res.ok || !data.ok) {

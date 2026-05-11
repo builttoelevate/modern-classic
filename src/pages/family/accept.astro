@@ -66,6 +66,14 @@ type Status =
 let status: Status = 'ready';
 let inviterName = 'A Modern Classic customer';
 let invitedEmail = '';
+// Pre-filled name values for the confirm-your-name fields shown
+// above the Accept button. We pre-fill from Square's existing
+// record so most users can just tap Accept without editing.
+// Invitees whose Square record has a stale or wrong name (often
+// a kid's name when the record was minted at a group booking)
+// correct it here and the accept endpoint write-throughs to Square.
+let prefillGivenName = '';
+let prefillFamilyName = '';
 
 if (!token) {
   status = 'no-token';
@@ -89,18 +97,23 @@ if (!token) {
         } else if (currentFamily && currentFamily.familyId !== invite.familyId) {
           status = 'in-other-family';
         } else {
-          // Best-effort inviter name for the headline.
-          try {
-            const inviter = await getCustomerById(invite.invitedByCustomerId);
-            if (inviter) {
-              const first = (inviter.given_name ?? '').trim();
-              const last = (inviter.family_name ?? '').trim();
-              const full = `${first} ${last}`.trim();
-              if (full) inviterName = full;
-              else if (first) inviterName = first;
-            }
-          } catch {
-            // Fall back to the generic label. Non-fatal.
+          // Best-effort inviter name for the headline + pre-fill of
+          // the invitee's name fields. Parallel since they don't
+          // depend on each other.
+          const [inviter, invitee] = await Promise.all([
+            getCustomerById(invite.invitedByCustomerId).catch(() => null),
+            getCustomerById(session.customerId).catch(() => null),
+          ]);
+          if (inviter) {
+            const first = (inviter.given_name ?? '').trim();
+            const last = (inviter.family_name ?? '').trim();
+            const full = `${first} ${last}`.trim();
+            if (full) inviterName = full;
+            else if (first) inviterName = first;
+          }
+          if (invitee) {
+            prefillGivenName = (invitee.given_name ?? '').trim();
+            prefillFamilyName = (invitee.family_name ?? '').trim();
           }
         }
       }
@@ -196,13 +209,44 @@ if (!token) {
             leave the family from your profile at any time.
           </p>
         </header>
-        <div class="mb-profile__actions">
-          <a class="mb-btn mb-btn--ghost" href={`${base}/my-bookings`}>Not now</a>
-          <button type="button" class="mb-btn" id="accept-btn" data-token={token}>
-            Accept invite
-          </button>
-        </div>
-        <p class="mb-profile__status" data-status hidden></p>
+        <form id="accept-form" data-token={token}>
+          <p class="mb-profile__sub">
+            Confirm how your name should appear. If we have the wrong name
+            on file (group bookings sometimes mint records under a kid's
+            name by accident), correct it here and we'll update your
+            account everywhere.
+          </p>
+          <div class="mb-profile__row mb-profile__row--two">
+            <label class="mb-profile__field">
+              <span class="mb-profile__label">First name</span>
+              <input
+                type="text"
+                name="givenName"
+                value={prefillGivenName}
+                autocomplete="given-name"
+                maxlength="80"
+                required
+              />
+            </label>
+            <label class="mb-profile__field">
+              <span class="mb-profile__label">Last name</span>
+              <input
+                type="text"
+                name="familyName"
+                value={prefillFamilyName}
+                autocomplete="family-name"
+                maxlength="80"
+              />
+            </label>
+          </div>
+          <div class="mb-profile__actions">
+            <a class="mb-btn mb-btn--ghost" href={`${base}/my-bookings`}>Not now</a>
+            <button type="submit" class="mb-btn">
+              Accept invite
+            </button>
+          </div>
+          <p class="mb-profile__status" data-status hidden></p>
+        </form>
       </section>
     )}
   </main>
@@ -211,10 +255,11 @@ if (!token) {
 
 <script is:inline>
   (function () {
-    const btn = document.getElementById('accept-btn');
-    if (!btn) return;
+    const form = document.getElementById('accept-form');
+    if (!form) return;
+    const btn = form.querySelector('button[type="submit"]');
     const status = document.querySelector('[data-status]');
-    const token = btn.getAttribute('data-token') || '';
+    const token = form.getAttribute('data-token') || '';
 
     function show(msg, kind) {
       if (!status) return;
@@ -223,7 +268,14 @@ if (!token) {
       status.hidden = false;
     }
 
-    btn.addEventListener('click', async () => {
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const givenName = form.givenName.value.trim();
+      const familyName = form.familyName.value.trim();
+      if (!givenName) {
+        show('First name is required.', 'error');
+        return;
+      }
       btn.disabled = true;
       btn.textContent = 'Accepting…';
       show('Joining family…', 'ok');
@@ -232,7 +284,11 @@ if (!token) {
           method: 'POST',
           credentials: 'same-origin',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ token: token }),
+          body: JSON.stringify({
+            token: token,
+            givenName: givenName,
+            familyName: familyName,
+          }),
         });
         const data = await res.json();
         if (!res.ok || !data.ok) {

@@ -17,7 +17,7 @@ import {
   refreshSessionCookie,
 } from '../../../lib/auth/middleware';
 import { isAuthConfigured } from '../../../lib/auth/session';
-import { getCustomerById } from '../../../lib/square/customers';
+import { getCustomerById, updateCustomer } from '../../../lib/square/customers';
 import {
   addFamilyMember,
   consumeInvite,
@@ -80,6 +80,20 @@ export const POST: APIRoute = async ({ request }) => {
   const token = typeof b.token === 'string' ? b.token.trim() : '';
   if (!token) return fail(400, 'BAD_REQUEST', 'token is required.');
 
+  // Optional name override from the accept-page form. When the
+  // invitee corrects their name before accepting (typical when their
+  // Square record was minted with the wrong name during a booking
+  // flow — e.g. "Briar Bone" when the customer is actually
+  // "Brook Chicha"), we write-through to Square so every downstream
+  // surface (reminder texts, admin search, future booking confirmations)
+  // uses the corrected name. The family member entry's displayName
+  // mirrors that — so the family card AND every "for X" booking tag
+  // line up with what they typed.
+  const bodyGivenName =
+    typeof b.givenName === 'string' ? b.givenName.trim() : undefined;
+  const bodyFamilyName =
+    typeof b.familyName === 'string' ? b.familyName.trim() : undefined;
+
   // Peek before consume so we can refuse on email-mismatch without
   // destroying the token. If it's expired, redis already evicted it.
   const sessionEmail = session.email.trim().toLowerCase();
@@ -129,11 +143,45 @@ export const POST: APIRoute = async ({ request }) => {
   }
 
   // Pull the customer's display name for the new member entry.
+  // Priority: explicit body override (write-through to Square when
+  // it differs and is non-blank) > existing Square value > session
+  // email's local part.
   let displayName = sessionEmail.split('@')[0] ?? 'Member';
+  let nameUpdated = false;
   try {
-    const customer = await getCustomerById(session.customerId);
-    if (customer) {
-      const full = `${customer.given_name ?? ''} ${customer.family_name ?? ''}`.trim();
+    const existing = await getCustomerById(session.customerId);
+    const currentGiven = (existing?.given_name ?? '').trim();
+    const currentFamily = (existing?.family_name ?? '').trim();
+    const haveOverride =
+      (bodyGivenName !== undefined && bodyGivenName.length > 0 &&
+        bodyGivenName !== currentGiven) ||
+      (bodyFamilyName !== undefined && bodyFamilyName.length > 0 &&
+        bodyFamilyName !== currentFamily);
+    const wantGiven = bodyGivenName !== undefined ? bodyGivenName : currentGiven;
+    const wantFamily = bodyFamilyName !== undefined ? bodyFamilyName : currentFamily;
+
+    if (existing && haveOverride && wantGiven.length > 0) {
+      try {
+        const updated = await updateCustomer(session.customerId, {
+          givenName: wantGiven,
+          familyName: wantFamily,
+        });
+        nameUpdated = true;
+        const full = `${updated.given_name ?? ''} ${updated.family_name ?? ''}`.trim();
+        if (full) displayName = full;
+      } catch (updateErr) {
+        // Non-fatal — fall back to existing name. Accept still
+        // proceeds; the user can fix it from /profile later.
+        logFamily({
+          phase: 'family-accept-name-write-failed',
+          acceptedByCustomerId: session.customerId,
+          detail: updateErr instanceof Error ? updateErr.message : String(updateErr),
+        });
+        const full = `${currentGiven} ${currentFamily}`.trim();
+        if (full) displayName = full;
+      }
+    } else if (existing) {
+      const full = `${currentGiven} ${currentFamily}`.trim();
       if (full) displayName = full;
     }
   } catch {
@@ -152,6 +200,7 @@ export const POST: APIRoute = async ({ request }) => {
       invitedByCustomerId: record.invitedByCustomerId,
       acceptedByCustomerId: session.customerId,
       memberCount: updated.members.length,
+      nameUpdated,
     });
 
     // Best-effort notification to the inviter. Wrapped in its own
