@@ -990,7 +990,6 @@ export default function BookingWizard({
               ? [state.selectedSlot, ...state.series.pickedSlots]
               : []
           }
-          pricePerVisitCents={state.selectedVariation?.priceCents ?? null}
           onDesiredCountChange={(desiredCount) =>
             dispatch({ type: 'SET_DESIRED_COUNT', desiredCount })
           }
