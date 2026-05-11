@@ -58,6 +58,14 @@ const adultCount = family?.members.filter((m) => m.role === 'adult').length ?? 0
 const familyAtCap = (family?.members.length ?? 0) >= MAX_FAMILY_MEMBERS;
 const adultsAtCap = adultCount >= MAX_FAMILY_ADULTS;
 const inviteDisabled = !!family && (familyAtCap || adultsAtCap);
+// True when the caller is the last adult in the family. Leaving in
+// this state dissolves the family entirely (see removeFamilyMember
+// in PR 1's data layer), so the confirm prompt + button copy needs
+// to warn about that explicitly.
+const callerIsAdult = !!family?.members.find(
+  (m) => m.customerId === session.customerId && m.role === 'adult',
+);
+const isLastAdult = callerIsAdult && adultCount === 1;
 
 function fmtPhone(raw: string): string {
   const d = raw.replace(/[^0-9]/g, '');
@@ -244,6 +252,25 @@ Astro.response.headers.append('Set-Cookie', refreshSessionCookie(session));
               </div>
               <p class="mb-profile__status" data-invite-status hidden></p>
             </form>
+
+            <div class="mb-people__add">
+              <p class="mb-profile__hint">
+                {isLastAdult
+                  ? 'Leaving will dissolve this family for everyone in it. Each member goes back to their own /my-bookings view.'
+                  : "You'll go back to your own /my-bookings view. The other members keep the family."}
+              </p>
+              <div class="mb-profile__actions">
+                <button
+                  type="button"
+                  class="mb-btn mb-btn--ghost"
+                  id="leave-family-btn"
+                  data-last-adult={isLastAdult ? 'true' : 'false'}
+                >
+                  Leave family
+                </button>
+              </div>
+              <p class="mb-profile__status" data-leave-status hidden></p>
+            </div>
           </>
         )}
       </section>
@@ -602,6 +629,49 @@ Astro.response.headers.append('Set-Cookie', refreshSessionCookie(session));
           showInvite('Network error. Please try again.', 'error');
           inviteBtn.disabled = false;
           inviteBtn.textContent = 'Send invite';
+        }
+      });
+    }
+
+    const leaveBtn = document.getElementById('leave-family-btn');
+    if (leaveBtn) {
+      const leaveStatus = document.querySelector('[data-leave-status]');
+      function showLeave(msg, kind) {
+        if (!leaveStatus) return;
+        leaveStatus.textContent = msg;
+        leaveStatus.className = 'mb-profile__status mb-profile__status--' + kind;
+        leaveStatus.hidden = false;
+      }
+      leaveBtn.addEventListener('click', async () => {
+        const lastAdult = leaveBtn.getAttribute('data-last-adult') === 'true';
+        const prompt = lastAdult
+          ? 'Leave and dissolve this family for everyone? The other members will go back to their own /my-bookings view.'
+          : "Leave this family? You'll go back to your own /my-bookings view. The family stays for the other members.";
+        if (!confirm(prompt)) return;
+        leaveBtn.disabled = true;
+        leaveBtn.textContent = 'Leaving…';
+        try {
+          const res = await fetch('/api/family/leave', {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/json' },
+            body: '{}',
+          });
+          const data = await res.json();
+          if (!res.ok || !data.ok) {
+            showLeave(
+              (data && data.error && data.error.detail) || 'Could not leave family.',
+              'error',
+            );
+            leaveBtn.disabled = false;
+            leaveBtn.textContent = 'Leave family';
+            return;
+          }
+          window.location.reload();
+        } catch {
+          showLeave('Network error. Please try again.', 'error');
+          leaveBtn.disabled = false;
+          leaveBtn.textContent = 'Leave family';
         }
       });
     }
