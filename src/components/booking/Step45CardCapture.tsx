@@ -156,7 +156,7 @@ export function Step45CardCapture({
             input: {
               color: '#f3ece0',
               fontSize: '16px',
-              fontFamily: 'ui-sans-serif, system-ui, sans-serif',
+              fontFamily: 'sans-serif',
               backgroundColor: '#1d1916',
             },
             '.input-container': {
