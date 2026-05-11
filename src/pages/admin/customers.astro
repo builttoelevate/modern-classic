@@ -11,6 +11,7 @@ import { getBarbers } from '../../lib/square/team';
 import { getBookingCardRecords, type BookingCardRecord } from '../../lib/booking/cardIndex';
 import { checkBasicAuth } from '../../lib/admin/auth';
 import { SquareApiError } from '../../lib/square/client';
+import { getLinkedParent } from '../../lib/customer/profileLinks';
 import type { Customer } from '../../lib/square/types';
 
 const auth = checkBasicAuth(Astro.request);
@@ -36,6 +37,10 @@ let notFound = false;
 let lookupMethod: 'email' | 'phone' | null = null;
 let bookings: CustomerBookings | null = null;
 let bookingsError: string | null = null;
+// When the focused customer is linked as someone's kid, the parent's
+// customer record so we can render "Linked as a kid of <Name>" with
+// an unlink button. null when there's no link.
+let linkedParent: Customer | null = null;
 let cardRecords = new Map<string, BookingCardRecord>();
 let barbers: Array<{ id: string; displayName: string }> = [];
 // When a phone lookup hits multiple records (test accounts, pre-dedup
@@ -92,10 +97,23 @@ if (focusId) {
 // bookings endpoint is having a bad minute.
 if (customer) {
   const customerId = customer.id;
-  const [bookingsResult, barbersResult] = await Promise.allSettled([
+  // Look up the parent link in parallel with bookings/barbers so the
+  // Family-link row can render without an extra render cycle. Failure
+  // is non-fatal — the row just shows "— none —".
+  const [bookingsResult, barbersResult, parentIdResult] = await Promise.allSettled([
     getCustomerBookings(customerId),
     getBarbers(),
+    getLinkedParent(customerId),
   ]);
+  if (parentIdResult.status === 'fulfilled' && parentIdResult.value) {
+    try {
+      linkedParent = await getCustomerById(parentIdResult.value);
+    } catch {
+      // If the parent record is gone, fall back to null — the Family
+      // link row will still show "linked to (deleted)" semantics.
+      linkedParent = null;
+    }
+  }
   if (bookingsResult.status === 'fulfilled') {
     bookings = bookingsResult.value;
     try {
@@ -512,6 +530,67 @@ const defaultRescheduleDate = tomorrowInNyDate();
         font-size: 0.85rem;
       }
 
+      .family-link {
+        margin-top: 32px;
+        padding: 18px 20px;
+        border: 1px solid rgba(201, 163, 92, 0.4);
+        background: rgba(201, 163, 92, 0.05);
+        border-radius: 8px;
+        display: grid;
+        gap: 0.75rem;
+      }
+      .family-link h3 {
+        margin: 0;
+        color: #c9a35c;
+        font-family: Georgia, serif;
+        font-weight: 400;
+        font-size: 1rem;
+      }
+      .family-link .helper { margin: 0; }
+      .family-link__form {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 0.5rem;
+      }
+      .family-link__form input[type='tel'] {
+        padding: 0.55rem 0.75rem;
+        background: rgba(255, 255, 255, 0.04);
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        color: inherit;
+        border-radius: 4px;
+        font: inherit;
+        font-size: 0.95rem;
+      }
+      .primary-btn,
+      .ghost-btn {
+        padding: 0.55rem 1rem;
+        font-weight: 700;
+        font-size: 0.78rem;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        border-radius: 4px;
+        cursor: pointer;
+        font-family: inherit;
+      }
+      .primary-btn {
+        background: #c9a35c;
+        color: #1c1814;
+        border: 0;
+      }
+      .primary-btn:hover:not(:disabled) { background: #d4af6e; }
+      .primary-btn:disabled { opacity: 0.55; cursor: not-allowed; }
+      .ghost-btn {
+        background: transparent;
+        color: #c9a35c;
+        border: 1px solid rgba(201, 163, 92, 0.5);
+        justify-self: start;
+      }
+      .ghost-btn:hover:not(:disabled) {
+        background: rgba(201, 163, 92, 0.12);
+        border-color: #c9a35c;
+      }
+      .ghost-btn:disabled { opacity: 0.55; cursor: not-allowed; }
+
       .danger-zone {
         margin-top: 32px;
         padding: 18px 20px;
@@ -835,6 +914,47 @@ const defaultRescheduleDate = tomorrowInNyDate();
                   </tbody>
                 </table>
               )}
+
+              <div class="family-link" data-customer-id={customer.id}>
+                <h3>Family link</h3>
+                {linkedParent ? (
+                  <>
+                    <p class="helper">
+                      Linked as a kid of <strong>{`${linkedParent.given_name ?? ''} ${linkedParent.family_name ?? ''}`.trim() || 'Customer'}</strong>.
+                      {' '}
+                      Their <code>/my-bookings</code> view will pull this customer's appointments
+                      into the merged list and group banner.
+                    </p>
+                    <button type="button" class="ghost-btn" data-unlink-person>
+                      Unlink from parent
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <p class="helper">
+                      Not currently linked. Enter the parent's <strong>email</strong> to link
+                      this customer as their kid — the parent will start seeing this
+                      customer's appointments on <code>/my-bookings</code>. Email rather than
+                      phone because parent and kid usually share a phone, which would be
+                      ambiguous.
+                    </p>
+                    <div class="family-link__form">
+                      <input
+                        type="email"
+                        id="family-link-email"
+                        placeholder="parent@example.com"
+                        autocomplete="off"
+                        autocapitalize="none"
+                        spellcheck="false"
+                      />
+                      <button type="button" class="primary-btn" data-link-person>
+                        Link
+                      </button>
+                    </div>
+                  </>
+                )}
+                <p class="row-status" id="family-link-status" hidden></p>
+              </div>
 
               <div class="danger-zone">
                 <h3>Danger zone</h3>
@@ -1166,6 +1286,92 @@ const defaultRescheduleDate = tomorrowInNyDate();
             }
           });
         });
+
+        // Family link — bind this customer to a parent (Bill ↔ kid).
+        // Phone-based parent lookup handled server-side. Refreshes
+        // the page on success so the row re-renders with "Linked
+        // to <Name>" + the unlink button.
+        const familyLinkContainer = document.querySelector('.family-link');
+        const familyLinkStatus = document.getElementById('family-link-status');
+        const setFamilyLinkStatus = (msg, kind) => {
+          if (!familyLinkStatus) return;
+          familyLinkStatus.textContent = msg || '';
+          familyLinkStatus.className = 'row-status ' + (kind || '');
+          familyLinkStatus.hidden = !msg;
+        };
+        const linkBtn = document.querySelector('[data-link-person]');
+        if (linkBtn && familyLinkContainer) {
+          linkBtn.addEventListener('click', async () => {
+            const emailInput = document.getElementById('family-link-email');
+            const parentEmail = emailInput ? emailInput.value.trim() : '';
+            const customerId = familyLinkContainer.dataset.customerId;
+            if (!parentEmail) {
+              setFamilyLinkStatus("Enter the parent's email first.", 'error');
+              return;
+            }
+            if (!customerId) return;
+            linkBtn.disabled = true;
+            const originalLabel = linkBtn.textContent;
+            linkBtn.textContent = 'Linking…';
+            setFamilyLinkStatus('', '');
+            try {
+              const res = await fetch('/api/admin/link-person', {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ customerId, parentEmail }),
+              });
+              const data = await res.json();
+              if (!res.ok || !data.ok) {
+                setFamilyLinkStatus((data && data.error && data.error.detail) || 'Link failed.', 'error');
+                linkBtn.disabled = false;
+                linkBtn.textContent = originalLabel;
+                return;
+              }
+              setFamilyLinkStatus(`Linked to ${data.parent.displayName}. Refreshing…`, 'ok');
+              setTimeout(() => window.location.reload(), 600);
+            } catch (err) {
+              setFamilyLinkStatus('Network error. Try again.', 'error');
+              linkBtn.disabled = false;
+              linkBtn.textContent = originalLabel;
+            }
+          });
+        }
+        const unlinkBtn = document.querySelector('[data-unlink-person]');
+        if (unlinkBtn && familyLinkContainer) {
+          unlinkBtn.addEventListener('click', async () => {
+            const customerId = familyLinkContainer.dataset.customerId;
+            if (!customerId) return;
+            if (!window.confirm('Unlink this customer from their parent? Their appointments will stop showing on the parent\'s /my-bookings page.')) {
+              return;
+            }
+            unlinkBtn.disabled = true;
+            const originalLabel = unlinkBtn.textContent;
+            unlinkBtn.textContent = 'Unlinking…';
+            setFamilyLinkStatus('', '');
+            try {
+              const res = await fetch('/api/admin/unlink-person', {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ customerId }),
+              });
+              const data = await res.json();
+              if (!res.ok || !data.ok) {
+                setFamilyLinkStatus((data && data.error && data.error.detail) || 'Unlink failed.', 'error');
+                unlinkBtn.disabled = false;
+                unlinkBtn.textContent = originalLabel;
+                return;
+              }
+              setFamilyLinkStatus('Unlinked. Refreshing…', 'ok');
+              setTimeout(() => window.location.reload(), 600);
+            } catch (err) {
+              setFamilyLinkStatus('Network error. Try again.', 'error');
+              unlinkBtn.disabled = false;
+              unlinkBtn.textContent = originalLabel;
+            }
+          });
+        }
 
         // Hard-delete the customer record. Two-step: confirm via prompt
         // asking the operator to retype the customer id, then POST.
