@@ -72,11 +72,12 @@ export const POST: APIRoute = async ({ request }) => {
     // request and Square returns the same card instead of creating a
     // second one. A genuine retry by the user with a fresh card will
     // arrive with a different sourceId (the nonce is single-use), so
-    // the key naturally differs across distinct attempts.
+    // the key naturally differs across distinct attempts. Square caps
+    // idempotency_key at 45 chars — "mc-card-" (8) + 32 hex chars = 40.
     const idempotencyKey = `mc-card-${createHash('sha256')
       .update(`${customerId}|${sourceId}`)
       .digest('hex')
-      .slice(0, 48)}`;
+      .slice(0, 32)}`;
 
     const card = await createCardOnFile({
       customerId,
