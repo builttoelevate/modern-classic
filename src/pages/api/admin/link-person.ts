@@ -10,14 +10,20 @@
 // portal until the link is restored. Before this endpoint, fixing
 // it required hand-editing Redis. Now it's a button.
 //
-// The lookup is by parent's PHONE (not customerId) so the operator
-// doesn't have to copy ids between tabs. We resolve via
-// findCustomerByPhone, which already implements the prefer-record-
-// with-email tie-breaker for duplicate phones.
+// The lookup is by parent's EMAIL — not phone, because in the
+// standard barbershop pattern a parent's kid record is minted with
+// the parent's phone (so SMS reminders land on the parent's
+// device), which means parent and kid share a phone number and a
+// phone lookup is ambiguous. Email is unambiguous in practice:
+// parents typically have one, kids/dependents typically don't, and
+// findCustomerByEmail already handles whitespace/case quirks. If
+// the parent record genuinely lacks an email, the admin should add
+// one to the parent first via the Save Changes form on this page,
+// then come back.
 
 import type { APIRoute } from 'astro';
 import { checkBasicAuth } from '../../../lib/admin/auth';
-import { findCustomerByPhone, getCustomerById } from '../../../lib/square/customers';
+import { findCustomerByEmail, getCustomerById } from '../../../lib/square/customers';
 import {
   getLinkedParent,
   linkPerson,
@@ -38,10 +44,10 @@ function bad(detail: string, status = 400): Response {
 interface RequestBody {
   /** The customer who's being linked AS a kid (e.g. Briar). */
   customerId?: string;
-  /** Phone of the parent to link them to (e.g. Bill's). Phone is the
-   *  natural admin search field; we resolve it to a customer record
-   *  server-side via findCustomerByPhone. */
-  parentPhone?: string;
+  /** Email of the parent to link them to (e.g. Bill's). Email is
+   *  the disambiguator — parent and kid usually share a phone, so
+   *  phone lookups would be ambiguous. */
+  parentEmail?: string;
   /** Optional override for the displayName stored on the link
    *  record. Defaults to the kid's "Given Family" name from Square. */
   displayName?: string;
@@ -61,9 +67,12 @@ export const POST: APIRoute = async ({ request }) => {
   }
   const b = (body ?? {}) as RequestBody;
   const customerId = typeof b.customerId === 'string' ? b.customerId.trim() : '';
-  const parentPhone = typeof b.parentPhone === 'string' ? b.parentPhone.trim() : '';
+  const parentEmail = typeof b.parentEmail === 'string' ? b.parentEmail.trim() : '';
   if (!customerId) return bad('customerId is required.');
-  if (!parentPhone) return bad("Parent's phone is required.");
+  if (!parentEmail) return bad("Parent's email is required.");
+  if (!/^\S+@\S+\.\S+$/.test(parentEmail)) {
+    return bad('Parent email is not in a valid format.');
+  }
 
   // Confirm the kid record exists. Failure here is a 404 we surface
   // verbatim so the operator knows it wasn't a phone-lookup miss.
@@ -79,10 +88,10 @@ export const POST: APIRoute = async ({ request }) => {
   }
   if (!kid) return bad('No customer with that id.', 404);
 
-  // Find the parent by phone. Returns null if no match.
+  // Find the parent by email. Returns null if no match.
   let parent;
   try {
-    parent = await findCustomerByPhone(parentPhone);
+    parent = await findCustomerByEmail(parentEmail);
   } catch (err) {
     const detail = err instanceof Error ? err.message : 'Unknown error';
     return Response.json(
@@ -91,7 +100,7 @@ export const POST: APIRoute = async ({ request }) => {
     );
   }
   if (!parent) {
-    return bad("No customer found with that phone number.", 404);
+    return bad('No customer found with that email.', 404);
   }
   if (parent.id === customerId) {
     return bad("Can't link a customer to themselves.");

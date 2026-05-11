@@ -932,16 +932,20 @@ const defaultRescheduleDate = tomorrowInNyDate();
                 ) : (
                   <>
                     <p class="helper">
-                      Not currently linked. Enter a parent's phone to link this customer
-                      as their kid — the parent will start seeing this customer's appointments
-                      on <code>/my-bookings</code>.
+                      Not currently linked. Enter the parent's <strong>email</strong> to link
+                      this customer as their kid — the parent will start seeing this
+                      customer's appointments on <code>/my-bookings</code>. Email rather than
+                      phone because parent and kid usually share a phone, which would be
+                      ambiguous.
                     </p>
                     <div class="family-link__form">
                       <input
-                        type="tel"
-                        id="family-link-phone"
-                        placeholder="(740) 555-0123"
+                        type="email"
+                        id="family-link-email"
+                        placeholder="parent@example.com"
                         autocomplete="off"
+                        autocapitalize="none"
+                        spellcheck="false"
                       />
                       <button type="button" class="primary-btn" data-link-person>
                         Link
@@ -1298,11 +1302,11 @@ const defaultRescheduleDate = tomorrowInNyDate();
         const linkBtn = document.querySelector('[data-link-person]');
         if (linkBtn && familyLinkContainer) {
           linkBtn.addEventListener('click', async () => {
-            const phoneInput = document.getElementById('family-link-phone');
-            const parentPhone = phoneInput ? phoneInput.value.trim() : '';
+            const emailInput = document.getElementById('family-link-email');
+            const parentEmail = emailInput ? emailInput.value.trim() : '';
             const customerId = familyLinkContainer.dataset.customerId;
-            if (!parentPhone) {
-              setFamilyLinkStatus("Enter the parent's phone number first.", 'error');
+            if (!parentEmail) {
+              setFamilyLinkStatus("Enter the parent's email first.", 'error');
               return;
             }
             if (!customerId) return;
@@ -1315,7 +1319,7 @@ const defaultRescheduleDate = tomorrowInNyDate();
                 method: 'POST',
                 credentials: 'same-origin',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ customerId, parentPhone }),
+                body: JSON.stringify({ customerId, parentEmail }),
               });
               const data = await res.json();
               if (!res.ok || !data.ok) {
