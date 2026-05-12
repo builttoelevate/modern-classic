@@ -497,7 +497,7 @@ function computeDiff(
   return Object.keys(diff).length > 0 ? diff : null;
 }
 
-function normalizePhone(input: string): string {
+export function normalizePhone(input: string): string {
   const digits = input.replace(/\D/g, '');
   // Square accepts E.164. Default to US (+1) if missing.
   if (digits.length === 10) return `+1${digits}`;
