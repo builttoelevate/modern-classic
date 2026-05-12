@@ -5,12 +5,25 @@ import { runReviewRequestCron } from '../../../../lib/square/reviewCron';
 export const prerender = false;
 
 // Admin-triggered review-request run. Body:
-//   { dryRun?: boolean, windowShiftDays?: number }
+//   {
+//     dryRun?: boolean,           // required to be exactly false for a live run
+//     confirmLive?: boolean,      // required to be exactly true for a live run
+//     windowShiftDays?: number,
+//   }
 //
 // Wraps the same core function the daily cron uses, so /admin/reviews
 // can show real send + skip-reason stats on demand without having to
 // share the bearer token. Basic Auth — same admin password as every
 // other /admin/* page.
+//
+// **Fail-safe default**: requires TWO explicit flags
+// (`dryRun: false` AND `confirmLive: true`) to actually send emails.
+// Any other body shape — missing body, partial body, parse failure,
+// either flag absent — falls through to a dry run. This guards
+// against an iOS Safari quirk where a POST with JSON body can lose
+// the body in transit (server sees an empty body, parses {} as
+// default, and would previously have run live by default). With
+// this guard, a lost body is harmless: the cron runs dry.
 
 export const POST: APIRoute = async ({ request }) => {
   const auth = checkBasicAuth(request);
@@ -23,7 +36,12 @@ export const POST: APIRoute = async ({ request }) => {
     body = {};
   }
   const b = (body ?? {}) as Record<string, unknown>;
-  const dryRun = b.dryRun === true;
+
+  // Live ONLY when both flags are explicit and unambiguous.
+  // Everything else — including the iOS-lost-body case — is dry.
+  const explicitLive = b.dryRun === false && b.confirmLive === true;
+  const dryRun = !explicitLive;
+
   const shiftRaw = typeof b.windowShiftDays === 'number' ? b.windowShiftDays : 0;
   const shiftDays = Math.max(-30, Math.min(30, isFinite(shiftRaw) ? shiftRaw : 0));
 
