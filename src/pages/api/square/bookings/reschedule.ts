@@ -4,7 +4,13 @@ import { AuthRequiredError, requireSession, refreshSessionCookie } from '../../.
 import { isAuthConfigured } from '../../../../lib/auth/session';
 import { SquareApiError } from '../../../../lib/square/client';
 import { cancelBooking, createBooking, getBooking } from '../../../../lib/square/bookings';
+import { getCustomerById } from '../../../../lib/square/customers';
 import { listLinkedPeople } from '../../../../lib/customer/profileLinks';
+import {
+  CustomerBlockedError,
+  assertPhoneNotBlocked,
+  blockedBookingPublicResponse,
+} from '../../../../lib/customer/blockedCustomers';
 import { redactEmail } from '../../../../lib/booking/log';
 
 export const prerender = false;
@@ -147,6 +153,37 @@ export const POST: APIRoute = async ({ request }) => {
     );
   }
   const newCustomerId = oldBooking.customer_id;
+
+  // Block-from-booking enforcement (public path). Fetch the resolved
+  // customer's stored phone and check it before we create the new
+  // booking. Fail closed: if the phone is missing or the fetch errors,
+  // refuse with the generic "call the shop" response — we can't
+  // honestly answer "is this phone blocked?" without it, so we don't
+  // pretend it isn't.
+  const reschedCustomer = await getCustomerById(newCustomerId).catch(() => null);
+  const reschedPhone = reschedCustomer?.phone_number?.trim();
+  if (!reschedPhone) {
+    return blockedBookingPublicResponse();
+  }
+  try {
+    await assertPhoneNotBlocked(reschedPhone, {
+      bookingContext: 'reschedule',
+      customerName:
+        `${reschedCustomer?.given_name ?? ''} ${reschedCustomer?.family_name ?? ''}`.trim() ||
+        undefined,
+      customerEmail: reschedCustomer?.email_address ?? undefined,
+      serviceId: payload.service.variationId,
+      barberId: payload.barber.id,
+      selectedStartAt: payload.newSlot.startAtUtc,
+      ipAddress: request.headers.get('x-forwarded-for') ?? undefined,
+      userAgent: request.headers.get('user-agent') ?? undefined,
+    });
+  } catch (err) {
+    if (err instanceof CustomerBlockedError) {
+      return blockedBookingPublicResponse();
+    }
+    throw err;
+  }
 
   // Step 1: create the new booking. If it fails, the old one is intact.
   let newBookingId: string;

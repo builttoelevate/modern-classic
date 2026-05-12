@@ -13,6 +13,11 @@ import {
   getCustomerById,
 } from '../../../lib/square/customers';
 import { createBooking } from '../../../lib/square/bookings';
+import {
+  CustomerBlockedError,
+  assertPhoneNotBlocked,
+  blockedBookingPublicResponse,
+} from '../../../lib/customer/blockedCustomers';
 import { getServices } from '../../../lib/square/catalog';
 import { bookingIdempotencyKey } from '../../../lib/booking/idempotency';
 import { redactEmail } from '../../../lib/booking/log';
@@ -246,6 +251,31 @@ export const POST: APIRoute = async ({ request }) => {
     }
     const detail = err instanceof Error ? err.message : String(err);
     return fail('INTERNAL', detail, 500);
+  }
+
+  // Block-from-booking enforcement. We check the PARENT/contact phone
+  // only — per spec, group members (kids, partners) are subjects of the
+  // booking but not the contact point. The contact is the one we'd
+  // refuse online. See src/lib/customer/blockedCustomers.ts.
+  try {
+    await assertPhoneNotBlocked(parentPhone, {
+      bookingContext: 'group',
+      phoneOriginal: v.parent.phone,
+      customerName: `${v.parent.givenName} ${v.parent.familyName}`.trim(),
+      customerEmail: v.parent.email,
+      // No single serviceId / startAt for the whole group — use the
+      // first assignment as a representative datapoint for the log.
+      serviceId: v.assignments[0]?.serviceVariationId,
+      barberId: v.assignments[0]?.teamMemberId,
+      selectedStartAt: v.assignments[0]?.startAtUtc,
+      ipAddress: request.headers.get('x-forwarded-for') ?? undefined,
+      userAgent: request.headers.get('user-agent') ?? undefined,
+    });
+  } catch (err) {
+    if (err instanceof CustomerBlockedError) {
+      return blockedBookingPublicResponse();
+    }
+    throw err;
   }
 
   // 2. Resolve each member's own Square customerId.

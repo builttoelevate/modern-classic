@@ -1,36 +1,27 @@
-// Own-list block-from-booking enforcement.
+// Own-list block-from-booking enforcement for Modern Classic's site.
 //
-// Square's per-customer "Block from booking" toggle in the dashboard
-// is enforced only on Square's own hosted booking page; the flag
-// isn't exposed on the Customer object returned by the public API.
-// When Modern Classic moved to a custom Bookings API integration,
-// every blocked customer silently started slipping through.
-// Michael's report (2026-05-12): "I think it's letting our blocked
-// customers book."
+// Square's per-customer "Block from booking" toggle in the Dashboard
+// is enforced only on Square's own hosted booking page — the flag is
+// not exposed on the public API. The custom Bookings API integration
+// has no idea who Michael has tried to block via that toggle, so we
+// maintain our own list, keyed by normalized E.164 phone, in Upstash
+// Redis.
 //
-// Rather than couple block enforcement to Square (via Customer
-// Groups, which would still cost a Square round trip per booking
-// attempt and wouldn't travel if the shop ever switched booking
-// systems), we maintain our own list — keyed by normalized
-// E.164 phone — in Upstash Redis. The booking endpoint checks
-// before calling Square's CreateBooking; admin endpoints under
-// /api/admin/blocks let Bill / Michael manage the list.
-//
-// Migration is manual: Michael walks the Square "Block from
-// booking" list once and adds each phone via the admin endpoint.
-// One-time pain; the list is small.
+// Scope: this list applies to PUBLIC online booking ONLY (single,
+// group, reschedule, quick-rebook). Admin-created and barber-created
+// bookings get a different override pattern (PR 3). The split is
+// intentional — the shop should always retain the ability to book
+// someone in at the chair, even if they're on the online block list.
 //
 // Schema:
-//   mc:block:phones                 — Redis SET of every blocked E.164.
-//   mc:block:phone:<E164>           — JSON {reason?, blockedAt, blockedBy?}.
-//
-// The SET is the source of truth for "is this phone blocked?"
-// (SISMEMBER is O(1)); the per-phone string holds metadata. We never
-// rely on KEYS / SCAN — the SET stays authoritative even if the
-// metadata key is ever lost.
+//   mc:block:phones                 SET<E.164>   — O(1) membership for the hot-path check.
+//   mc:block:phone:<E.164>          JSON entry   — metadata + canonical record.
+//   mc:block:by-id:<UUID>           string<E.164> — id → phone reverse index for DELETE-by-id.
+//   mc:block:attempts               STREAM       — append-only XADD per blocked attempt (PR 3 viewer).
 
 import { Redis } from '@upstash/redis';
 import { normalizePhone } from '../phone';
+import { REDIS_KEY_PREFIX, SHOP_PHONE } from '../branding';
 
 let _redis: Redis | null = null;
 
@@ -58,38 +49,74 @@ function getRedis(): Redis {
   return _redis;
 }
 
-const KEY_PREFIX = 'mc:block:';
-const KEY_SET = `${KEY_PREFIX}phones`;
+const NS = `${REDIS_KEY_PREFIX}:block`;
+const KEY_SET = `${NS}:phones`;
+const KEY_ATTEMPTS_STREAM = `${NS}:attempts`;
+const ATTEMPTS_STREAM_MAXLEN = 10_000;
+
 function kPhone(e164: string): string {
-  return `${KEY_PREFIX}phone:${e164}`;
+  return `${NS}:phone:${e164}`;
 }
+function kById(id: string): string {
+  return `${NS}:by-id:${id}`;
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Public types
+// ─────────────────────────────────────────────────────────────────────────
 
 export interface BlockedEntry {
-  /** Phone in E.164 form, e.g. "+17402974462". */
+  /** Stable UUID. Generated on add; carried for the life of the block.
+   *  Admin DELETE keys off this, not the phone. */
+  id: string;
+  /** E.164, the canonical form. */
   phone: string;
-  /** Optional free-text reason. Visible only to admins; never surfaced
-   *  to the blocked customer. */
-  reason?: string;
-  /** ISO timestamp the block was added. */
-  blockedAt: string;
-  /** Optional identifier of who added the block (e.g. "michael").
-   *  Free text, no enforcement. */
-  blockedBy?: string;
-}
-
-interface StoredEntry {
+  /** Whatever the operator originally typed, for display. */
+  phoneOriginal: string;
+  /** Internal-only — never surfaced to the customer. */
   reason?: string;
   blockedAt: string;
   blockedBy?: string;
+  /** Equals blockedAt in v1 (no edits). Reserved for a future PATCH route. */
+  updatedAt: string;
 }
 
-/**
- * Fast yes/no check for the booking hot path. Returns false on any
- * KV failure (fail-open with a noisy log) — we'd rather let a single
- * booking through than nuke the entire booking flow on a transient
- * Redis blip. The booking is logged either way, so a missed block is
- * recoverable; a 503 storm is not.
- */
+export type BookingContext = 'single' | 'group' | 'reschedule' | 'quick-rebook';
+
+export interface BlockAttemptContext {
+  bookingContext: BookingContext;
+  phoneOriginal?: string;
+  customerName?: string;
+  customerEmail?: string;
+  serviceId?: string;
+  barberId?: string;
+  selectedStartAt?: string;
+  ipAddress?: string;
+  userAgent?: string;
+}
+
+export class CustomerBlockedError extends Error {
+  readonly entry: BlockedEntry;
+  constructor(entry: BlockedEntry) {
+    super(`Phone ${entry.phone} is on the block list (id=${entry.id}).`);
+    this.name = 'CustomerBlockedError';
+    this.entry = entry;
+  }
+}
+
+export interface AddResult {
+  status: 'created' | 'already_blocked';
+  block: BlockedEntry;
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Hot-path check + booking guard
+// ─────────────────────────────────────────────────────────────────────────
+
+/** Fast yes/no for the booking hot path. Returns false (fail-open) on
+ *  any KV failure. A missed block is recoverable (shop declines at the
+ *  chair); a 503 storm on every booking attempt because Redis blipped
+ *  is not. */
 export async function isPhoneBlocked(phone: string): Promise<boolean> {
   const e164 = normalizePhone(phone);
   if (!e164) return false;
@@ -98,8 +125,7 @@ export async function isPhoneBlocked(phone: string): Promise<boolean> {
     return member === 1;
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err);
-    // eslint-disable-next-line no-console
-    console.log(
+    console.error(
       `[BLOCK] ${JSON.stringify({
         ts: new Date().toISOString(),
         phase: 'block-check-failed',
@@ -111,101 +137,205 @@ export async function isPhoneBlocked(phone: string): Promise<boolean> {
   }
 }
 
-export async function listBlockedPhones(): Promise<BlockedEntry[]> {
+/**
+ * Guard called immediately before each public CreateBooking. On hit,
+ * fires-and-(best-effort-)logs to the attempts stream BEFORE throwing.
+ * Stream-log failure does NOT block enforcement — enforcement > logging.
+ *
+ * Uses normalizePhone from src/lib/phone.ts; do not reimplement.
+ */
+export async function assertPhoneNotBlocked(
+  phone: string,
+  ctx: BlockAttemptContext,
+): Promise<void> {
+  const e164 = normalizePhone(phone);
+  if (!e164) return;
+  const entry = await fetchEntryByPhone(e164);
+  if (!entry) return;
+  // Best-effort attempts-log write. Failures are logged to stderr and
+  // swallowed so the throw still happens.
+  try {
+    await logBlockedAttempt(entry, ctx);
+  } catch (logErr) {
+    const detail = logErr instanceof Error ? logErr.message : String(logErr);
+    console.error(
+      `[BLOCK] ${JSON.stringify({
+        ts: new Date().toISOString(),
+        phase: 'stream-log-failed',
+        e164,
+        bookingContext: ctx.bookingContext,
+        detail,
+      })}`,
+    );
+  }
+  throw new CustomerBlockedError(entry);
+}
+
+async function logBlockedAttempt(entry: BlockedEntry, ctx: BlockAttemptContext): Promise<void> {
+  const fields: Record<string, string> = {
+    phone: entry.phone,
+    phoneOriginal: ctx.phoneOriginal ?? entry.phoneOriginal,
+    bookingContext: ctx.bookingContext,
+    attemptedAt: new Date().toISOString(),
+  };
+  if (ctx.customerName) fields.customerName = ctx.customerName;
+  if (ctx.customerEmail) fields.customerEmail = ctx.customerEmail;
+  if (ctx.serviceId) fields.serviceId = ctx.serviceId;
+  if (ctx.barberId) fields.barberId = ctx.barberId;
+  if (ctx.selectedStartAt) fields.selectedStartAt = ctx.selectedStartAt;
+  if (ctx.ipAddress) fields.ipAddress = ctx.ipAddress;
+  if (ctx.userAgent) fields.userAgent = ctx.userAgent.slice(0, 500);
+  await getRedis().xadd(KEY_ATTEMPTS_STREAM, '*', fields, {
+    trim: { type: 'MAXLEN', threshold: ATTEMPTS_STREAM_MAXLEN, comparison: '~' },
+  });
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Centralized public refusal — the ONE place that owns the 403 shape
+// ─────────────────────────────────────────────────────────────────────────
+
+/**
+ * The ONLY way to construct a public refusal response for a blocked
+ * customer. Centralized so we can't drift the shape, error code, or
+ * message text across the 4 guarded booking paths. Audit by grep:
+ * `BOOKING_UNAVAILABLE_ONLINE` should appear in exactly this one file.
+ *
+ * Does NOT include the word "block"/"blocked"/"banned" or the `reason`
+ * field text. The customer is funneled to a human at the shop.
+ */
+export function blockedBookingPublicResponse(): Response {
+  return Response.json(
+    {
+      ok: false,
+      error: {
+        code: 'BOOKING_UNAVAILABLE_ONLINE',
+        detail: `We weren't able to complete this booking online. Please contact the shop at ${SHOP_PHONE} to schedule.`,
+      },
+    },
+    { status: 403 },
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Admin operations
+// ─────────────────────────────────────────────────────────────────────────
+
+export async function listBlockedEntries(): Promise<BlockedEntry[]> {
   const redis = getRedis();
   const members = (await redis.smembers(KEY_SET)) as string[];
   if (members.length === 0) return [];
-  // Fetch metadata in parallel. mget would also work; this stays
-  // explicit so a missing metadata key surfaces as `null` and we can
-  // still list the phone with synthesized fields.
-  const entries = await Promise.all(
-    members.map(async (phone) => {
-      const raw = await redis.get<StoredEntry | string | null>(kPhone(phone));
-      const parsed: StoredEntry | null =
-        raw == null
-          ? null
-          : typeof raw === 'string'
-            ? safeParse(raw)
-            : (raw as StoredEntry);
-      return {
-        phone,
-        reason: parsed?.reason,
-        blockedAt: parsed?.blockedAt ?? new Date(0).toISOString(),
-        blockedBy: parsed?.blockedBy,
-      } satisfies BlockedEntry;
-    }),
-  );
-  entries.sort((a, b) => (a.blockedAt < b.blockedAt ? 1 : -1));
-  return entries;
+  const entries = await Promise.all(members.map((phone) => fetchEntryByPhone(phone)));
+  const filtered = entries.filter((e): e is BlockedEntry => e !== null);
+  filtered.sort((a, b) => (a.blockedAt < b.blockedAt ? 1 : -1));
+  return filtered;
 }
 
-export interface AddResult {
-  /** True when the phone was newly added; false when it was already blocked. */
-  added: boolean;
-  /** The stored entry — the existing one when already blocked (untouched),
-   *  the new one when added. */
-  entry: BlockedEntry;
-}
-
-/** Adds a phone to the block list. Idempotent: re-adding a phone that's
- *  already blocked is a no-op (existing metadata is preserved — the
- *  original blockedAt timestamp wins so the audit trail is intact). The
- *  caller can distinguish via the `added` flag. */
+/**
+ * Idempotent add. Two concurrent POSTs for the same phone both invoke
+ * SADD; exactly one wins, the loser gets `already_blocked` with the
+ * winner's existing metadata. The metadata SET is gated on the SADD
+ * win so the loser cannot overwrite blockedAt / reason.
+ */
 export async function addBlockedPhone(
-  phone: string,
+  phoneInput: string,
   opts: { reason?: string; blockedBy?: string } = {},
 ): Promise<AddResult> {
-  const e164 = normalizePhone(phone);
+  const e164 = normalizePhone(phoneInput);
   if (!e164 || !/^\+\d{10,15}$/.test(e164)) {
-    throw new Error(`Phone "${phone}" is not a valid E.164 number after normalization.`);
+    throw new Error(`Phone "${phoneInput}" is not a valid E.164 number after normalization.`);
   }
   const redis = getRedis();
-  const added = await redis.sadd(KEY_SET, e164);
-  if (added === 0) {
-    // Already a member — return the existing metadata without touching
-    // the stored entry. Preserves blockedAt + original reason.
-    const raw = await redis.get<StoredEntry | string | null>(kPhone(e164));
-    const parsed: StoredEntry | null =
-      raw == null
-        ? null
-        : typeof raw === 'string'
-          ? safeParse(raw)
-          : (raw as StoredEntry);
-    return {
-      added: false,
-      entry: {
-        phone: e164,
-        reason: parsed?.reason,
-        blockedAt: parsed?.blockedAt ?? new Date(0).toISOString(),
-        blockedBy: parsed?.blockedBy,
-      },
-    };
-  }
-  const entry: StoredEntry = {
-    blockedAt: new Date().toISOString(),
+  const id = crypto.randomUUID();
+  const nowIso = new Date().toISOString();
+  const entry: BlockedEntry = {
+    id,
+    phone: e164,
+    phoneOriginal: phoneInput,
+    blockedAt: nowIso,
+    updatedAt: nowIso,
     ...(opts.reason ? { reason: opts.reason } : {}),
     ...(opts.blockedBy ? { blockedBy: opts.blockedBy } : {}),
   };
-  await redis.set(kPhone(e164), JSON.stringify(entry));
-  return { added: true, entry: { phone: e164, ...entry } };
+  const added = await redis.sadd(KEY_SET, e164);
+  if (added === 1) {
+    await Promise.all([
+      redis.set(kPhone(e164), JSON.stringify(entry)),
+      redis.set(kById(id), e164),
+    ]);
+    return { status: 'created', block: entry };
+  }
+  // Already in the SET. Return the existing entry untouched — preserves
+  // original blockedAt / reason. If the metadata key is missing (very
+  // narrow race window where the winner SADD'd but hasn't SET yet),
+  // synthesize from the current payload but DO NOT write — the winner
+  // will land their own SET shortly.
+  const existing = await fetchEntryByPhone(e164);
+  return { status: 'already_blocked', block: existing ?? entry };
 }
 
-/** Removes a phone from the block list. Returns true if the phone was
- *  in the list, false if it wasn't. Idempotent. */
-export async function removeBlockedPhone(phone: string): Promise<boolean> {
-  const e164 = normalizePhone(phone);
-  if (!e164) return false;
+/** Remove by stable UUID. Used by the admin DELETE endpoint. Returns
+ *  the removed entry or null if id didn't resolve. Idempotent. */
+export async function removeBlockedById(id: string): Promise<BlockedEntry | null> {
+  if (!id) return null;
   const redis = getRedis();
-  const [removed] = await Promise.all([redis.srem(KEY_SET, e164), redis.del(kPhone(e164))]);
-  return removed === 1;
+  const e164 = (await redis.get<string | null>(kById(id))) ?? null;
+  if (!e164) return null;
+  const entry = await fetchEntryByPhone(e164);
+  await Promise.all([
+    redis.srem(KEY_SET, e164),
+    redis.del(kPhone(e164)),
+    redis.del(kById(id)),
+  ]);
+  return entry;
 }
 
-function safeParse(s: string): StoredEntry | null {
+/** Internal: remove by phone. Kept for completeness; admin API uses
+ *  removeBlockedById. */
+export async function removeBlockedPhone(phoneInput: string): Promise<BlockedEntry | null> {
+  const e164 = normalizePhone(phoneInput);
+  if (!e164) return null;
+  const entry = await fetchEntryByPhone(e164);
+  const redis = getRedis();
+  await Promise.all([
+    redis.srem(KEY_SET, e164),
+    redis.del(kPhone(e164)),
+    ...(entry?.id ? [redis.del(kById(entry.id))] : []),
+  ]);
+  return entry;
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Internals
+// ─────────────────────────────────────────────────────────────────────────
+
+async function fetchEntryByPhone(e164: string): Promise<BlockedEntry | null> {
+  const raw = await getRedis().get<BlockedEntry | string | null>(kPhone(e164));
+  if (raw == null) return null;
+  if (typeof raw === 'string') return parseEntry(raw, e164);
+  // Upstash auto-deserializes JSON-string values on read. Trust the
+  // shape but defensively normalize missing fields for backwards
+  // compat with rows written by PR 1 (which lacked id / phoneOriginal /
+  // updatedAt). PR 1's prod data is empty, but this keeps a dev
+  // database mid-migration from blowing up.
+  return ensureShape(raw, e164);
+}
+
+function parseEntry(raw: string, e164: string): BlockedEntry | null {
   try {
-    const v = JSON.parse(s) as unknown;
-    if (v && typeof v === 'object' && 'blockedAt' in v) return v as StoredEntry;
-    return null;
+    return ensureShape(JSON.parse(raw) as Partial<BlockedEntry>, e164);
   } catch {
     return null;
   }
+}
+
+function ensureShape(v: Partial<BlockedEntry>, e164: string): BlockedEntry {
+  return {
+    id: v.id ?? '',
+    phone: v.phone ?? e164,
+    phoneOriginal: v.phoneOriginal ?? v.phone ?? e164,
+    reason: v.reason,
+    blockedAt: v.blockedAt ?? new Date(0).toISOString(),
+    blockedBy: v.blockedBy,
+    updatedAt: v.updatedAt ?? v.blockedAt ?? new Date(0).toISOString(),
+  };
 }
