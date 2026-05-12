@@ -1,16 +1,17 @@
 // POST /api/barber/photos/upload — barber-side photo upload to the
 // public Modern Classic gallery.
 //
-// Body: multipart/form-data with field `photo` (the image binary,
-// already client-side resized + JPEG-encoded to keep payloads small
-// and consistent — see the dashboard upload script). Server still
-// validates content-type + size as the second line of defense.
+// Body: raw image bytes (Content-Type set on the request — e.g.
+// `image/jpeg`, `image/png`, `image/webp`). Previously this took
+// multipart/form-data, but iOS Safari's multipart encoder
+// occasionally threw DOMException ("The string did not match the
+// expected pattern.") on lazy iOS Photos File objects, which
+// surfaced to the user as a cryptic upload failure. Reading the
+// raw body skips that whole encoder.
 //
-// Storage: Vercel Blob at `gallery/{barberId}/{timestamp}-{rand}.jpg`.
-// The barberId prefix is the only piece of structure — no filename
-// echo, no captions, no metadata sidecar. Reversible: future code
-// can ignore the prefix and treat blobs as a flat list. Today's
-// /gallery listing already does exactly that.
+// Storage: Vercel Blob at `gallery/{barberId}/{timestamp}-{rand}.{ext}`.
+// Extension is derived from the content-type so the served URL has
+// the right suffix for caching + content sniffing.
 
 import type { APIRoute } from 'astro';
 import { put } from '@vercel/blob';
@@ -31,14 +32,6 @@ export const prerender = false;
 // hits the endpoint directly.
 const MAX_BYTES = 10 * 1024 * 1024;
 
-// Accepts JPEG / PNG / WebP. The client tries to normalize to JPEG
-// (canvas resize + EXIF strip), but iOS Safari occasionally throws
-// DOMException for PNG/HEIC variants with unusual color profiles or
-// transparency. The client falls back to uploading the original
-// file when normalize throws, so the server has to accept what
-// browsers can render natively. /gallery renders every supported
-// format via plain <img> tags so there's no per-format branching
-// on the read side.
 const ACCEPTED_MIME = new Set<string>([
   'image/jpeg',
   'image/png',
@@ -77,43 +70,67 @@ export const POST: APIRoute = async ({ request }) => {
     throw err;
   }
 
-  let form: FormData;
-  try {
-    form = await request.formData();
-  } catch {
-    return fail(400, 'BAD_REQUEST', 'Body must be multipart/form-data.');
+  // Parse the content-type header. Some browsers tack on params
+  // ("image/jpeg; charset=…") even when not meaningful — strip them.
+  const rawCt = request.headers.get('content-type') ?? '';
+  const mime = rawCt.split(';')[0]?.trim().toLowerCase() ?? '';
+  if (!mime) {
+    return fail(400, 'NO_CONTENT_TYPE', 'Missing Content-Type header.');
   }
-
-  const file = form.get('photo');
-  if (!(file instanceof File)) {
-    return fail(400, 'BAD_REQUEST', 'Field "photo" is required and must be a file.');
-  }
-  if (file.size === 0) {
-    return fail(400, 'EMPTY_FILE', 'Photo is empty.');
-  }
-  if (file.size > MAX_BYTES) {
-    return fail(
-      413,
-      'TOO_LARGE',
-      `Photo is too large (${Math.round(file.size / 1024 / 1024)}MB). Max is ${MAX_BYTES / 1024 / 1024}MB.`,
-    );
-  }
-  if (!ACCEPTED_MIME.has(file.type)) {
+  if (!ACCEPTED_MIME.has(mime)) {
     return fail(
       415,
       'WRONG_TYPE',
-      `This format isn't supported (${file.type || 'unknown'}). Save the photo as JPEG or PNG and try again.`,
+      `This format isn't supported (${mime}). Save the photo as JPEG or PNG and try again.`,
+    );
+  }
+
+  // Cheap early-exit via Content-Length so we don't have to read a
+  // huge body before rejecting. Browsers always send Content-Length
+  // for a Blob/File body.
+  const contentLengthHeader = request.headers.get('content-length');
+  const announced = contentLengthHeader ? Number(contentLengthHeader) : NaN;
+  if (Number.isFinite(announced) && announced > MAX_BYTES) {
+    return fail(
+      413,
+      'TOO_LARGE',
+      `Photo is too large (${Math.round(announced / 1024 / 1024)}MB). Max is ${MAX_BYTES / 1024 / 1024}MB.`,
+    );
+  }
+
+  let bytes: ArrayBuffer;
+  try {
+    bytes = await request.arrayBuffer();
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : 'Could not read upload.';
+    logBarber({
+      phase: 'gallery-photo-read-failed',
+      barberId: session.barberId,
+      mime,
+      detail,
+    });
+    return fail(400, 'READ_FAILED', detail);
+  }
+
+  if (bytes.byteLength === 0) {
+    return fail(400, 'EMPTY_FILE', 'Photo is empty.');
+  }
+  if (bytes.byteLength > MAX_BYTES) {
+    return fail(
+      413,
+      'TOO_LARGE',
+      `Photo is too large (${Math.round(bytes.byteLength / 1024 / 1024)}MB). Max is ${MAX_BYTES / 1024 / 1024}MB.`,
     );
   }
 
   const ts = Date.now();
-  const ext = extensionForMime(file.type);
+  const ext = extensionForMime(mime);
   const pathname = `${GALLERY_PREFIX}${session.barberId}/${ts}-${randomHex(4)}.${ext}`;
 
   try {
-    const blob = await put(pathname, file, {
+    const blob = await put(pathname, bytes, {
       access: 'public',
-      contentType: file.type,
+      contentType: mime,
       // Defensive: addRandomSuffix would change our chosen pathname.
       // Our own ts+random gives uniqueness without losing the
       // barberId-prefix structure.
@@ -127,7 +144,8 @@ export const POST: APIRoute = async ({ request }) => {
       barberId: session.barberId,
       username: session.username,
       pathname: blob.pathname,
-      sizeBytes: file.size,
+      mime,
+      sizeBytes: bytes.byteLength,
     });
 
     return new Response(
@@ -136,7 +154,7 @@ export const POST: APIRoute = async ({ request }) => {
         photo: {
           url: blob.url,
           pathname: blob.pathname,
-          sizeBytes: file.size,
+          sizeBytes: bytes.byteLength,
         },
       }),
       {
@@ -152,6 +170,9 @@ export const POST: APIRoute = async ({ request }) => {
     logBarber({
       phase: 'gallery-photo-upload-failed',
       barberId: session.barberId,
+      pathname,
+      mime,
+      sizeBytes: bytes.byteLength,
       detail,
     });
     return fail(502, 'UPLOAD_FAILED', detail);
