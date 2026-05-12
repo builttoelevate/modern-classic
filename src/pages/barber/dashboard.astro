@@ -1008,6 +1008,14 @@ Astro.response.headers.append('Set-Cookie', refreshBarberSessionCookie(session))
 
         const MAX_DIM = 2000;
         const JPEG_QUALITY = 0.85;
+        const ACCEPTED_MIMES = new Set(['image/jpeg', 'image/png', 'image/webp']);
+
+        // The queue is a stateful list of file entries. Each entry
+        // holds the picked File, a blob: URL for the preview <img>,
+        // status text, and the visual state. Mutations re-render via
+        // renderQueue(). Object URLs are revoked when the entry is
+        // removed or after a successful upload to avoid memory leaks.
+        let items = [];
 
         function showStatus(msg, kind) {
           status.textContent = msg;
@@ -1015,95 +1023,134 @@ Astro.response.headers.append('Set-Cookie', refreshBarberSessionCookie(session))
           status.hidden = false;
         }
 
-        function renderQueue(items) {
+        function refreshSubmitState() {
+          const pending = items.some((it) => it.status === 'queued');
+          submit.disabled = !pending;
+        }
+
+        function renderQueue() {
           queue.innerHTML = '';
-          if (items.length === 0) { queue.hidden = true; return; }
+          if (items.length === 0) {
+            queue.hidden = true;
+            return;
+          }
           queue.hidden = false;
           for (const it of items) {
             const li = document.createElement('li');
             li.setAttribute('data-status', it.status);
-            li.innerHTML =
-              '<span>' + it.name + '</span><span>' + it.label + '</span>';
+
+            const thumb = document.createElement('img');
+            thumb.className = 'bb-photo-upload__thumb';
+            thumb.src = it.previewUrl;
+            thumb.alt = '';
+            thumb.loading = 'lazy';
+            li.appendChild(thumb);
+
+            const text = document.createElement('div');
+            text.className = 'bb-photo-upload__queue-text';
+            const name = document.createElement('span');
+            name.className = 'bb-photo-upload__queue-name';
+            name.textContent = it.file.name || 'photo';
+            const label = document.createElement('span');
+            label.className = 'bb-photo-upload__queue-label';
+            label.textContent = it.label;
+            text.appendChild(name);
+            text.appendChild(label);
+            li.appendChild(text);
+
+            // Remove button only while the entry hasn't started
+            // uploading. Once a row is mid-flight (or terminal) the
+            // button hides — a removal after submit doesn't unsend
+            // an HTTP request anyway.
+            if (it.status === 'queued') {
+              const removeBtn = document.createElement('button');
+              removeBtn.type = 'button';
+              removeBtn.className = 'bb-photo-upload__remove';
+              removeBtn.setAttribute('aria-label', 'Remove ' + (it.file.name || 'photo'));
+              removeBtn.textContent = '✕';
+              removeBtn.addEventListener('click', () => {
+                URL.revokeObjectURL(it.previewUrl);
+                items = items.filter((x) => x !== it);
+                renderQueue();
+                refreshSubmitState();
+              });
+              li.appendChild(removeBtn);
+            }
             queue.appendChild(li);
           }
         }
 
-        async function normalizeToJpeg(file) {
-          // Decode the file to an Image. createImageBitmap supports
-          // most formats including HEIC on Safari. URL.createObjectURL
-          // is the fallback path.
-          let bitmap = null;
+        async function normalizeOrPassthrough(file) {
+          // First attempt: canvas resize + JPEG re-encode. Saves
+          // bytes, strips EXIF, normalizes the served format. iOS
+          // Safari can throw DOMException on some PNG/HEIC variants
+          // here — we don't fight it, we just fall back.
           try {
-            bitmap = await createImageBitmap(file);
-          } catch {
-            // Fall through to Image element decode.
-          }
-          let width, height;
-          if (bitmap) {
-            width = bitmap.width;
-            height = bitmap.height;
-          } else {
-            const url = URL.createObjectURL(file);
-            try {
-              const img = await new Promise((resolve, reject) => {
-                const i = new Image();
-                i.onload = () => resolve(i);
-                i.onerror = () => reject(new Error("Couldn't decode that image. If it's a HEIC from your iPhone, change Settings → Camera → Formats to \"Most Compatible\"."));
-                i.src = url;
-              });
-              width = img.naturalWidth;
-              height = img.naturalHeight;
-              const canvas = document.createElement('canvas');
-              const scale = Math.min(1, MAX_DIM / Math.max(width, height));
-              canvas.width = Math.round(width * scale);
-              canvas.height = Math.round(height * scale);
-              const ctx = canvas.getContext('2d');
-              if (!ctx) throw new Error("Browser couldn't open a canvas to resize the photo.");
-              ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-              return await new Promise((resolve, reject) => {
-                canvas.toBlob(
-                  (blob) => blob ? resolve(blob) : reject(new Error('JPEG encode failed.')),
-                  'image/jpeg',
-                  JPEG_QUALITY,
-                );
-              });
-            } finally {
-              URL.revokeObjectURL(url);
+            let bitmap = null;
+            try { bitmap = await createImageBitmap(file); } catch {}
+            if (!bitmap) {
+              const url = URL.createObjectURL(file);
+              try {
+                bitmap = await new Promise((resolve, reject) => {
+                  const i = new Image();
+                  i.onload = () => resolve(i);
+                  i.onerror = () => reject(new Error('decode-failed'));
+                  i.src = url;
+                });
+              } finally {
+                URL.revokeObjectURL(url);
+              }
             }
+            const w = bitmap.width || bitmap.naturalWidth;
+            const h = bitmap.height || bitmap.naturalHeight;
+            if (!w || !h) throw new Error('no-dimensions');
+            const scale = Math.min(1, MAX_DIM / Math.max(w, h));
+            const canvas = document.createElement('canvas');
+            canvas.width = Math.round(w * scale);
+            canvas.height = Math.round(h * scale);
+            const ctx = canvas.getContext('2d');
+            if (!ctx) throw new Error('no-canvas-ctx');
+            ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+            const blob = await new Promise((resolve, reject) => {
+              canvas.toBlob(
+                (b) => b ? resolve(b) : reject(new Error('encode-failed')),
+                'image/jpeg',
+                JPEG_QUALITY,
+              );
+            });
+            const baseName = (file.name || 'photo').replace(/\.[^.]+$/, '');
+            return { blob, mime: 'image/jpeg', filename: baseName + '.jpg' };
+          } catch {
+            // Fall through to passthrough.
           }
-          const canvas = document.createElement('canvas');
-          const scale = Math.min(1, MAX_DIM / Math.max(width, height));
-          canvas.width = Math.round(width * scale);
-          canvas.height = Math.round(height * scale);
-          const ctx = canvas.getContext('2d');
-          if (!ctx) throw new Error("Browser couldn't open a canvas to resize the photo.");
-          ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
-          return await new Promise((resolve, reject) => {
-            canvas.toBlob(
-              (blob) => blob ? resolve(blob) : reject(new Error('JPEG encode failed.')),
-              'image/jpeg',
-              JPEG_QUALITY,
-            );
-          });
+
+          // Passthrough: ship the original file as-is. Works as long
+          // as the MIME is one the server accepts (JPEG / PNG /
+          // WebP). HEIC and other unsupported formats are caught
+          // server-side and returned as a friendly 415.
+          if (!ACCEPTED_MIMES.has(file.type)) {
+            throw new Error("Couldn't upload this photo. Try saving it as JPEG or PNG and re-picking.");
+          }
+          return { blob: file, mime: file.type, filename: file.name || 'photo' };
         }
 
-        async function uploadOne(file, items, idx) {
-          items[idx].status = 'uploading';
-          items[idx].label = 'Processing…';
-          renderQueue(items);
-          let jpeg;
+        async function uploadOne(it) {
+          it.status = 'uploading';
+          it.label = 'Processing…';
+          renderQueue();
+          let prepared;
           try {
-            jpeg = await normalizeToJpeg(file);
+            prepared = await normalizeOrPassthrough(it.file);
           } catch (err) {
-            items[idx].status = 'error';
-            items[idx].label = err && err.message ? err.message : 'Failed.';
-            renderQueue(items);
+            it.status = 'error';
+            it.label = err && err.message ? err.message : "Couldn't upload this photo.";
+            renderQueue();
             return false;
           }
-          items[idx].label = 'Uploading…';
-          renderQueue(items);
+          it.label = 'Uploading…';
+          renderQueue();
           const fd = new FormData();
-          fd.append('photo', jpeg, (file.name || 'photo').replace(/\.[^.]+$/, '') + '.jpg');
+          fd.append('photo', prepared.blob, prepared.filename);
           try {
             const res = await fetch('/api/barber/photos/upload', {
               method: 'POST',
@@ -1112,45 +1159,57 @@ Astro.response.headers.append('Set-Cookie', refreshBarberSessionCookie(session))
             });
             const data = await res.json();
             if (!res.ok || !data.ok) {
-              items[idx].status = 'error';
-              items[idx].label = (data && data.error && data.error.detail) || ('HTTP ' + res.status);
-              renderQueue(items);
+              it.status = 'error';
+              it.label = (data && data.error && data.error.detail) || ('HTTP ' + res.status);
+              renderQueue();
               return false;
             }
-            items[idx].status = 'done';
-            items[idx].label = 'Uploaded';
-            renderQueue(items);
+            it.status = 'done';
+            it.label = 'Uploaded';
+            renderQueue();
+            // Free the preview URL — the public Vercel Blob URL is
+            // what /gallery will fetch from here on out.
+            URL.revokeObjectURL(it.previewUrl);
             return true;
           } catch (err) {
-            items[idx].status = 'error';
-            items[idx].label = err && err.message ? err.message : 'Network error.';
-            renderQueue(items);
+            it.status = 'error';
+            it.label = err && err.message ? err.message : 'Network error.';
+            renderQueue();
             return false;
           }
         }
 
         input.addEventListener('change', () => {
-          submit.disabled = !input.files || input.files.length === 0;
+          const picked = Array.from(input.files || []);
+          for (const f of picked) {
+            items.push({
+              file: f,
+              previewUrl: URL.createObjectURL(f),
+              status: 'queued',
+              label: 'Ready',
+            });
+          }
+          // Clear the input so the next pick fires `change` even
+          // when the user re-selects an identical filename.
+          input.value = '';
+          renderQueue();
+          refreshSubmitState();
         });
 
         form.addEventListener('submit', async (e) => {
           e.preventDefault();
-          if (!input.files || input.files.length === 0) return;
+          if (items.filter((it) => it.status === 'queued').length === 0) return;
           submit.disabled = true;
           status.hidden = true;
-          const files = Array.from(input.files);
-          const items = files.map((f) => ({
-            name: f.name,
-            status: 'queued',
-            label: 'Waiting…',
-          }));
-          renderQueue(items);
           let okCount = 0;
-          for (let i = 0; i < files.length; i++) {
-            const ok = await uploadOne(files[i], items, i);
+          let total = 0;
+          for (const it of items) {
+            if (it.status !== 'queued') continue;
+            total++;
+            const ok = await uploadOne(it);
             if (ok) okCount++;
           }
-          if (okCount === files.length) {
+          if (okCount === total) {
             showStatus(
               okCount === 1
                 ? 'Photo uploaded — it’s live on /gallery now.'
@@ -1159,13 +1218,13 @@ Astro.response.headers.append('Set-Cookie', refreshBarberSessionCookie(session))
             );
           } else if (okCount > 0) {
             showStatus(
-              okCount + ' of ' + files.length + ' photos uploaded. See above for the ones that failed.',
+              okCount + ' of ' + total + ' photos uploaded. See above for the ones that failed.',
               'error',
             );
           } else {
             showStatus('Upload failed. See the list above.', 'error');
           }
-          input.value = '';
+          refreshSubmitState();
         });
       })();
 

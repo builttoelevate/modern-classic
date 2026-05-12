@@ -31,10 +31,25 @@ export const prerender = false;
 // hits the endpoint directly.
 const MAX_BYTES = 10 * 1024 * 1024;
 
-// JPEG only — the client converts everything to JPEG before posting
-// so HEIC/PNG/WebP inputs all normalize to one served format. Lets
-// /gallery use a single <img> path with no per-format branching.
-const ACCEPTED_MIME = new Set<string>(['image/jpeg']);
+// Accepts JPEG / PNG / WebP. The client tries to normalize to JPEG
+// (canvas resize + EXIF strip), but iOS Safari occasionally throws
+// DOMException for PNG/HEIC variants with unusual color profiles or
+// transparency. The client falls back to uploading the original
+// file when normalize throws, so the server has to accept what
+// browsers can render natively. /gallery renders every supported
+// format via plain <img> tags so there's no per-format branching
+// on the read side.
+const ACCEPTED_MIME = new Set<string>([
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+]);
+
+function extensionForMime(mime: string): string {
+  if (mime === 'image/png') return 'png';
+  if (mime === 'image/webp') return 'webp';
+  return 'jpg';
+}
 
 function logBarber(payload: Record<string, unknown>): void {
   // eslint-disable-next-line no-console
@@ -87,17 +102,18 @@ export const POST: APIRoute = async ({ request }) => {
     return fail(
       415,
       'WRONG_TYPE',
-      `Photo must be JPEG (got "${file.type || 'unknown'}"). The dashboard converts everything to JPEG client-side — if you're hitting this, try uploading again.`,
+      `This format isn't supported (${file.type || 'unknown'}). Save the photo as JPEG or PNG and try again.`,
     );
   }
 
   const ts = Date.now();
-  const pathname = `${GALLERY_PREFIX}${session.barberId}/${ts}-${randomHex(4)}.jpg`;
+  const ext = extensionForMime(file.type);
+  const pathname = `${GALLERY_PREFIX}${session.barberId}/${ts}-${randomHex(4)}.${ext}`;
 
   try {
     const blob = await put(pathname, file, {
       access: 'public',
-      contentType: 'image/jpeg',
+      contentType: file.type,
       // Defensive: addRandomSuffix would change our chosen pathname.
       // Our own ts+random gives uniqueness without losing the
       // barberId-prefix structure.
