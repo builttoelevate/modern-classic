@@ -168,8 +168,8 @@
 }
 .bb-photo-upload__queue li {
   display: flex;
-  justify-content: space-between;
-  gap: 8px;
+  align-items: center;
+  gap: 10px;
   padding: 6px 10px;
   border: 1px solid var(--bb-border);
   border-radius: 6px;
@@ -177,6 +177,47 @@
 }
 .bb-photo-upload__queue li[data-status='done'] { color: rgb(130, 220, 160); border-color: rgba(60, 180, 100, 0.5); }
 .bb-photo-upload__queue li[data-status='error'] { color: rgb(255, 160, 160); border-color: rgba(220, 80, 80, 0.5); }
+.bb-photo-upload__thumb {
+  flex: 0 0 auto;
+  width: 56px;
+  height: 56px;
+  object-fit: cover;
+  border-radius: 4px;
+  border: 1px solid var(--bb-border);
+  background: rgba(0, 0, 0, 0.4);
+}
+.bb-photo-upload__queue-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+.bb-photo-upload__queue-name {
+  font-weight: 600;
+  color: var(--bb-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.bb-photo-upload__queue-label { font-size: 0.78rem; }
+.bb-photo-upload__remove {
+  flex: 0 0 auto;
+  width: 26px;
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--bb-border);
+  background: rgba(0, 0, 0, 0.3);
+  color: var(--bb-text-dim);
+  border-radius: 999px;
+  cursor: pointer;
+  font-size: 0.9rem;
+}
+.bb-photo-upload__remove:hover {
+  color: rgb(255, 160, 160);
+  border-color: rgba(220, 80, 80, 0.5);
+}
 .bb-photo-upload__status {
   margin: 0;
   font-size: 0.85rem;
