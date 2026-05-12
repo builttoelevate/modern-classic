@@ -820,43 +820,45 @@ Astro.response.headers.append('Set-Cookie', refreshBarberSessionCookie(session))
     </div>
 
     <script is:inline define:vars={{ tz: SHOP_TZ }}>
-      (function () {
-        const SHOP_TZ = tz;
-
-        // Convert a datetime-local string ("YYYY-MM-DDTHH:mm") interpreted
-        // in the shop tz to a UTC ISO string for the API. Matches the
-        // localDateToUtc logic in lib/square/availability.ts.
-        function shopLocalToUtcIso(local) {
-          const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/.exec(local);
-          if (!m) return null;
-          const [, y, mo, d, h, mi] = m.map(Number);
-          let utc = new Date(Date.UTC(y, mo - 1, d, h, mi, 0));
-          for (let i = 0; i < 2; i++) {
-            const ps = new Intl.DateTimeFormat('en-US', {
-              timeZone: SHOP_TZ,
-              year: 'numeric',
-              month: '2-digit',
-              day: '2-digit',
-              hour: '2-digit',
-              minute: '2-digit',
-              hour12: false,
-            }).formatToParts(utc);
-            const g = (t) => Number((ps.find((p) => p.type === t) || {}).value || 0);
-            const localAsUtc = Date.UTC(
-              g('year'),
-              g('month') - 1,
-              g('day'),
-              g('hour') === 24 ? 0 : g('hour'),
-              g('minute'),
-              0,
-            );
-            const target = Date.UTC(y, mo - 1, d, h, mi, 0);
-            const diff = target - localAsUtc;
-            if (diff === 0) break;
-            utc = new Date(utc.getTime() + diff);
-          }
-          return utc.toISOString();
+      // Hoisted to script-top so every IIFE in this tag can use
+      // them. Previously these lived inside the first IIFE, which
+      // meant the schedule-from-waitlist (PR #104) and time-off
+      // (PR #105) handlers ReferenceError'd on init and silently
+      // failed to wire up their buttons.
+      const SHOP_TZ = tz;
+      function shopLocalToUtcIso(local) {
+        const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/.exec(local);
+        if (!m) return null;
+        const [, y, mo, d, h, mi] = m.map(Number);
+        let utc = new Date(Date.UTC(y, mo - 1, d, h, mi, 0));
+        for (let i = 0; i < 2; i++) {
+          const ps = new Intl.DateTimeFormat('en-US', {
+            timeZone: SHOP_TZ,
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: false,
+          }).formatToParts(utc);
+          const g = (t) => Number((ps.find((p) => p.type === t) || {}).value || 0);
+          const localAsUtc = Date.UTC(
+            g('year'),
+            g('month') - 1,
+            g('day'),
+            g('hour') === 24 ? 0 : g('hour'),
+            g('minute'),
+            0,
+          );
+          const target = Date.UTC(y, mo - 1, d, h, mi, 0);
+          const diff = target - localAsUtc;
+          if (diff === 0) break;
+          utc = new Date(utc.getTime() + diff);
         }
+        return utc.toISOString();
+      }
+
+      (function () {
 
         function showMsg(card, text, isError) {
           const el = card.querySelector('[data-msg]');

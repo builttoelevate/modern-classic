@@ -557,6 +557,11 @@
   display: grid;
   gap: 0.55rem;
 }
+/* `display: grid` above overrides the [hidden] attribute, so the
+   panel rendered open by default on every waitlist row and showed
+   the static "Loading openings…" template before any JS ran.
+   Restore the hidden semantics with a more-specific rule. */
+.bb-schedule-panel[hidden] { display: none; }
 .bb-schedule-panel__head {
   margin: 0;
   font-size: 0.95rem;
