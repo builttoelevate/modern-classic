@@ -162,8 +162,31 @@ const recent = last30?.recent ?? [];
         font-size: 1.25rem;
         margin: 0 0 12px;
       }
-      table { width: 100%; border-collapse: collapse; font-size: 0.92rem; }
-      th, td { padding: 10px 12px; text-align: left; border-bottom: 1px solid var(--border); vertical-align: top; }
+      .table-scroll {
+        /* On narrow viewports, let the table scroll horizontally
+           instead of wrapping every cell to four lines. */
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        background: var(--surface);
+      }
+      table {
+        width: 100%;
+        min-width: 720px; /* keeps columns readable; scroll kicks in below this */
+        border-collapse: collapse;
+        font-size: 0.92rem;
+      }
+      th, td {
+        padding: 10px 12px;
+        text-align: left;
+        border-bottom: 1px solid var(--border);
+        vertical-align: middle;
+        white-space: nowrap;
+      }
+      /* The customer-email column can wrap if needed; everything
+         else stays one-line. */
+      td.meta--wrap { white-space: normal; word-break: break-all; }
       th {
         font-size: 0.7rem;
         font-weight: 700;
@@ -468,6 +491,7 @@ const recent = last30?.recent ?? [];
           <h2>Recent review requests</h2>
           {recent.length === 0 && <p class="sub">No review requests sent yet.</p>}
           {recent.length > 0 && (
+            <div class="table-scroll">
             <table>
               <thead>
                 <tr>
@@ -498,6 +522,7 @@ const recent = last30?.recent ?? [];
                 ))}
               </tbody>
             </table>
+            </div>
           )}
         </>
       )}
@@ -534,11 +559,18 @@ const recent = last30?.recent ?? [];
           );
 
           try {
+            // Live runs require BOTH dryRun:false AND confirmLive:true
+            // server-side — see run-now.ts comment. Anything else
+            // (including a body lost in transit on iOS Safari) defaults
+            // to dry on the server. Send the explicit pair here.
+            const payload = dryRun
+              ? { dryRun: true }
+              : { dryRun: false, confirmLive: true };
             const res = await fetch('/api/admin/reviews/run-now', {
               method: 'POST',
               credentials: 'same-origin',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ dryRun }),
+              body: JSON.stringify(payload),
             });
             const body = await res.json();
             if (body && body.ok) {
