@@ -40,15 +40,23 @@ function getRedis(): Redis | null {
   return _redis;
 }
 
+export const CURATED_BARBER_ID = 'curated';
+
 export interface GalleryBlobPhoto {
   /** Public HTTPS URL served by Vercel Blob. */
   url: string;
-  /** Blob pathname like `gallery/{barberId}/{ts}-{rand}.jpg`. */
+  /** Blob pathname like `gallery/{barberId}/{ts}-{rand}.jpg`, or
+   *  `gallery/curated/{filename}.jpg` for admin-uploaded "house
+   *  picks" migrated out of the bundled src/assets/gallery set. */
   pathname: string;
-  /** Parsed barberId from the pathname. Empty string when the
-   *  pathname doesn't fit the expected shape (older uploads or
-   *  manual uploads via the Vercel console). */
+  /** Parsed second-segment from the pathname (the barber's team id
+   *  for per-barber uploads, the literal "curated" for admin
+   *  uploads, or empty when the pathname is malformed). */
   barberId: string;
+  /** Higher-level source discriminator derived from the pathname.
+   *  Lets surfaces ignore the raw barberId string and just branch
+   *  on a stable kind. */
+  kind: 'curated' | 'barber';
   /** ISO timestamp from blob metadata. */
   uploadedAt: string;
   /** Bytes — useful for the dashboard to show a per-barber total. */
@@ -63,10 +71,12 @@ function pathToBarberId(pathname: string): string {
 }
 
 function toPhoto(blob: ListBlobResultBlob): GalleryBlobPhoto {
+  const barberId = pathToBarberId(blob.pathname);
   return {
     url: blob.url,
     pathname: blob.pathname,
-    barberId: pathToBarberId(blob.pathname),
+    barberId,
+    kind: barberId === CURATED_BARBER_ID ? 'curated' : 'barber',
     uploadedAt: blob.uploadedAt instanceof Date
       ? blob.uploadedAt.toISOString()
       : String(blob.uploadedAt ?? ''),
