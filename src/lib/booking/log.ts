@@ -8,6 +8,7 @@ export type BookingPhase =
   | 'use-session-customer'
   | 'session-customer-missing-fallback'
   | 'existing-customer-forbidden'
+  | 'blocked-customer-refused'
   | 'create-booking'
   | 'success'
   | 'validation-failed'

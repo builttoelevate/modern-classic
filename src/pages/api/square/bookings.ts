@@ -1,6 +1,7 @@
 import type { APIRoute } from 'astro';
 import { SquareApiError } from '../../../lib/square/client';
 import { findOrCreateCustomer, getCustomerById, type MarketingConsentDecision } from '../../../lib/square/customers';
+import { isPhoneBlocked } from '../../../lib/customer/blockedCustomers';
 import { createBooking } from '../../../lib/square/bookings';
 import { bookingIdempotencyKey } from '../../../lib/booking/idempotency';
 import { customerInitials, logBooking, redactEmail } from '../../../lib/booking/log';
@@ -154,6 +155,12 @@ export const POST: APIRoute = async ({ request }) => {
     //      (no SMS opt-in, missing from /my-bookings).
     //   3. findOrCreateCustomer — true guest checkout, match-by-email.
     let resolvedCustomerId: string;
+    // Stored phone on the resolved Square customer record (E.164-ish,
+    // whatever Square has on file). Used for the block-list check
+    // ALONGSIDE the typed Step-4 phone, so a blocked person can't
+    // slip through by signing in with their account and typing a
+    // different number at Step 4.
+    let resolvedPhone: string | undefined;
     // Promise carrying the eventual marketing-consent decision. Resolves
     // immediately to a noop for branches that don't apply consent (we
     // only collect it in the guest checkout / new-customer paths). We
@@ -209,6 +216,7 @@ export const POST: APIRoute = async ({ request }) => {
         );
       }
       resolvedCustomerId = verified.id;
+      resolvedPhone = verified.phone_number;
       logBooking({
         phase: 'use-existing-customer',
         attemptId,
@@ -219,6 +227,7 @@ export const POST: APIRoute = async ({ request }) => {
       const verified = await getCustomerById(session.customerId);
       if (verified) {
         resolvedCustomerId = verified.id;
+        resolvedPhone = verified.phone_number;
         logBooking({
           phase: 'use-session-customer',
           attemptId,
@@ -239,6 +248,7 @@ export const POST: APIRoute = async ({ request }) => {
           marketingConsentSource: 'booking_flow_step_4',
         });
         resolvedCustomerId = findOrCreate.customer.id;
+        resolvedPhone = findOrCreate.customer.phone_number;
         marketingDecisionPromise = findOrCreate.marketingDecisionPromise;
         logBooking({
           phase: 'session-customer-missing-fallback',
@@ -259,6 +269,7 @@ export const POST: APIRoute = async ({ request }) => {
         marketingConsentSource: 'booking_flow_step_4',
       });
       resolvedCustomerId = findOrCreate.customer.id;
+      resolvedPhone = findOrCreate.customer.phone_number;
       marketingDecisionPromise = findOrCreate.marketingDecisionPromise;
 
       logBooking({
@@ -269,6 +280,41 @@ export const POST: APIRoute = async ({ request }) => {
         customerId: resolvedCustomerId,
         marketingConsent: payload.customer.marketingConsent === true,
       });
+    }
+
+    // Block-from-booking enforcement. Square's per-customer "Block
+    // from booking" toggle is enforced only on Square's own hosted
+    // booking page; the flag isn't exposed on the public API. We
+    // maintain our own phone-keyed list in Upstash Redis. See
+    // src/lib/customer/blockedCustomers.ts.
+    //
+    // Check BOTH the typed Step-4 phone and the resolved customer's
+    // stored phone — closes the case where a blocked person signs in
+    // with their account (session.customerId → blocked record) but
+    // types a different number on Step 4.
+    const phonesToCheck = [payload.customer.phone];
+    if (resolvedPhone && resolvedPhone !== payload.customer.phone) {
+      phonesToCheck.push(resolvedPhone);
+    }
+    const blockChecks = await Promise.all(phonesToCheck.map(isPhoneBlocked));
+    if (blockChecks.some(Boolean)) {
+      logBooking({
+        phase: 'blocked-customer-refused',
+        attemptId,
+        customerEmail: redactEmail(payload.customer.email),
+        customerInitials: initials,
+        customerId: resolvedCustomerId,
+        durationMs: Date.now() - startedAt,
+      });
+      // Generic message — never reveal the block. Funnels the
+      // customer to a human (Bill / Michael), who can decline at
+      // the chair as they do today rather than be surprised by
+      // a booking on the schedule.
+      return fail(
+        403,
+        'BOOKING_NOT_ALLOWED',
+        "We can't complete this booking online. Please call the shop at 740-297-4462 to schedule.",
+      );
     }
 
     // Run the booking creation and marketing consent application in
