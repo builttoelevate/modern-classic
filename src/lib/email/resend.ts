@@ -1,14 +1,51 @@
-// Phase 5 Part A — Resend HTTP wrapper.
+// Resend HTTP wrapper.
 //
-// We don't pull the SDK; native fetch is enough. Sender domain is
-// designedtoelevate.co (already verified on the Resend account). Reply-to
-// goes to the shop's protonmail (per SQUARE_REFERENCE.md §2).
+// We don't pull the SDK; native fetch is enough. Sender + reply-to
+// live in env vars so flipping to a brand-aligned sending domain
+// (e.g. mail.mdrnclassic.com once DNS verifies) is a Vercel env
+// bump, not a redeploy. Brand-domain alignment matters for Gmail
+// deliverability — from-domain mismatch ("bookings@designedtoelevate.co"
+// for a Modern Classic email) is one of the top triggers for the
+// spam folder.
+//
+//   RESEND_FROM_ADDRESS — full RFC 5322 "Name <email@domain>" line,
+//                         e.g. "Modern Classic Barbershop <bookings@mail.mdrnclassic.com>"
+//   RESEND_REPLY_TO     — bare email, e.g. "modernclassicbarbershop@protonmail.com"
+//
+// Both are required. Lazy-throw on first email send if either is
+// missing — better to crash the cron loudly (visible in Vercel logs)
+// than to silently fall back to a stale default and ship review
+// emails from the wrong brand at 2am.
 
 const RESEND_ENDPOINT = 'https://api.resend.com/emails';
 
-const FROM_DISPLAY = 'Modern Classic Barbershop';
-const FROM_ADDRESS = 'bookings@designedtoelevate.co';
-const REPLY_TO = 'modernclassicbarbershop@protonmail.com';
+function readEnv(name: string): string | undefined {
+  const fromMeta = (import.meta.env as Record<string, unknown>)[name];
+  if (typeof fromMeta === 'string' && fromMeta.length > 0) return fromMeta;
+  const fromProc = typeof process !== 'undefined' ? process.env?.[name] : undefined;
+  if (typeof fromProc === 'string' && fromProc.length > 0) return fromProc;
+  return undefined;
+}
+
+function getFromAddress(): string {
+  const v = readEnv('RESEND_FROM_ADDRESS');
+  if (!v) {
+    throw new Error(
+      'RESEND_FROM_ADDRESS is not set. Format: "Display Name <addr@domain>". Add it to .env (local) or Vercel env vars (deploy).',
+    );
+  }
+  return v;
+}
+
+function getReplyTo(): string {
+  const v = readEnv('RESEND_REPLY_TO');
+  if (!v) {
+    throw new Error(
+      'RESEND_REPLY_TO is not set. Add a bare email address to .env (local) or Vercel env vars (deploy).',
+    );
+  }
+  return v;
+}
 
 export class ResendApiError extends Error {
   readonly status: number;
@@ -38,7 +75,6 @@ interface SendEmailInput {
   html: string;
   text: string;
   replyTo?: string;
-  fromDisplay?: string;
   /**
    * Custom RFC 5322 headers. We use this for List-Unsubscribe /
    * List-Unsubscribe-Post (Gmail bulk-sender requirements + RFC 8058
@@ -53,14 +89,13 @@ interface ResendResponse {
 
 async function sendEmail(input: SendEmailInput): Promise<{ id: string }> {
   const key = getApiKey();
-  const fromDisplay = input.fromDisplay ?? FROM_DISPLAY;
   const body: Record<string, unknown> = {
-    from: `${fromDisplay} <${FROM_ADDRESS}>`,
+    from: getFromAddress(),
     to: [input.to],
     subject: input.subject,
     html: input.html,
     text: input.text,
-    reply_to: input.replyTo ?? REPLY_TO,
+    reply_to: input.replyTo ?? getReplyTo(),
   };
   if (input.headers && Object.keys(input.headers).length > 0) {
     body.headers = input.headers;
@@ -177,9 +212,8 @@ export async function sendReviewRequest(
     subject: reviewRequestSubject({ customerName: input.customerName }),
     html,
     text,
-    replyTo: REPLY_TO,
     headers: {
-      'List-Unsubscribe': `<mailto:${REPLY_TO}?subject=unsubscribe>, <${input.unsubscribeUrl}>`,
+      'List-Unsubscribe': `<mailto:${getReplyTo()}?subject=unsubscribe>, <${input.unsubscribeUrl}>`,
       'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
     },
   });
@@ -217,7 +251,6 @@ export async function sendWaitlistConfirmation(
     subject: waitlistConfirmationSubject(),
     html,
     text,
-    replyTo: REPLY_TO,
   });
 }
 
@@ -295,7 +328,6 @@ export async function sendWaitlistOpening(
     }),
     html,
     text,
-    replyTo: REPLY_TO,
   });
 }
 
@@ -369,7 +401,6 @@ export async function sendPasswordResetBarber(
     subject: passwordResetBarberSubject(),
     html,
     text,
-    replyTo: REPLY_TO,
   });
 }
 
@@ -403,7 +434,6 @@ export async function sendNoShowChargeBarber(
     subject: noShowChargeBarberSubject({ customerName: input.customerName }),
     html,
     text,
-    replyTo: REPLY_TO,
   });
 }
 
@@ -437,7 +467,6 @@ export async function sendReviewClickBarber(
     subject: reviewClickBarberSubject({ customerName: input.customerName }),
     html,
     text,
-    replyTo: REPLY_TO,
   });
 }
 
@@ -475,7 +504,6 @@ export async function sendFamilyInvite(
     subject: familyInviteSubject({ inviterName: input.inviterName }),
     html,
     text,
-    replyTo: REPLY_TO,
   });
 }
 
@@ -517,6 +545,5 @@ export async function sendFamilyInviteAccepted(
     subject: familyInviteAcceptedSubject({ acceptedByName: input.acceptedByName }),
     html,
     text,
-    replyTo: REPLY_TO,
   });
 }
