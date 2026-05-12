@@ -1,25 +1,18 @@
-// Admin endpoints for the own-list block-from-booking enforcement.
+// Admin endpoints for the block-list. Basic Auth (admin/<ADMIN_PASSWORD>).
 //
-// GET    /api/admin/blocks            list all blocked phones
-// POST   /api/admin/blocks            body { phone, reason?, blockedBy? }
-// DELETE /api/admin/blocks            body { phone }
+//   GET  /api/admin/blocks    list everything, newest first
+//   POST /api/admin/blocks    body {phone, reason?, blockedBy?}
+//                             → {ok, status: 'created' | 'already_blocked', block}
+//                             (idempotent; duplicate is NOT an error)
 //
-// All three are gated by the existing admin Basic Auth. Phone is
-// normalized to E.164 before storage / lookup, so callers can pass
-// any reasonable input ("(740) 297-4462", "740-297-4462",
-// "+17402974462" — all become "+17402974462").
-//
-// One-time migration path for Michael: walk the Square "Block from
-// booking" toggle list, POST each phone here with a short reason.
-// A proper admin UI is a follow-up; curl / Postman is fine for the
-// initial pass.
+// DELETE moved to /api/admin/blocks/[id] (by stable UUID).
+// /check moved to /api/admin/blocks/check (admin-auth-only inspection).
 
 import type { APIRoute } from 'astro';
 import { checkBasicAuth } from '../../../lib/admin/auth';
 import {
   addBlockedPhone,
-  listBlockedPhones,
-  removeBlockedPhone,
+  listBlockedEntries,
 } from '../../../lib/customer/blockedCustomers';
 
 export const prerender = false;
@@ -28,7 +21,7 @@ export const GET: APIRoute = async ({ request }) => {
   const auth = checkBasicAuth(request);
   if (!auth.ok) return auth.challenge;
   try {
-    const entries = await listBlockedPhones();
+    const entries = await listBlockedEntries();
     return Response.json({ ok: true, entries }, { status: 200 });
   } catch (err) {
     const detail = err instanceof Error ? err.message : 'Unknown error';
@@ -61,39 +54,11 @@ export const POST: APIRoute = async ({ request }) => {
   try {
     const result = await addBlockedPhone(phone, { reason, blockedBy });
     return Response.json(
-      { ok: true, added: result.added, entry: result.entry },
+      { ok: true, status: result.status, block: result.block },
       { status: 200 },
     );
   } catch (err) {
     const detail = err instanceof Error ? err.message : 'Unknown error';
     return Response.json({ ok: false, error: { detail } }, { status: 400 });
-  }
-};
-
-export const DELETE: APIRoute = async ({ request }) => {
-  const auth = checkBasicAuth(request);
-  if (!auth.ok) return auth.challenge;
-  let body: { phone?: unknown };
-  try {
-    body = (await request.json()) as typeof body;
-  } catch {
-    return Response.json(
-      { ok: false, error: { detail: 'Body must be valid JSON.' } },
-      { status: 400 },
-    );
-  }
-  const phone = typeof body.phone === 'string' ? body.phone.trim() : '';
-  if (!phone) {
-    return Response.json(
-      { ok: false, error: { detail: 'phone is required.' } },
-      { status: 400 },
-    );
-  }
-  try {
-    const removed = await removeBlockedPhone(phone);
-    return Response.json({ ok: true, removed }, { status: 200 });
-  } catch (err) {
-    const detail = err instanceof Error ? err.message : 'Unknown error';
-    return Response.json({ ok: false, error: { detail } }, { status: 500 });
   }
 };

@@ -9,6 +9,12 @@ import { isAuthConfigured } from '../../../../lib/auth/session';
 import { SquareApiError } from '../../../../lib/square/client';
 import { searchAvailability } from '../../../../lib/square/availability';
 import { createBooking } from '../../../../lib/square/bookings';
+import { getCustomerById } from '../../../../lib/square/customers';
+import {
+  CustomerBlockedError,
+  assertPhoneNotBlocked,
+  blockedBookingPublicResponse,
+} from '../../../../lib/customer/blockedCustomers';
 import { bookingIdempotencyKey } from '../../../../lib/booking/idempotency';
 import { redactEmail } from '../../../../lib/booking/log';
 
@@ -122,7 +128,36 @@ export const POST: APIRoute = async ({ request }) => {
     );
   }
 
-  // 2) Create the booking via Phase 3's wrapper, with a deterministic key.
+  // 2) Block-from-booking enforcement (public path). Fetch the
+  // session customer's stored phone and check it. Fail closed: if the
+  // phone is missing or the fetch errors, refuse with the generic
+  // response rather than letting an unverified state through.
+  const rebookCustomer = await getCustomerById(session.customerId).catch(() => null);
+  const rebookPhone = rebookCustomer?.phone_number?.trim();
+  if (!rebookPhone) {
+    return blockedBookingPublicResponse();
+  }
+  try {
+    await assertPhoneNotBlocked(rebookPhone, {
+      bookingContext: 'quick-rebook',
+      customerName:
+        `${rebookCustomer?.given_name ?? ''} ${rebookCustomer?.family_name ?? ''}`.trim() ||
+        undefined,
+      customerEmail: rebookCustomer?.email_address ?? session.email,
+      serviceId: body.serviceVariationId,
+      barberId: body.teamMemberId,
+      selectedStartAt: body.startAtUtc,
+      ipAddress: request.headers.get('x-forwarded-for') ?? undefined,
+      userAgent: request.headers.get('user-agent') ?? undefined,
+    });
+  } catch (err) {
+    if (err instanceof CustomerBlockedError) {
+      return blockedBookingPublicResponse();
+    }
+    throw err;
+  }
+
+  // 3) Create the booking via Phase 3's wrapper, with a deterministic key.
   const idempotencyKey = bookingIdempotencyKey({
     email: session.email,
     startAtUtc: body.startAtUtc,

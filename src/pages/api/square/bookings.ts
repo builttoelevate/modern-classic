@@ -1,7 +1,11 @@
 import type { APIRoute } from 'astro';
 import { SquareApiError } from '../../../lib/square/client';
 import { findOrCreateCustomer, getCustomerById, type MarketingConsentDecision } from '../../../lib/square/customers';
-import { isPhoneBlocked } from '../../../lib/customer/blockedCustomers';
+import {
+  CustomerBlockedError,
+  assertPhoneNotBlocked,
+  blockedBookingPublicResponse,
+} from '../../../lib/customer/blockedCustomers';
 import { createBooking } from '../../../lib/square/bookings';
 import { bookingIdempotencyKey } from '../../../lib/booking/idempotency';
 import { customerInitials, logBooking, redactEmail } from '../../../lib/booking/log';
@@ -283,38 +287,44 @@ export const POST: APIRoute = async ({ request }) => {
     }
 
     // Block-from-booking enforcement. Square's per-customer "Block
-    // from booking" toggle is enforced only on Square's own hosted
-    // booking page; the flag isn't exposed on the public API. We
-    // maintain our own phone-keyed list in Upstash Redis. See
-    // src/lib/customer/blockedCustomers.ts.
+    // from booking" toggle is API-invisible, so we keep our own list
+    // in Upstash Redis. See src/lib/customer/blockedCustomers.ts.
     //
-    // Check BOTH the typed Step-4 phone and the resolved customer's
-    // stored phone — closes the case where a blocked person signs in
-    // with their account (session.customerId → blocked record) but
-    // types a different number on Step 4.
+    // Check the typed Step-4 phone first, then (if different) the
+    // resolved customer's stored phone — closes the case where a
+    // blocked person signs in with their account but types a different
+    // number on Step 4.
     const phonesToCheck = [payload.customer.phone];
     if (resolvedPhone && resolvedPhone !== payload.customer.phone) {
       phonesToCheck.push(resolvedPhone);
     }
-    const blockChecks = await Promise.all(phonesToCheck.map(isPhoneBlocked));
-    if (blockChecks.some(Boolean)) {
-      logBooking({
-        phase: 'blocked-customer-refused',
-        attemptId,
-        customerEmail: redactEmail(payload.customer.email),
-        customerInitials: initials,
-        customerId: resolvedCustomerId,
-        durationMs: Date.now() - startedAt,
-      });
-      // Generic message — never reveal the block. Funnels the
-      // customer to a human (Bill / Michael), who can decline at
-      // the chair as they do today rather than be surprised by
-      // a booking on the schedule.
-      return fail(
-        403,
-        'BOOKING_NOT_ALLOWED',
-        "We can't complete this booking online. Please call the shop at 740-297-4462 to schedule.",
-      );
+    try {
+      for (const ph of phonesToCheck) {
+        await assertPhoneNotBlocked(ph, {
+          bookingContext: 'single',
+          phoneOriginal: payload.customer.phone,
+          customerName: `${payload.customer.givenName} ${payload.customer.familyName}`.trim(),
+          customerEmail: payload.customer.email,
+          serviceId: payload.service.variationId,
+          barberId: payload.barber.id,
+          selectedStartAt: payload.slot.startAtUtc,
+          ipAddress: request.headers.get('x-forwarded-for') ?? undefined,
+          userAgent: request.headers.get('user-agent') ?? undefined,
+        });
+      }
+    } catch (err) {
+      if (err instanceof CustomerBlockedError) {
+        logBooking({
+          phase: 'blocked-customer-refused',
+          attemptId,
+          customerEmail: redactEmail(payload.customer.email),
+          customerInitials: initials,
+          customerId: resolvedCustomerId,
+          durationMs: Date.now() - startedAt,
+        });
+        return blockedBookingPublicResponse();
+      }
+      throw err;
     }
 
     // Run the booking creation and marketing consent application in

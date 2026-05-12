@@ -2,7 +2,10 @@
 export const prerender = false;
 
 import { checkBasicAuth } from '../../lib/admin/auth';
-import { listBlockedPhones, type BlockedEntry } from '../../lib/customer/blockedCustomers';
+import {
+  listBlockedEntries,
+  type BlockedEntry,
+} from '../../lib/customer/blockedCustomers';
 
 const auth = checkBasicAuth(Astro.request);
 if (!auth.ok) {
@@ -12,30 +15,34 @@ if (!auth.ok) {
 let initialEntries: BlockedEntry[] = [];
 let loadError: string | null = null;
 try {
-  initialEntries = await listBlockedPhones();
+  initialEntries = await listBlockedEntries();
 } catch (err) {
   loadError = err instanceof Error ? err.message : String(err);
 }
 
 function fmtPhone(e164: string): string {
-  // Pretty-print +1XXXXXXXXXX as (XXX) XXX-XXXX. Leaves other formats
-  // alone — we only handle the US case the rest of the codebase emits.
   const m = /^\+1(\d{3})(\d{3})(\d{4})$/.exec(e164);
-  if (!m) return e164;
-  return `(${m[1]}) ${m[2]}-${m[3]}`;
+  return m ? `(${m[1]}) ${m[2]}-${m[3]}` : e164;
 }
 
-function fmtDate(iso: string): string {
+function fmtRelative(iso: string): string {
   const d = new Date(iso);
-  if (isNaN(d.getTime())) return iso;
+  const now = Date.now();
+  const diff = now - d.getTime();
+  if (isNaN(diff)) return iso;
+  const sec = Math.floor(diff / 1000);
+  if (sec < 60) return 'just now';
+  const min = Math.floor(sec / 60);
+  if (min < 60) return `${min} minute${min === 1 ? '' : 's'} ago`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr} hour${hr === 1 ? '' : 's'} ago`;
+  const day = Math.floor(hr / 24);
+  if (day < 30) return `${day} day${day === 1 ? '' : 's'} ago`;
   return new Intl.DateTimeFormat('en-US', {
     timeZone: 'America/New_York',
     month: 'short',
     day: 'numeric',
     year: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-    hour12: true,
   }).format(d);
 }
 ---
@@ -60,6 +67,8 @@ function fmtDate(iso: string): string {
         --danger-bg: rgba(220, 80, 60, 0.1);
         --ok: #a4d091;
         --ok-bg: rgba(122, 184, 110, 0.12);
+        --info: #e6c785;
+        --info-bg: rgba(201, 163, 92, 0.08);
       }
       *, *::before, *::after { box-sizing: border-box; }
       body {
@@ -69,6 +78,7 @@ function fmtDate(iso: string): string {
         font: 16px/1.5 ui-sans-serif, system-ui, sans-serif;
       }
       .wrap { max-width: 60rem; margin: 0 auto; padding: clamp(20px, 4vw, 32px) clamp(16px, 4vw, 24px); }
+
       .topnav {
         display: flex;
         gap: 1.25rem;
@@ -81,45 +91,40 @@ function fmtDate(iso: string): string {
         letter-spacing: 0.16em;
         text-transform: uppercase;
       }
-      .topnav a {
-        color: var(--muted);
-        text-decoration: none;
-        padding-bottom: 4px;
-      }
+      .topnav a { color: var(--muted); text-decoration: none; padding-bottom: 4px; }
       .topnav a.active { color: var(--gold); border-bottom: 2px solid var(--gold); }
       .topnav a:hover { color: var(--gold); }
+
       h1 {
         font-family: Georgia, serif;
         font-weight: 400;
         font-size: clamp(1.5rem, 4vw, 1.9rem);
         margin: 0 0 6px;
       }
-      .sub { color: var(--muted); font-size: 0.95rem; margin: 0 0 24px; }
+      .sub { color: var(--muted); font-size: 0.95rem; margin: 0 0 24px; max-width: 42rem; }
 
       .panel {
         background: var(--surface);
         border: 1px solid var(--border);
         border-radius: 8px;
         padding: clamp(16px, 3vw, 22px);
-        margin-bottom: 22px;
+        margin-bottom: 20px;
       }
       .panel h2 {
         font-family: Georgia, serif;
         font-weight: 400;
-        font-size: 1.15rem;
+        font-size: 1.1rem;
         margin: 0 0 14px;
       }
 
-      form#blockForm {
+      form.row {
         display: grid;
         grid-template-columns: 1fr;
         gap: 12px;
       }
       @media (min-width: 640px) {
-        form#blockForm {
-          grid-template-columns: 1fr 1fr auto;
-          align-items: end;
-        }
+        form#blockForm { grid-template-columns: 1fr 1fr auto; align-items: end; }
+        form#checkForm { grid-template-columns: 1fr auto; align-items: end; }
       }
       .field { display: flex; flex-direction: column; gap: 6px; }
       .field label {
@@ -127,6 +132,13 @@ function fmtDate(iso: string): string {
         letter-spacing: 0.14em;
         text-transform: uppercase;
         color: var(--muted);
+      }
+      .field .hint {
+        font-size: 0.78rem;
+        color: var(--dim);
+        margin-top: -2px;
+        text-transform: none;
+        letter-spacing: 0;
       }
       .field input {
         appearance: none;
@@ -139,10 +151,7 @@ function fmtDate(iso: string): string {
         font-size: 1rem;
         min-height: 44px;
       }
-      .field input:focus {
-        outline: none;
-        border-color: var(--gold);
-      }
+      .field input:focus { outline: none; border-color: var(--gold); }
 
       .btn {
         appearance: none;
@@ -160,13 +169,19 @@ function fmtDate(iso: string): string {
         min-height: 44px;
       }
       .btn:disabled { opacity: 0.55; cursor: not-allowed; }
+      .btn--ghost {
+        background: transparent;
+        color: var(--text);
+        border-color: var(--border);
+      }
+      .btn--ghost:hover { border-color: var(--gold); color: var(--gold); }
       .btn--danger {
         background: transparent;
         color: var(--danger);
         border-color: rgba(220, 80, 60, 0.4);
-        padding: 8px 12px;
+        padding: 8px 14px;
         font-size: 0.72rem;
-        min-height: 36px;
+        min-height: 38px;
       }
       .btn--danger:hover { background: var(--danger-bg); }
 
@@ -178,51 +193,87 @@ function fmtDate(iso: string): string {
         display: none;
       }
       .flash--ok { display: block; background: var(--ok-bg); color: var(--ok); border: 1px solid rgba(122, 184, 110, 0.4); }
-      .flash--info { display: block; background: rgba(201, 163, 92, 0.08); color: #e6c785; border: 1px solid rgba(201, 163, 92, 0.4); }
+      .flash--info { display: block; background: var(--info-bg); color: var(--info); border: 1px solid rgba(201, 163, 92, 0.4); }
       .flash--err { display: block; background: var(--danger-bg); color: var(--danger); border: 1px solid rgba(220, 80, 60, 0.4); }
 
-      .table-scroll {
-        overflow-x: auto;
-        -webkit-overflow-scrolling: touch;
+      /* Card list (mobile, ≤640px) */
+      .card-list { display: flex; flex-direction: column; gap: 10px; }
+      .card {
+        background: var(--bg);
         border: 1px solid var(--border);
-        border-radius: 6px;
-        background: var(--surface);
+        border-radius: 8px;
+        padding: 14px;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
       }
-      table {
-        width: 100%;
-        min-width: 560px;
-        border-collapse: collapse;
-        font-size: 0.94rem;
-      }
-      th, td {
-        padding: 11px 14px;
-        text-align: left;
-        border-bottom: 1px solid var(--border);
-        vertical-align: middle;
-        white-space: nowrap;
-      }
-      td.reason { white-space: normal; word-break: break-word; color: var(--muted); }
-      th {
-        font-size: 0.7rem;
-        font-weight: 700;
-        letter-spacing: 0.14em;
-        text-transform: uppercase;
-        color: var(--muted);
-        background: var(--surface);
-      }
-      tr:last-child td { border-bottom: none; }
-      tr:hover td { background: var(--surface-2); }
-      td.phone {
+      .card .phone-primary {
         font-family: ui-monospace, Menlo, monospace;
+        font-size: 1rem;
+        color: var(--text);
+      }
+      .card .phone-original {
+        font-size: 0.82rem;
+        color: var(--dim);
+      }
+      .card .reason {
+        color: var(--muted);
         font-size: 0.92rem;
       }
-      td.date { color: var(--dim); font-size: 0.86rem; }
+      .card .meta {
+        color: var(--dim);
+        font-size: 0.82rem;
+      }
+      .card .actions {
+        display: flex;
+        justify-content: flex-end;
+        margin-top: 4px;
+      }
+
+      /* Table (desktop, ≥640px) */
+      .table-wrap { display: none; }
+      @media (min-width: 640px) {
+        .card-list { display: none; }
+        .table-wrap {
+          display: block;
+          overflow-x: auto;
+          border: 1px solid var(--border);
+          border-radius: 6px;
+          background: var(--surface);
+        }
+        table { width: 100%; min-width: 580px; border-collapse: collapse; font-size: 0.94rem; }
+        th, td {
+          padding: 11px 14px;
+          text-align: left;
+          border-bottom: 1px solid var(--border);
+          vertical-align: middle;
+          white-space: nowrap;
+        }
+        td.reason { white-space: normal; word-break: break-word; color: var(--muted); }
+        th {
+          font-size: 0.7rem;
+          font-weight: 700;
+          letter-spacing: 0.14em;
+          text-transform: uppercase;
+          color: var(--muted);
+          background: var(--surface);
+        }
+        tr:last-child td { border-bottom: none; }
+        tr:hover td { background: var(--surface-2); }
+        td.phone { font-family: ui-monospace, Menlo, monospace; }
+        td.phone .original { display: block; font-size: 0.78rem; color: var(--dim); font-family: ui-monospace, Menlo, monospace; }
+        td.date { color: var(--dim); font-size: 0.86rem; }
+      }
+
       .empty {
         padding: 22px 18px;
         text-align: center;
         color: var(--dim);
+        background: var(--surface);
+        border: 1px dashed var(--border);
+        border-radius: 6px;
       }
-      .err {
+      .err-band {
         background: var(--danger-bg);
         border: 1px solid rgba(220, 80, 60, 0.4);
         color: #f0a37a;
@@ -230,6 +281,18 @@ function fmtDate(iso: string): string {
         border-radius: 6px;
         margin-bottom: 22px;
       }
+
+      .check-result {
+        margin-top: 12px;
+        padding: 10px 14px;
+        border-radius: 6px;
+        font-size: 0.92rem;
+        display: none;
+      }
+      .check-result.show { display: block; }
+      .check-result--blocked { background: var(--info-bg); color: var(--info); border: 1px solid rgba(201, 163, 92, 0.4); }
+      .check-result--clear   { background: var(--ok-bg); color: var(--ok); border: 1px solid rgba(122, 184, 110, 0.4); }
+      .check-result .meta { color: var(--dim); font-size: 0.84rem; margin-top: 2px; }
     </style>
   </head>
   <body>
@@ -246,16 +309,16 @@ function fmtDate(iso: string): string {
 
       <h1>Blocked customers</h1>
       <p class="sub">
-        Phone numbers added here are refused at the booking step with a
-        generic "please call the shop" message. The customer is not told
-        they've been blocked.
+        Phones added here can't complete bookings online — single, group, reschedule, or rebook.
+        The customer is told to call the shop; they're never told they're blocked.
+        Reason is internal only.
       </p>
 
-      {loadError && <div class="err">Couldn't load the block list: {loadError}</div>}
+      {loadError && <div class="err-band">Couldn't load the block list: {loadError}</div>}
 
       <section class="panel">
         <h2>Block a phone</h2>
-        <form id="blockForm" novalidate>
+        <form id="blockForm" class="row" novalidate>
           <div class="field">
             <label for="phone">Phone</label>
             <input
@@ -269,7 +332,7 @@ function fmtDate(iso: string): string {
             />
           </div>
           <div class="field">
-            <label for="reason">Reason (optional)</label>
+            <label for="reason">Reason</label>
             <input
               id="reason"
               name="reason"
@@ -278,88 +341,148 @@ function fmtDate(iso: string): string {
               placeholder="No-show repeat"
               maxlength="200"
             />
+            <span class="hint">Internal — never shown to the customer.</span>
           </div>
           <button type="submit" class="btn" id="blockSubmit">Block</button>
         </form>
-        <div id="flash" class="flash" role="status" aria-live="polite"></div>
+        <div id="blockFlash" class="flash" role="status" aria-live="polite"></div>
+      </section>
+
+      <section class="panel">
+        <h2>Check a phone</h2>
+        <form id="checkForm" class="row" novalidate>
+          <div class="field">
+            <label for="checkPhone">Phone</label>
+            <input
+              id="checkPhone"
+              name="checkPhone"
+              type="tel"
+              autocomplete="off"
+              inputmode="tel"
+              placeholder="(740) 555-0123"
+              required
+            />
+          </div>
+          <button type="submit" class="btn btn--ghost" id="checkSubmit">Check</button>
+        </form>
+        <div id="checkResult" class="check-result" role="status" aria-live="polite"></div>
       </section>
 
       <section class="panel">
         <h2>Currently blocked (<span id="countCell">{initialEntries.length}</span>)</h2>
-        <div class="table-scroll">
-          <table>
-            <thead>
-              <tr>
-                <th>Phone</th>
-                <th>Reason</th>
-                <th>Blocked at</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody id="rows">
-              {initialEntries.length === 0 && (
-                <tr><td class="empty" colspan="4">No customers are blocked.</td></tr>
-              )}
+
+        {initialEntries.length === 0 && (
+          <div class="empty">No customers are blocked.</div>
+        )}
+
+        {initialEntries.length > 0 && (
+          <>
+            <div class="card-list" id="cardList">
               {initialEntries.map((e) => (
-                <tr data-phone={e.phone}>
-                  <td class="phone">{fmtPhone(e.phone)}</td>
-                  <td class="reason">{e.reason ?? '—'}</td>
-                  <td class="date">{fmtDate(e.blockedAt)}</td>
-                  <td>
+                <div class="card" data-id={e.id} data-phone={e.phone}>
+                  <div class="phone-primary">{fmtPhone(e.phone)}</div>
+                  {e.phoneOriginal && e.phoneOriginal !== e.phone && (
+                    <div class="phone-original">typed as {e.phoneOriginal}</div>
+                  )}
+                  {e.reason && <div class="reason">{e.reason}</div>}
+                  <div class="meta">
+                    {fmtRelative(e.blockedAt)}{e.blockedBy ? ` · ${e.blockedBy}` : ''}
+                  </div>
+                  <div class="actions">
                     <button type="button" class="btn btn--danger" data-action="remove">Remove</button>
-                  </td>
-                </tr>
+                  </div>
+                </div>
               ))}
-            </tbody>
-          </table>
-        </div>
+            </div>
+
+            <div class="table-wrap" id="tableWrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Phone</th>
+                    <th>Reason</th>
+                    <th>Blocked</th>
+                    <th>Added by</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody id="rows">
+                  {initialEntries.map((e) => (
+                    <tr data-id={e.id} data-phone={e.phone}>
+                      <td class="phone">
+                        {fmtPhone(e.phone)}
+                        {e.phoneOriginal && e.phoneOriginal !== e.phone && (
+                          <span class="original">typed as {e.phoneOriginal}</span>
+                        )}
+                      </td>
+                      <td class="reason">{e.reason ?? '—'}</td>
+                      <td class="date">{fmtRelative(e.blockedAt)}</td>
+                      <td class="date">{e.blockedBy ?? '—'}</td>
+                      <td><button type="button" class="btn btn--danger" data-action="remove">Remove</button></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
       </section>
     </div>
 
     <script is:inline>
       (function () {
-        const form = document.getElementById('blockForm');
+        const blockForm = document.getElementById('blockForm');
         const phoneInput = document.getElementById('phone');
         const reasonInput = document.getElementById('reason');
-        const submitBtn = document.getElementById('blockSubmit');
-        const flash = document.getElementById('flash');
-        const rows = document.getElementById('rows');
+        const blockSubmit = document.getElementById('blockSubmit');
+        const blockFlash = document.getElementById('blockFlash');
+
+        const checkForm = document.getElementById('checkForm');
+        const checkInput = document.getElementById('checkPhone');
+        const checkSubmit = document.getElementById('checkSubmit');
+        const checkResult = document.getElementById('checkResult');
+
         const countCell = document.getElementById('countCell');
 
-        function showFlash(kind, msg) {
-          flash.className = 'flash flash--' + kind;
-          flash.textContent = msg;
+        function showFlash(el, kind, msg) {
+          el.className = 'flash flash--' + kind;
+          el.textContent = msg;
         }
-        function clearFlash() {
-          flash.className = 'flash';
-          flash.textContent = '';
+        function clearFlash(el) {
+          el.className = 'flash';
+          el.textContent = '';
         }
 
         function fmtPhone(e164) {
           const m = /^\+1(\d{3})(\d{3})(\d{4})$/.exec(e164);
           return m ? '(' + m[1] + ') ' + m[2] + '-' + m[3] : e164;
         }
-        function fmtDate(iso) {
+        function fmtRelative(iso) {
           const d = new Date(iso);
-          if (isNaN(d.getTime())) return iso;
+          const diff = Date.now() - d.getTime();
+          if (isNaN(diff)) return iso;
+          const sec = Math.floor(diff / 1000);
+          if (sec < 60) return 'just now';
+          const min = Math.floor(sec / 60);
+          if (min < 60) return min + ' minute' + (min === 1 ? '' : 's') + ' ago';
+          const hr = Math.floor(min / 60);
+          if (hr < 24) return hr + ' hour' + (hr === 1 ? '' : 's') + ' ago';
+          const day = Math.floor(hr / 24);
+          if (day < 30) return day + ' day' + (day === 1 ? '' : 's') + ' ago';
           return new Intl.DateTimeFormat('en-US', {
-            timeZone: 'America/New_York',
-            month: 'short',
-            day: 'numeric',
-            year: 'numeric',
-            hour: 'numeric',
-            minute: '2-digit',
-            hour12: true,
+            timeZone: 'America/New_York', month: 'short', day: 'numeric', year: 'numeric',
           }).format(d);
+        }
+        function escapeHtml(s) {
+          return String(s)
+            .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
         }
 
         async function refreshList() {
-          const res = await fetch('/api/admin/blocks', {
-            method: 'GET',
-            credentials: 'same-origin',
-          });
+          const res = await fetch('/api/admin/blocks', { credentials: 'same-origin' });
           if (!res.ok) {
-            showFlash('err', "Couldn't reload the list. Refresh the page.");
+            showFlash(blockFlash, 'err', "Couldn't reload the list. Refresh the page.");
             return;
           }
           const data = await res.json();
@@ -368,50 +491,64 @@ function fmtDate(iso: string): string {
 
         function renderRows(entries) {
           countCell.textContent = String(entries.length);
-          if (entries.length === 0) {
-            rows.innerHTML = '<tr><td class="empty" colspan="4">No customers are blocked.</td></tr>';
+
+          // Re-render both the card list and the table from the same data so
+          // the desktop / mobile views never get out of sync.
+          const cardListEl = document.getElementById('cardList');
+          const tableWrapEl = document.getElementById('tableWrap');
+          const rowsBody = document.getElementById('rows');
+
+          // The "empty" branch lives in a sibling element when count was 0
+          // on initial render. To avoid managing two DOM trees, just reload
+          // the page when transitioning to/from empty.
+          if (entries.length === 0 || !cardListEl || !rowsBody) {
+            window.location.reload();
             return;
           }
-          rows.innerHTML = entries
-            .map(function (e) {
-              const phone = fmtPhone(e.phone);
-              const reason = e.reason ? escapeHtml(e.reason) : '—';
-              const date = fmtDate(e.blockedAt);
-              return (
-                '<tr data-phone="' + escapeAttr(e.phone) + '">' +
-                  '<td class="phone">' + escapeHtml(phone) + '</td>' +
-                  '<td class="reason">' + reason + '</td>' +
-                  '<td class="date">' + escapeHtml(date) + '</td>' +
-                  '<td><button type="button" class="btn btn--danger" data-action="remove">Remove</button></td>' +
-                '</tr>'
-              );
-            })
-            .join('');
+
+          cardListEl.innerHTML = entries.map(function (e) {
+            const orig = e.phoneOriginal && e.phoneOriginal !== e.phone
+              ? '<div class="phone-original">typed as ' + escapeHtml(e.phoneOriginal) + '</div>'
+              : '';
+            const reason = e.reason ? '<div class="reason">' + escapeHtml(e.reason) + '</div>' : '';
+            const byPart = e.blockedBy ? ' · ' + escapeHtml(e.blockedBy) : '';
+            return (
+              '<div class="card" data-id="' + escapeHtml(e.id) + '" data-phone="' + escapeHtml(e.phone) + '">' +
+                '<div class="phone-primary">' + escapeHtml(fmtPhone(e.phone)) + '</div>' +
+                orig + reason +
+                '<div class="meta">' + escapeHtml(fmtRelative(e.blockedAt)) + byPart + '</div>' +
+                '<div class="actions"><button type="button" class="btn btn--danger" data-action="remove">Remove</button></div>' +
+              '</div>'
+            );
+          }).join('');
+
+          rowsBody.innerHTML = entries.map(function (e) {
+            const orig = e.phoneOriginal && e.phoneOriginal !== e.phone
+              ? '<span class="original">typed as ' + escapeHtml(e.phoneOriginal) + '</span>'
+              : '';
+            return (
+              '<tr data-id="' + escapeHtml(e.id) + '" data-phone="' + escapeHtml(e.phone) + '">' +
+                '<td class="phone">' + escapeHtml(fmtPhone(e.phone)) + orig + '</td>' +
+                '<td class="reason">' + (e.reason ? escapeHtml(e.reason) : '—') + '</td>' +
+                '<td class="date">' + escapeHtml(fmtRelative(e.blockedAt)) + '</td>' +
+                '<td class="date">' + (e.blockedBy ? escapeHtml(e.blockedBy) : '—') + '</td>' +
+                '<td><button type="button" class="btn btn--danger" data-action="remove">Remove</button></td>' +
+              '</tr>'
+            );
+          }).join('');
         }
 
-        function escapeHtml(s) {
-          return String(s)
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;')
-            .replace(/"/g, '&quot;')
-            .replace(/'/g, '&#39;');
-        }
-        function escapeAttr(s) {
-          return escapeHtml(s);
-        }
-
-        form.addEventListener('submit', async function (ev) {
+        blockForm.addEventListener('submit', async function (ev) {
           ev.preventDefault();
-          clearFlash();
+          clearFlash(blockFlash);
           const phone = phoneInput.value.trim();
           const reason = reasonInput.value.trim();
           if (!phone) {
-            showFlash('err', 'Phone is required.');
+            showFlash(blockFlash, 'err', 'Phone is required.');
             return;
           }
-          submitBtn.disabled = true;
-          submitBtn.textContent = 'Blocking…';
+          blockSubmit.disabled = true;
+          blockSubmit.textContent = 'Blocking…';
           try {
             const res = await fetch('/api/admin/blocks', {
               method: 'POST',
@@ -422,59 +559,105 @@ function fmtDate(iso: string): string {
             const data = await res.json().catch(function () { return {}; });
             if (!res.ok || !data.ok) {
               const detail = (data && data.error && data.error.detail) || 'Failed to block.';
-              showFlash('err', detail);
+              showFlash(blockFlash, 'err', detail);
               return;
             }
-            const stored = data.entry && data.entry.phone ? data.entry.phone : phone;
-            if (data.added) {
-              showFlash('ok', 'Blocked ' + fmtPhone(stored) + '.');
-              phoneInput.value = '';
-              reasonInput.value = '';
+            const stored = data.block && data.block.phone ? data.block.phone : phone;
+            if (data.status === 'created') {
+              showFlash(blockFlash, 'ok', 'Blocked ' + fmtPhone(stored) + '.');
             } else {
-              showFlash('info', fmtPhone(stored) + ' is already blocked — no changes made.');
+              showFlash(blockFlash, 'info', fmtPhone(stored) + ' is already blocked — no changes made.');
             }
+            phoneInput.value = '';
+            reasonInput.value = '';
             await refreshList();
+            window.scrollTo({ top: 0, behavior: 'smooth' });
           } catch (err) {
-            showFlash('err', err && err.message ? err.message : 'Network error.');
+            showFlash(blockFlash, 'err', err && err.message ? err.message : 'Network error.');
           } finally {
-            submitBtn.disabled = false;
-            submitBtn.textContent = 'Block';
+            blockSubmit.disabled = false;
+            blockSubmit.textContent = 'Block';
           }
         });
 
-        rows.addEventListener('click', async function (ev) {
-          const btn = ev.target.closest('button[data-action="remove"]');
-          if (!btn) return;
-          const tr = btn.closest('tr');
-          const phone = tr && tr.getAttribute('data-phone');
+        checkForm.addEventListener('submit', async function (ev) {
+          ev.preventDefault();
+          checkResult.className = 'check-result';
+          checkResult.textContent = '';
+          const phone = checkInput.value.trim();
           if (!phone) return;
-          if (!confirm('Remove ' + fmtPhone(phone) + ' from the block list?')) return;
-          btn.disabled = true;
-          btn.textContent = 'Removing…';
-          clearFlash();
+          checkSubmit.disabled = true;
+          checkSubmit.textContent = 'Checking…';
           try {
-            const res = await fetch('/api/admin/blocks', {
-              method: 'DELETE',
+            const res = await fetch('/api/admin/blocks/check?phone=' + encodeURIComponent(phone), {
               credentials: 'same-origin',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ phone: phone }),
             });
             const data = await res.json().catch(function () { return {}; });
             if (!res.ok || !data.ok) {
-              const detail = (data && data.error && data.error.detail) || 'Failed to remove.';
-              showFlash('err', detail);
-              btn.disabled = false;
-              btn.textContent = 'Remove';
+              const detail = (data && data.error && data.error.detail) || 'Check failed.';
+              checkResult.className = 'check-result show check-result--blocked';
+              checkResult.textContent = detail;
               return;
             }
-            showFlash('ok', 'Removed ' + fmtPhone(phone) + '.');
-            await refreshList();
+            if (data.blocked) {
+              const e = data.entry || {};
+              const when = e.blockedAt ? ' — blocked ' + fmtRelative(e.blockedAt) : '';
+              const why = e.reason ? ' · ' + e.reason : '';
+              checkResult.className = 'check-result show check-result--blocked';
+              checkResult.innerHTML = '<strong>' + escapeHtml(fmtPhone(data.phoneNormalized || phone)) + ' is blocked.</strong>'
+                + '<div class="meta">' + escapeHtml(when + why) + '</div>';
+            } else {
+              checkResult.className = 'check-result show check-result--clear';
+              checkResult.textContent = fmtPhone(data.phoneNormalized || phone) + ' is not on the block list.';
+            }
           } catch (err) {
-            showFlash('err', err && err.message ? err.message : 'Network error.');
-            btn.disabled = false;
-            btn.textContent = 'Remove';
+            checkResult.className = 'check-result show check-result--blocked';
+            checkResult.textContent = err && err.message ? err.message : 'Network error.';
+          } finally {
+            checkSubmit.disabled = false;
+            checkSubmit.textContent = 'Check';
           }
         });
+
+        function bindRemove(rootSel) {
+          const root = document.querySelector(rootSel);
+          if (!root) return;
+          root.addEventListener('click', async function (ev) {
+            const btn = ev.target.closest('button[data-action="remove"]');
+            if (!btn) return;
+            const parent = btn.closest('[data-id]');
+            const id = parent && parent.getAttribute('data-id');
+            const phone = parent && parent.getAttribute('data-phone');
+            if (!id) return;
+            if (!confirm('Remove ' + (phone ? fmtPhone(phone) : 'this entry') + ' from the block list?')) return;
+            btn.disabled = true;
+            btn.textContent = 'Removing…';
+            clearFlash(blockFlash);
+            try {
+              const res = await fetch('/api/admin/blocks/' + encodeURIComponent(id), {
+                method: 'DELETE',
+                credentials: 'same-origin',
+              });
+              const data = await res.json().catch(function () { return {}; });
+              if (!res.ok || !data.ok) {
+                const detail = (data && data.error && data.error.detail) || 'Failed to remove.';
+                showFlash(blockFlash, 'err', detail);
+                btn.disabled = false;
+                btn.textContent = 'Remove';
+                return;
+              }
+              showFlash(blockFlash, 'ok', 'Removed ' + (phone ? fmtPhone(phone) : 'block') + '.');
+              await refreshList();
+              window.scrollTo({ top: 0, behavior: 'smooth' });
+            } catch (err) {
+              showFlash(blockFlash, 'err', err && err.message ? err.message : 'Network error.');
+              btn.disabled = false;
+              btn.textContent = 'Remove';
+            }
+          });
+        }
+        bindRemove('#cardList');
+        bindRemove('#rows');
       })();
     </script>
   </body>
