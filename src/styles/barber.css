@@ -490,6 +490,24 @@
   color: var(--bb-text);
   font: inherit;
 }
+.bb-timeoff__field input[type='date']:disabled,
+.bb-timeoff__field input[type='time']:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.bb-timeoff__all-day {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border: 1px solid var(--bb-border);
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.2);
+  font-size: 0.88rem;
+  color: var(--bb-text);
+  cursor: pointer;
+  width: max-content;
+}
 .bb-timeoff__days {
   display: flex;
   flex-wrap: wrap;
