@@ -233,6 +233,65 @@
   color: rgb(255, 160, 160);
 }
 
+/* ---------- "Your uploads" grid (self-serve delete) ---------- */
+.bb-photo-mine {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--bb-border);
+}
+.bb-photo-mine__head {
+  margin: 0 0 8px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--bb-text-dim);
+}
+.bb-photo-mine__grid {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+  gap: 8px;
+}
+.bb-photo-mine__item {
+  position: relative;
+  aspect-ratio: 1 / 1;
+  border-radius: 6px;
+  overflow: hidden;
+  border: 1px solid var(--bb-border);
+  background: rgba(0, 0, 0, 0.4);
+}
+.bb-photo-mine__thumb {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.bb-photo-mine__delete {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 26px;
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(0, 0, 0, 0.6);
+  background: rgba(0, 0, 0, 0.65);
+  color: rgb(255, 200, 200);
+  border-radius: 999px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  backdrop-filter: blur(4px);
+}
+.bb-photo-mine__delete:hover {
+  background: rgba(220, 80, 80, 0.55);
+  color: #fff;
+  border-color: rgba(255, 120, 120, 0.7);
+}
+
 /* ---------- Tabs (Appointments | Waitlist) ---------- */
 .bb-tabs {
   display: flex;
