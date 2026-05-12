@@ -234,12 +234,21 @@ const unprovisioned = rows.filter((r) => !r.hasAccount);
         font-size: 0.85rem;
         margin-top: 8px;
       }
-      .email-form {
+      .email-form,
+      .rename-form,
+      .password-form {
         margin-top: 4px;
         padding-top: 10px;
         border-top: 1px dashed var(--border);
       }
-      .email-form .actions { margin-top: 4px; }
+      .email-form .actions,
+      .rename-form .actions,
+      .password-form .actions { margin-top: 4px; }
+      .hint {
+        margin: 4px 0 0;
+        font-size: 0.78rem;
+        color: var(--dim);
+      }
     </style>
   </head>
   <body>
@@ -352,9 +361,37 @@ const unprovisioned = rows.filter((r) => !r.hasAccount);
                       <button type="button" class="btn btn--ghost" data-email-save-btn>Save email</button>
                     </div>
                   </div>
-                  <div class="actions">
-                    <button type="button" class="btn btn--ghost" data-reset-btn>Reset password</button>
-                    <button type="button" class="btn btn--danger" data-remove-btn>Remove login</button>
+                  <div class="rename-form">
+                    <div class="field">
+                      <label>Username</label>
+                      <input
+                        type="text"
+                        data-rename-input
+                        value={r.username ?? ''}
+                        placeholder="lowercase, no spaces"
+                      />
+                    </div>
+                    <div class="actions">
+                      <button type="button" class="btn btn--ghost" data-rename-btn>Save username</button>
+                    </div>
+                  </div>
+                  <div class="password-form">
+                    <div class="field">
+                      <label>New password (optional)</label>
+                      <input
+                        type="text"
+                        data-custom-password-input
+                        autocomplete="off"
+                        placeholder="Leave blank to auto-generate"
+                      />
+                      <p class="hint">Min 8 characters. Leave blank and click Reset to get a fresh random password.</p>
+                    </div>
+                    <div class="actions">
+                      <button type="button" class="btn btn--ghost" data-reset-btn>
+                        Reset password
+                      </button>
+                      <button type="button" class="btn btn--danger" data-remove-btn>Remove login</button>
+                    </div>
                   </div>
                 </>
               )}
@@ -423,12 +460,25 @@ const unprovisioned = rows.filter((r) => !r.hasAccount);
           });
           return res.json();
         }
-        async function reset(teamMemberId) {
+        async function reset(teamMemberId, customPassword) {
+          const payload = { teamMemberId };
+          if (typeof customPassword === 'string' && customPassword.length > 0) {
+            payload.password = customPassword;
+          }
           const res = await fetch('/api/admin/barbers/reset-password', {
             method: 'POST',
             credentials: 'same-origin',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ teamMemberId }),
+            body: JSON.stringify(payload),
+          });
+          return res.json();
+        }
+        async function renameUsername(teamMemberId, newUsername) {
+          const res = await fetch('/api/admin/barbers/rename-username', {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ teamMemberId, newUsername }),
           });
           return res.json();
         }
@@ -521,27 +571,85 @@ const unprovisioned = rows.filter((r) => !r.hasAccount);
           if (resetBtn) {
             resetBtn.addEventListener('click', async () => {
               clearError(card);
-              if (!confirm('Reset this barber\'s password? They will be signed out and forced to set a new one on next login.')) {
+              const customInput = card.querySelector('[data-custom-password-input]');
+              const customPassword = customInput ? customInput.value.trim() : '';
+              if (customPassword && customPassword.length < 8) {
+                showError(card, 'Password must be at least 8 characters, or leave blank to auto-generate.');
                 return;
               }
+              const promptMsg = customPassword
+                ? "Set this barber's password to the value you typed? They will be signed out and prompted to choose their own on next login."
+                : "Reset this barber's password? A fresh random one will be generated. They will be signed out and forced to set a new one on next login.";
+              if (!confirm(promptMsg)) return;
               resetBtn.disabled = true;
               const original = resetBtn.textContent;
-              resetBtn.textContent = 'Resetting…';
+              resetBtn.textContent = 'Saving…';
               try {
-                const body = await reset(teamMemberId);
+                const body = await reset(teamMemberId, customPassword);
                 if (!body.ok) {
                   showError(card, body?.error?.detail || 'Could not reset.');
                   resetBtn.disabled = false;
                   resetBtn.textContent = original;
                   return;
                 }
-                showCreds(card, body.username, body.generatedPassword);
-                resetBtn.disabled = false;
-                resetBtn.textContent = original;
+                // For admin-supplied passwords, the admin already
+                // knows the value — no need to flash it back. For
+                // generated passwords, surface it once so the admin
+                // can copy + text it to the barber.
+                if (body.wasGenerated === false) {
+                  if (customInput) customInput.value = '';
+                  resetBtn.textContent = 'Saved';
+                  setTimeout(() => {
+                    resetBtn.disabled = false;
+                    resetBtn.textContent = original;
+                  }, 1200);
+                } else {
+                  showCreds(card, body.username, body.generatedPassword);
+                  resetBtn.disabled = false;
+                  resetBtn.textContent = original;
+                }
               } catch (_err) {
                 showError(card, 'Network error. Try again.');
                 resetBtn.disabled = false;
                 resetBtn.textContent = original;
+              }
+            });
+          }
+
+          const renameBtn = card.querySelector('[data-rename-btn]');
+          if (renameBtn) {
+            renameBtn.addEventListener('click', async () => {
+              clearError(card);
+              const renameInput = card.querySelector('[data-rename-input]');
+              const newUsername = renameInput ? renameInput.value.trim() : '';
+              if (!newUsername) {
+                showError(card, 'Username is required.');
+                return;
+              }
+              renameBtn.disabled = true;
+              const original = renameBtn.textContent;
+              renameBtn.textContent = 'Saving…';
+              try {
+                const body = await renameUsername(teamMemberId, newUsername);
+                if (!body.ok) {
+                  showError(card, body?.error?.detail || 'Could not rename.');
+                  renameBtn.disabled = false;
+                  renameBtn.textContent = original;
+                  return;
+                }
+                renameBtn.textContent = body.changed ? 'Saved' : 'No change';
+                setTimeout(() => {
+                  renameBtn.disabled = false;
+                  renameBtn.textContent = original;
+                  // Reload so the "Username:" line in the meta and
+                  // the input's value reflect the normalized form
+                  // returned by the server.
+                  if (body.changed) window.location.reload();
+                }, 800);
+              } catch (_err) {
+                showError(card, 'Network error. Try again.');
+                renameBtn.disabled = false;
+                renameBtn.textContent = original;
               }
             });
           }

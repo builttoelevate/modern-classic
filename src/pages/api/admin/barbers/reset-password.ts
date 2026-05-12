@@ -17,10 +17,14 @@ function logAdmin(payload: Record<string, unknown>): void {
   console.log(`[ADMIN] ${JSON.stringify({ ts: new Date().toISOString(), ...payload })}`);
 }
 
-// Admin resets a barber's password. Generates a fresh random 10-char
-// default, returns the plaintext once so the admin page can show it
-// to Michael, and flips mustChangePassword back on so the barber is
-// prompted to set their own on next login.
+// Admin resets a barber's password. By default generates a fresh
+// random 10-char password and returns the plaintext once so the
+// admin page can show it for the admin to text out-of-band. The
+// admin can also supply a custom password in the body — useful when
+// the admin wants something memorable to text the barber, or when
+// they're standing next to the barber and just want to set it
+// together. Either way, mustChangePassword flips back on so the
+// barber is prompted to set their own on next login.
 
 export const POST: APIRoute = async ({ request }) => {
   const auth = checkBasicAuth(request);
@@ -43,6 +47,26 @@ export const POST: APIRoute = async ({ request }) => {
       { status: 400 },
     );
   }
+
+  // Optional admin-supplied password. When provided, we use it
+  // verbatim (after light validation); when omitted, generate a
+  // random one as before.
+  const rawPassword = typeof b.password === 'string' ? b.password : null;
+  if (rawPassword !== null) {
+    if (rawPassword.length < 8) {
+      return Response.json(
+        { ok: false, error: { code: 'BAD_REQUEST', detail: 'Password must be at least 8 characters.' } },
+        { status: 400 },
+      );
+    }
+    if (rawPassword.length > 128) {
+      return Response.json(
+        { ok: false, error: { code: 'BAD_REQUEST', detail: 'Password is too long.' } },
+        { status: 400 },
+      );
+    }
+  }
+
   const existing = await getAccount(teamMemberId);
   if (!existing) {
     return Response.json(
@@ -51,7 +75,8 @@ export const POST: APIRoute = async ({ request }) => {
     );
   }
 
-  const plaintext = generateDefaultPassword(10);
+  const plaintext = rawPassword ?? generateDefaultPassword(10);
+  const wasGenerated = rawPassword === null;
   const hash = await hashPassword(plaintext);
   await updateAccountPassword(teamMemberId, hash, true);
 
@@ -96,5 +121,10 @@ export const POST: APIRoute = async ({ request }) => {
     teamMemberId,
     username: existing.username,
     generatedPassword: plaintext,
+    /** True when the server generated the password; false when the
+     *  admin supplied it. The UI only needs to show the plaintext
+     *  back when generated — the admin already knows the value they
+     *  typed. */
+    wasGenerated,
   });
 };
