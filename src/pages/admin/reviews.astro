@@ -271,6 +271,78 @@ const recent = last30?.recent ?? [];
         color: var(--text);
       }
       .panel__output[hidden] { display: none; }
+
+      /* Run-now progress indicator. Replaces the raw JSON dump while
+         the cron is running so the admin sees movement, and stays
+         visible when the fetch times out client-side (function may
+         keep running in the background — we auto-refresh to catch
+         the result). */
+      .run-progress {
+        margin-top: 14px;
+        padding: 14px 16px;
+        background: var(--bg);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        color: var(--text);
+      }
+      .run-progress[hidden] { display: none; }
+      .run-progress[data-state='error'] { border-color: rgba(220, 80, 60, 0.5); }
+      .run-progress[data-state='done'] { border-color: rgba(122, 184, 110, 0.5); }
+      .run-progress__spinner {
+        flex: 0 0 auto;
+        width: 22px;
+        height: 22px;
+        border: 2px solid rgba(201, 163, 92, 0.25);
+        border-top-color: var(--gold);
+        border-radius: 999px;
+        animation: spin 720ms linear infinite;
+      }
+      .run-progress[data-state='done'] .run-progress__spinner {
+        border-color: rgba(122, 184, 110, 0.3);
+        border-top-color: #a4d091;
+        animation: none;
+      }
+      .run-progress[data-state='error'] .run-progress__spinner {
+        border-color: rgba(220, 80, 60, 0.3);
+        border-top-color: #f0a37a;
+        animation: none;
+      }
+      .run-progress__text { display: grid; gap: 4px; font-size: 0.9rem; }
+      .run-progress__text strong { color: var(--gold-light); font-weight: 600; }
+      .run-progress[data-state='done'] .run-progress__text strong { color: #a4d091; }
+      .run-progress[data-state='error'] .run-progress__text strong { color: #f0a37a; }
+      .run-progress__text button {
+        margin-top: 6px;
+        align-self: flex-start;
+      }
+      @keyframes spin {
+        from { transform: rotate(0deg); }
+        to { transform: rotate(360deg); }
+      }
+
+      .run-badge {
+        display: inline-block;
+        padding: 2px 8px;
+        border-radius: 999px;
+        font-size: 0.72rem;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        vertical-align: middle;
+      }
+      .run-badge--dry {
+        background: rgba(120, 160, 220, 0.15);
+        color: #9bb5dc;
+        border: 1px solid rgba(120, 160, 220, 0.4);
+      }
+      .run-badge--live {
+        background: rgba(201, 163, 92, 0.15);
+        color: var(--gold);
+        border: 1px solid rgba(201, 163, 92, 0.4);
+      }
     </style>
   </head>
   <body>
@@ -309,10 +381,16 @@ const recent = last30?.recent ?? [];
             <>
               <p class="panel__lede">
                 Ran at <strong>{fmtDate(lastRun.ranAt)}</strong>
-                {lastRun.manuallyTriggered ? ' (manual)' : ' (scheduled)'}
-                {lastRun.dryRun ? ' · dry-run' : ''}.
+                {lastRun.manuallyTriggered ? ' (manual)' : ' (scheduled)'}.
+                {lastRun.dryRun ? (
+                  <> <span class="run-badge run-badge--dry">Dry run — no emails sent</span></>
+                ) : (
+                  <> <span class="run-badge run-badge--live">Live — emails sent</span></>
+                )}
+                <br />
                 Scanned <strong>{lastRun.processed}</strong> bookings in the 2–5 day window,
-                sent <strong>{lastRun.sent}</strong>.
+                {lastRun.dryRun ? ' would have sent ' : ' sent '}
+                <strong>{lastRun.sent}</strong>.
                 {lastRunHeadline && (
                   <><br /><strong>Why 0 sent:</strong> {lastRunHeadline}</>
                 )}
@@ -352,6 +430,13 @@ const recent = last30?.recent ?? [];
           <div class="panel__actions">
             <button type="button" class="btn" id="run-live-btn">Run now</button>
             <button type="button" class="btn btn--ghost" id="run-dry-btn">Run dry (no emails)</button>
+          </div>
+          <div class="run-progress" id="run-progress" hidden>
+            <div class="run-progress__spinner" aria-hidden="true"></div>
+            <div class="run-progress__text">
+              <strong id="run-progress-headline">Running…</strong>
+              <span id="run-progress-detail">This can take up to a minute. The page will refresh automatically when it finishes.</span>
+            </div>
           </div>
           <pre class="panel__output" id="run-output" hidden></pre>
         </div>
@@ -423,12 +508,31 @@ const recent = last30?.recent ?? [];
         const live = document.getElementById('run-live-btn');
         const dry = document.getElementById('run-dry-btn');
         const out = document.getElementById('run-output');
-        if (!live || !dry || !out) return;
+        const progress = document.getElementById('run-progress');
+        const headline = document.getElementById('run-progress-headline');
+        const detail = document.getElementById('run-progress-detail');
+        if (!live || !dry || !out || !progress || !headline || !detail) return;
+
+        function setProgress(state, head, msg, extraNode) {
+          progress.hidden = false;
+          progress.setAttribute('data-state', state);
+          headline.textContent = head;
+          // Replace any prior detail node (plain text or a node).
+          detail.textContent = msg || '';
+          if (extraNode) detail.appendChild(extraNode);
+        }
+
         async function run(dryRun) {
           live.disabled = true;
           dry.disabled = true;
-          out.hidden = false;
-          out.textContent = dryRun ? 'Running dry...' : 'Running...';
+          out.hidden = true;
+          out.textContent = '';
+          setProgress(
+            'running',
+            dryRun ? 'Dry run in progress…' : 'Running review-request cron…',
+            'This can take up to a minute. The page will refresh automatically when it finishes.',
+          );
+
           try {
             const res = await fetch('/api/admin/reviews/run-now', {
               method: 'POST',
@@ -437,21 +541,45 @@ const recent = last30?.recent ?? [];
               body: JSON.stringify({ dryRun }),
             });
             const body = await res.json();
-            out.textContent = JSON.stringify(body, null, 2);
-            // If the run succeeded, the persisted last-run summary has
-            // updated — reload so the panel above reflects the new
-            // counts. Skip reload when the body indicates an error so
-            // Michael can read it before the page resets.
             if (body && body.ok) {
-              setTimeout(() => window.location.reload(), 1500);
+              setProgress('done', 'Done. Reloading…', '');
+              setTimeout(() => window.location.reload(), 700);
+              return;
             }
-          } catch (err) {
-            out.textContent = 'Network error: ' + (err && err.message ? err.message : String(err));
-          } finally {
+            // Server returned a response but ok=false — show it so
+            // the admin can read the error code/detail.
+            setProgress(
+              'error',
+              dryRun ? 'Dry run finished with an error' : 'Run finished with an error',
+              'See the response below.',
+            );
+            out.hidden = false;
+            out.textContent = JSON.stringify(body, null, 2);
             live.disabled = false;
             dry.disabled = false;
+          } catch (err) {
+            // Most common cause: the fetch timed out client-side
+            // (iOS Safari kills idle fetches around 30–60s) but the
+            // Vercel function is still running in the background.
+            // Auto-refresh in 60s to catch the result, but give the
+            // admin a manual refresh button too.
+            const refreshBtn = document.createElement('button');
+            refreshBtn.type = 'button';
+            refreshBtn.className = 'btn btn--ghost';
+            refreshBtn.textContent = 'Refresh now';
+            refreshBtn.style.fontSize = '0.78rem';
+            refreshBtn.style.padding = '6px 12px';
+            refreshBtn.addEventListener('click', () => window.location.reload());
+            setProgress(
+              'running',
+              'Still running…',
+              'Your browser lost patience but the cron likely kept running. Refreshing in 60 seconds to check the result. ',
+              refreshBtn,
+            );
+            setTimeout(() => window.location.reload(), 60_000);
           }
         }
+
         live.addEventListener('click', () => {
           if (!confirm('Run the review-request cron now? Eligible customers will be emailed.')) return;
           run(false);
