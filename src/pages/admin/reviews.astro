@@ -366,6 +366,43 @@ const recent = last30?.recent ?? [];
         color: var(--gold);
         border: 1px solid rgba(201, 163, 92, 0.4);
       }
+
+      .test-form {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        align-items: flex-end;
+      }
+      .test-form__field {
+        flex: 1 1 240px;
+        min-width: 0;
+        display: grid;
+        gap: 4px;
+        font-size: 0.85rem;
+        color: var(--muted);
+      }
+      .test-form__field input {
+        padding: 8px 10px;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        background: rgba(0, 0, 0, 0.25);
+        color: var(--text);
+        font: inherit;
+      }
+      .status {
+        margin: 10px 0 0;
+        padding: 8px 10px;
+        border-radius: 6px;
+        font-size: 0.88rem;
+      }
+      .status--ok {
+        background: rgba(122, 184, 110, 0.15);
+        color: #a4d091;
+      }
+      .status--error {
+        background: rgba(220, 80, 80, 0.15);
+        color: #f0a37a;
+      }
     </style>
   </head>
   <body>
@@ -462,6 +499,34 @@ const recent = last30?.recent ?? [];
             </div>
           </div>
           <pre class="panel__output" id="run-output" hidden></pre>
+        </div>
+      )}
+
+      {!loadError && (
+        <div class="panel">
+          <h2 style="margin-top: 0;">Send a test email</h2>
+          <p class="panel__lede">
+            Send a real-looking review-request email to any inbox so you can
+            preview what customers receive. The test send doesn't touch any
+            customer record or dedupe state — it won't change tomorrow's cron
+            behaviour.
+          </p>
+          <form id="test-form" class="test-form">
+            <label class="test-form__field">
+              <span>Send to</span>
+              <input
+                type="email"
+                id="test-email"
+                placeholder="you@example.com"
+                autocomplete="email"
+                required
+              />
+            </label>
+            <button type="submit" class="btn btn--ghost" id="test-send-btn">
+              Send test email
+            </button>
+          </form>
+          <p class="status" id="test-status" hidden></p>
         </div>
       )}
 
@@ -617,6 +682,62 @@ const recent = last30?.recent ?? [];
           run(false);
         });
         dry.addEventListener('click', () => run(true));
+      })();
+
+      // ---------- Test-email form ----------
+      (function () {
+        const form = document.getElementById('test-form');
+        const input = document.getElementById('test-email');
+        const btn = document.getElementById('test-send-btn');
+        const status = document.getElementById('test-status');
+        if (!form || !input || !btn || !status) return;
+
+        function showStatus(msg, kind) {
+          status.textContent = msg || '';
+          status.className = 'status' + (kind ? ' status--' + kind : '');
+          status.hidden = !msg;
+        }
+
+        form.addEventListener('submit', async (e) => {
+          e.preventDefault();
+          const to = (input.value || '').trim();
+          if (!to) {
+            showStatus('Enter an email address.', 'error');
+            return;
+          }
+          btn.disabled = true;
+          const originalLabel = btn.textContent;
+          btn.textContent = 'Sending…';
+          showStatus('');
+          try {
+            const res = await fetch('/api/admin/reviews/send-test', {
+              method: 'POST',
+              credentials: 'same-origin',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ to }),
+            });
+            const data = await res.json();
+            if (!res.ok || !data.ok) {
+              showStatus(
+                (data && data.error && data.error.detail) || 'Send failed.',
+                'error',
+              );
+              btn.disabled = false;
+              btn.textContent = originalLabel;
+              return;
+            }
+            showStatus(
+              'Sent! Check ' + to + ' (Resend id: ' + data.resendId + ').',
+              'ok',
+            );
+            btn.disabled = false;
+            btn.textContent = originalLabel;
+          } catch {
+            showStatus('Network error. Try again.', 'error');
+            btn.disabled = false;
+            btn.textContent = originalLabel;
+          }
+        });
       })();
     </script>
   </body>
