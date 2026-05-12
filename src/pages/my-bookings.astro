@@ -232,6 +232,11 @@ let featuredProduct: FeaturedProduct | null = null;
 try {
   featuredProduct = await pickFeaturedProduct({
     seedServiceVariationId: seedBooking?.serviceVariationId,
+    // Seed the per-booking rotation for the combo (haircut+beard)
+    // intent. Stable per booking, varies across bookings — see
+    // preferHaircutForBooking in featuredProduct.ts. No-op for
+    // non-combo seeds.
+    seedBookingId: seedBooking?.id,
   });
 } catch {
   featuredProduct = null;
