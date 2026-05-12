@@ -248,6 +248,26 @@ export async function removeFamilyMember(
   return updated;
 }
 
+/**
+ * Hard-delete a family record + every member→family pointer. Used by
+ * the admin "dissolve family" action when a family got created wrong
+ * (e.g., wrong customer joined someone else's family, or a test
+ * family needs to be wiped). Customers fall back to the legacy
+ * linkedPeople / solo /my-bookings path immediately after.
+ *
+ * Returns true if a family was found and dissolved, false otherwise.
+ */
+export async function dissolveFamily(familyId: string): Promise<boolean> {
+  const redis = getRedis();
+  const family = await getFamilyById(familyId);
+  if (!family) return false;
+  await Promise.all([
+    redis.del(kFamily(familyId)),
+    ...family.members.map((m) => redis.del(kByCustomer(m.customerId))),
+  ]);
+  return true;
+}
+
 export interface CreateInviteInput {
   familyId: string;
   invitedEmail: string;
