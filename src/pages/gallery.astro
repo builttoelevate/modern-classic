@@ -1,29 +1,48 @@
 ---
-export const prerender = true;
+// SSR — so barber uploads (Vercel Blob) appear on the next page
+// render without a rebuild. Bundled curated photos still render
+// alongside dynamic uploads; blob uploads are listed newest-first,
+// curated come after as the stable visual anchor.
+export const prerender = false;
 
 import { Image } from 'astro:assets';
 import BaseLayout from '../layouts/BaseLayout.astro';
 import Header from '../components/Header.astro';
 import Footer from '../components/Footer.astro';
 import MobileBookCTA from '../components/MobileBookCTA.astro';
+import { listGalleryPhotos, type GalleryBlobPhoto } from '../lib/gallery/blobPhotos';
 
 const imageModules = import.meta.glob<ImageMetadata>(
   '../assets/gallery/*.jpg',
   { eager: true, import: 'default' }
 );
 
-const photos = Object.entries(imageModules)
+const bundledPhotos = Object.entries(imageModules)
   .map(([path, src]) => ({
     src,
     id: path.split('/').pop()!.replace(/\.jpg$/, ''),
   }))
   .sort((a, b) => a.id.localeCompare(b.id));
 
+// Blob photos uploaded by barbers. Cached in Redis (60s) so the
+// /gallery render doesn't hit Vercel Blob on every request; the
+// upload endpoint invalidates the cache so newly-uploaded photos
+// appear on the next page load, not 60s later. Falls back to [] on
+// any failure — page still renders the bundled curated photos.
+let blobPhotos: GalleryBlobPhoto[] = [];
+try {
+  blobPhotos = await listGalleryPhotos();
+} catch {
+  blobPhotos = [];
+}
+
 // Use our local /book wizard on Vercel/prod; only fall back to the
 // legacy Square site on the gh-pages preview where SSR doesn't exist.
 const base = import.meta.env.BASE_URL.replace(/\/$/, '');
 const isGhPages = import.meta.env.BASE_URL && import.meta.env.BASE_URL !== '/';
 const bookUrl = isGhPages ? 'https://modern-classic.square.site' : `${base}/book`;
+
+const totalCount = blobPhotos.length + bundledPhotos.length;
 ---
 <BaseLayout
   title="Gallery — Modern Classic Barbershop & Shave Parlor"
@@ -52,26 +71,49 @@ const bookUrl = isGhPages ? 'https://modern-classic.square.site' : `${base}/book
     <section class="gallery" aria-label="Photo gallery">
       <div class="container">
         <div class="gallery__grid" id="galleryGrid">
-          {photos.map((photo, i) => (
+          {blobPhotos.map((photo, i) => (
             <button
               type="button"
               class="gallery__item"
               data-index={i}
-              aria-label={`Open photo ${i + 1} of ${photos.length}`}
+              data-full={photo.url}
+              aria-label={`Open photo ${i + 1} of ${totalCount}`}
             >
-              <Image
-                src={photo.src}
-                alt={`Modern Classic barbershop work — photo ${i + 1}`}
-                widths={[320, 480, 640, 800]}
-                sizes="(min-width: 1100px) 360px, (min-width: 720px) 45vw, 92vw"
-                loading={i < 6 ? 'eager' : 'lazy'}
+              <img
                 class="gallery__img"
+                src={photo.url}
+                alt={`Modern Classic barbershop work — photo ${i + 1}`}
+                loading={i < 6 ? 'eager' : 'lazy'}
+                decoding="async"
               />
               <span class="gallery__overlay" aria-hidden="true">
                 <span class="gallery__view">View</span>
               </span>
             </button>
           ))}
+          {bundledPhotos.map((photo, j) => {
+            const i = blobPhotos.length + j;
+            return (
+              <button
+                type="button"
+                class="gallery__item"
+                data-index={i}
+                aria-label={`Open photo ${i + 1} of ${totalCount}`}
+              >
+                <Image
+                  src={photo.src}
+                  alt={`Modern Classic barbershop work — photo ${i + 1}`}
+                  widths={[320, 480, 640, 800]}
+                  sizes="(min-width: 1100px) 360px, (min-width: 720px) 45vw, 92vw"
+                  loading={i < 6 ? 'eager' : 'lazy'}
+                  class="gallery__img"
+                />
+                <span class="gallery__overlay" aria-hidden="true">
+                  <span class="gallery__view">View</span>
+                </span>
+              </button>
+            );
+          })}
         </div>
 
         <div class="gallery__cta">
@@ -138,7 +180,12 @@ const bookUrl = isGhPages ? 'https://modern-classic.square.site' : `${base}/book
     const items = Array.from(grid.querySelectorAll<HTMLButtonElement>('.gallery__item'));
     const photos: Photo[] = items.map((btn) => {
       const img = btn.querySelector<HTMLImageElement>('img.gallery__img');
-      // Astro's Image emits a srcset; pick the largest src for the lightbox
+      // Blob uploads carry the full URL on data-full (they're already
+      // delivered at upload-time resolution, no srcset). Bundled
+      // curated photos render via Astro Image with a srcset; pick
+      // the largest entry for the lightbox.
+      const dataFull = btn.dataset.full;
+      if (dataFull) return { full: dataFull, alt: img?.alt ?? '' };
       let full = img?.currentSrc || img?.src || '';
       if (img?.srcset) {
         const candidates = img.srcset

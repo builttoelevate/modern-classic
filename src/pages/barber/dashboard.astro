@@ -345,6 +345,40 @@ Astro.response.headers.append('Set-Cookie', refreshBarberSessionCookie(session))
         </div>
       )}
 
+      {/* Self-serve photo upload. Posts JPEG-encoded (client-side
+          resized) images to /api/barber/photos/upload, which puts
+          them in Vercel Blob under gallery/{barberId}/...  The
+          public /gallery page lists them newest-first on the next
+          render (no rebuild needed). */}
+      <section class="bb-photo-upload" aria-labelledby="bb-photo-upload-heading">
+        <header class="bb-photo-upload__head">
+          <h2 id="bb-photo-upload-heading">Add a gallery photo</h2>
+          <p class="bb-photo-upload__sub">
+            Snap a cut, fade, or beard from your chair. It appears at the top
+            of <a class="bb-link" href={`${base}/gallery`} target="_blank" rel="noopener">/gallery</a> right away — no rebuild needed.
+          </p>
+        </header>
+        <form id="bb-photo-form" class="bb-photo-upload__form">
+          <label class="bb-photo-upload__picker">
+            <input
+              type="file"
+              id="bb-photo-input"
+              accept="image/*"
+              capture="environment"
+              multiple
+            />
+            <span class="bb-btn bb-btn--ghost bb-btn--sm">
+              Choose photo(s)
+            </span>
+          </label>
+          <button type="submit" class="bb-btn bb-btn--sm" id="bb-photo-submit" disabled>
+            Upload
+          </button>
+        </form>
+        <ul class="bb-photo-upload__queue" id="bb-photo-queue" hidden></ul>
+        <p class="bb-photo-upload__status" id="bb-photo-status" hidden></p>
+      </section>
+
       <nav class="bb-tabs" role="tablist" aria-label="Dashboard sections">
         <a
           class={`bb-tab ${activeTab === 'appointments' ? 'is-active' : ''}`}
@@ -677,6 +711,185 @@ Astro.response.headers.append('Set-Cookie', refreshBarberSessionCookie(session))
             window.location.href = '/barber/sign-in';
           });
         }
+      })();
+
+      // ---------- Self-serve photo upload ----------
+      // Client-side normalize: load → draw to canvas at max 2000px on
+      // long side → export as JPEG @ 0.85. Strips EXIF (no GPS leak),
+      // converts HEIC/PNG/WebP to JPEG on the fly (Safari decodes
+      // HEIC natively; Chrome on Android doesn't, so HEIC from a
+      // non-Safari browser surfaces a clear error rather than
+      // uploading a file the gallery can't render). Posts each photo
+      // as multipart to /api/barber/photos/upload.
+      (function () {
+        const form = document.getElementById('bb-photo-form');
+        const input = document.getElementById('bb-photo-input');
+        const submit = document.getElementById('bb-photo-submit');
+        const queue = document.getElementById('bb-photo-queue');
+        const status = document.getElementById('bb-photo-status');
+        if (!form || !input || !submit || !queue || !status) return;
+
+        const MAX_DIM = 2000;
+        const JPEG_QUALITY = 0.85;
+
+        function showStatus(msg, kind) {
+          status.textContent = msg;
+          status.setAttribute('data-kind', kind);
+          status.hidden = false;
+        }
+
+        function renderQueue(items) {
+          queue.innerHTML = '';
+          if (items.length === 0) { queue.hidden = true; return; }
+          queue.hidden = false;
+          for (const it of items) {
+            const li = document.createElement('li');
+            li.setAttribute('data-status', it.status);
+            li.innerHTML =
+              '<span>' + it.name + '</span><span>' + it.label + '</span>';
+            queue.appendChild(li);
+          }
+        }
+
+        async function normalizeToJpeg(file) {
+          // Decode the file to an Image. createImageBitmap supports
+          // most formats including HEIC on Safari. URL.createObjectURL
+          // is the fallback path.
+          let bitmap = null;
+          try {
+            bitmap = await createImageBitmap(file);
+          } catch {
+            // Fall through to Image element decode.
+          }
+          let width, height;
+          if (bitmap) {
+            width = bitmap.width;
+            height = bitmap.height;
+          } else {
+            const url = URL.createObjectURL(file);
+            try {
+              const img = await new Promise((resolve, reject) => {
+                const i = new Image();
+                i.onload = () => resolve(i);
+                i.onerror = () => reject(new Error("Couldn't decode that image. If it's a HEIC from your iPhone, change Settings → Camera → Formats to \"Most Compatible\"."));
+                i.src = url;
+              });
+              width = img.naturalWidth;
+              height = img.naturalHeight;
+              const canvas = document.createElement('canvas');
+              const scale = Math.min(1, MAX_DIM / Math.max(width, height));
+              canvas.width = Math.round(width * scale);
+              canvas.height = Math.round(height * scale);
+              const ctx = canvas.getContext('2d');
+              if (!ctx) throw new Error("Browser couldn't open a canvas to resize the photo.");
+              ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+              return await new Promise((resolve, reject) => {
+                canvas.toBlob(
+                  (blob) => blob ? resolve(blob) : reject(new Error('JPEG encode failed.')),
+                  'image/jpeg',
+                  JPEG_QUALITY,
+                );
+              });
+            } finally {
+              URL.revokeObjectURL(url);
+            }
+          }
+          const canvas = document.createElement('canvas');
+          const scale = Math.min(1, MAX_DIM / Math.max(width, height));
+          canvas.width = Math.round(width * scale);
+          canvas.height = Math.round(height * scale);
+          const ctx = canvas.getContext('2d');
+          if (!ctx) throw new Error("Browser couldn't open a canvas to resize the photo.");
+          ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+          return await new Promise((resolve, reject) => {
+            canvas.toBlob(
+              (blob) => blob ? resolve(blob) : reject(new Error('JPEG encode failed.')),
+              'image/jpeg',
+              JPEG_QUALITY,
+            );
+          });
+        }
+
+        async function uploadOne(file, items, idx) {
+          items[idx].status = 'uploading';
+          items[idx].label = 'Processing…';
+          renderQueue(items);
+          let jpeg;
+          try {
+            jpeg = await normalizeToJpeg(file);
+          } catch (err) {
+            items[idx].status = 'error';
+            items[idx].label = err && err.message ? err.message : 'Failed.';
+            renderQueue(items);
+            return false;
+          }
+          items[idx].label = 'Uploading…';
+          renderQueue(items);
+          const fd = new FormData();
+          fd.append('photo', jpeg, (file.name || 'photo').replace(/\.[^.]+$/, '') + '.jpg');
+          try {
+            const res = await fetch('/api/barber/photos/upload', {
+              method: 'POST',
+              credentials: 'same-origin',
+              body: fd,
+            });
+            const data = await res.json();
+            if (!res.ok || !data.ok) {
+              items[idx].status = 'error';
+              items[idx].label = (data && data.error && data.error.detail) || ('HTTP ' + res.status);
+              renderQueue(items);
+              return false;
+            }
+            items[idx].status = 'done';
+            items[idx].label = 'Uploaded';
+            renderQueue(items);
+            return true;
+          } catch (err) {
+            items[idx].status = 'error';
+            items[idx].label = err && err.message ? err.message : 'Network error.';
+            renderQueue(items);
+            return false;
+          }
+        }
+
+        input.addEventListener('change', () => {
+          submit.disabled = !input.files || input.files.length === 0;
+        });
+
+        form.addEventListener('submit', async (e) => {
+          e.preventDefault();
+          if (!input.files || input.files.length === 0) return;
+          submit.disabled = true;
+          status.hidden = true;
+          const files = Array.from(input.files);
+          const items = files.map((f) => ({
+            name: f.name,
+            status: 'queued',
+            label: 'Waiting…',
+          }));
+          renderQueue(items);
+          let okCount = 0;
+          for (let i = 0; i < files.length; i++) {
+            const ok = await uploadOne(files[i], items, i);
+            if (ok) okCount++;
+          }
+          if (okCount === files.length) {
+            showStatus(
+              okCount === 1
+                ? 'Photo uploaded — it’s live on /gallery now.'
+                : okCount + ' photos uploaded — they’re live on /gallery now.',
+              'ok',
+            );
+          } else if (okCount > 0) {
+            showStatus(
+              okCount + ' of ' + files.length + ' photos uploaded. See above for the ones that failed.',
+              'error',
+            );
+          } else {
+            showStatus('Upload failed. See the list above.', 'error');
+          }
+          input.value = '';
+        });
       })();
     </script>
   </body>
