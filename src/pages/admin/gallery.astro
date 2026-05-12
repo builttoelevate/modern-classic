@@ -1,0 +1,640 @@
+---
+export const prerender = false;
+
+import { checkBasicAuth } from '../../lib/admin/auth';
+import { getBarbers } from '../../lib/square/team';
+import { listGalleryPhotos, type GalleryBlobPhoto } from '../../lib/gallery/blobPhotos';
+
+const auth = checkBasicAuth(Astro.request);
+if (!auth.ok) return auth.challenge;
+
+interface Row {
+  url: string;
+  pathname: string;
+  filename: string;
+  kind: 'curated' | 'barber';
+  sourceLabel: string;
+  uploadedAt: string;
+  sizeBytes: number;
+}
+
+let photos: GalleryBlobPhoto[] = [];
+let barberNameById = new Map<string, string>();
+let loadError: string | null = null;
+try {
+  const [p, barbers] = await Promise.all([
+    listGalleryPhotos(),
+    getBarbers().catch(() => []),
+  ]);
+  photos = p;
+  for (const b of barbers) barberNameById.set(b.id, b.displayName);
+} catch (err) {
+  loadError = err instanceof Error ? err.message : 'Failed to load gallery.';
+}
+
+function basename(pathname: string): string {
+  const lastSlash = pathname.lastIndexOf('/');
+  return lastSlash === -1 ? pathname : pathname.slice(lastSlash + 1);
+}
+
+const rows: Row[] = photos.map((p) => {
+  const filename = basename(p.pathname);
+  const sourceLabel =
+    p.kind === 'curated'
+      ? 'curated'
+      : barberNameById.get(p.barberId) || p.barberId || 'unknown';
+  return {
+    url: p.url,
+    pathname: p.pathname,
+    filename,
+    kind: p.kind,
+    sourceLabel,
+    uploadedAt: p.uploadedAt,
+    sizeBytes: p.sizeBytes,
+  };
+});
+
+const curatedCount = rows.filter((r) => r.kind === 'curated').length;
+const barberCount = rows.filter((r) => r.kind === 'barber').length;
+---
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>Gallery — Modern Classic Admin</title>
+    <style>
+      :root {
+        --bg: #0b0a08;
+        --surface: #161311;
+        --surface-2: #1d1916;
+        --border: #2a2520;
+        --text: #f3ece0;
+        --muted: #b0a695;
+        --dim: #80776a;
+        --gold: #c9a35c;
+        --gold-light: #e6c785;
+      }
+      *, *::before, *::after { box-sizing: border-box; }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font: 16px/1.5 ui-sans-serif, system-ui, sans-serif;
+      }
+      .wrap { max-width: 70rem; margin: 0 auto; padding: 32px 24px; }
+      h1 { font-family: Georgia, serif; font-weight: 400; font-size: 1.8rem; margin: 0 0 6px; }
+      h2 { font-family: Georgia, serif; font-weight: 400; font-size: 1.2rem; margin: 32px 0 12px; }
+      .sub { color: var(--muted); margin: 0 0 24px; }
+      .err {
+        background: rgba(220, 80, 60, 0.08);
+        border: 1px solid rgba(220, 80, 60, 0.4);
+        color: #f0a37a;
+        padding: 12px 16px;
+        border-radius: 6px;
+      }
+      .topnav {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 1.5rem;
+        align-items: center;
+        padding-bottom: 18px;
+        margin-bottom: 24px;
+        border-bottom: 1px solid var(--border);
+        font-size: 0.78rem;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+      }
+      .topnav a { color: var(--muted); text-decoration: none; padding-bottom: 4px; }
+      .topnav a.active { color: var(--gold); border-bottom: 2px solid var(--gold); }
+      .topnav a:hover { color: var(--gold); }
+
+      .card {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 16px 18px;
+        margin: 0 0 18px;
+      }
+      .card h2 { margin: 0 0 6px; }
+      .card .helper { margin: 0 0 10px; color: var(--muted); font-size: 0.9rem; }
+      .actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+      .btn {
+        appearance: none;
+        background: var(--gold);
+        color: #1a140a;
+        border: 1px solid var(--gold);
+        padding: 8px 14px;
+        font: inherit;
+        font-size: 0.78rem;
+        font-weight: 700;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        border-radius: 4px;
+        cursor: pointer;
+      }
+      .btn:hover { background: var(--gold-light); }
+      .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+      .btn--ghost {
+        background: transparent;
+        color: var(--muted);
+        border: 1px solid var(--border);
+      }
+      .btn--ghost:hover { color: var(--gold); border-color: var(--gold); background: transparent; }
+      .btn--danger {
+        background: rgba(220, 80, 80, 0.15);
+        color: #f0a37a;
+        border-color: rgba(220, 80, 80, 0.55);
+      }
+      .btn--danger:hover { background: rgba(220, 80, 80, 0.3); color: #fff; }
+      .status {
+        margin: 8px 0 0;
+        padding: 8px 10px;
+        border-radius: 6px;
+        font-size: 0.88rem;
+      }
+      .status--ok {
+        background: rgba(122, 184, 110, 0.15);
+        color: #a4d091;
+      }
+      .status--error {
+        background: rgba(220, 80, 80, 0.15);
+        color: #f0a37a;
+      }
+
+      .upload-queue {
+        list-style: none;
+        margin: 10px 0 0;
+        padding: 0;
+        display: grid;
+        gap: 6px;
+        font-size: 0.85rem;
+      }
+      .upload-queue li {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 6px 10px;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        background: rgba(0, 0, 0, 0.2);
+      }
+      .upload-queue li[data-status='done'] { color: #a4d091; border-color: rgba(60, 180, 100, 0.5); }
+      .upload-queue li[data-status='error'] { color: #f0a37a; border-color: rgba(220, 80, 80, 0.5); }
+      .upload-thumb {
+        flex: 0 0 auto;
+        width: 56px; height: 56px;
+        object-fit: cover;
+        border-radius: 4px;
+        border: 1px solid var(--border);
+      }
+      .upload-text { flex: 1 1 auto; min-width: 0; display: grid; gap: 2px; }
+      .upload-name {
+        font-weight: 600;
+        color: var(--text);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .upload-label { font-size: 0.78rem; color: var(--muted); }
+      .upload-remove {
+        flex: 0 0 auto;
+        width: 26px; height: 26px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border: 1px solid var(--border);
+        background: rgba(0, 0, 0, 0.3);
+        color: var(--muted);
+        border-radius: 999px;
+        cursor: pointer;
+      }
+      .upload-remove:hover {
+        color: #f0a37a;
+        border-color: rgba(220, 80, 80, 0.5);
+      }
+      .file-picker input[type='file'] {
+        position: absolute;
+        width: 1px; height: 1px;
+        clip: rect(0, 0, 0, 0);
+        overflow: hidden;
+      }
+      .file-picker { display: inline-flex; cursor: pointer; }
+
+      .gallery-grid {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+        gap: 10px;
+      }
+      .photo {
+        position: relative;
+        aspect-ratio: 1 / 1;
+        border-radius: 6px;
+        overflow: hidden;
+        border: 1px solid var(--border);
+        background: rgba(0, 0, 0, 0.4);
+      }
+      .photo img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        display: block;
+      }
+      .photo__source {
+        position: absolute;
+        left: 4px;
+        bottom: 4px;
+        padding: 2px 6px;
+        font-size: 0.7rem;
+        font-weight: 600;
+        letter-spacing: 0.04em;
+        border-radius: 999px;
+        background: rgba(0, 0, 0, 0.7);
+        color: var(--gold-light);
+        backdrop-filter: blur(4px);
+      }
+      .photo__source--barber { color: #cfe1c7; }
+      .photo__delete {
+        position: absolute;
+        top: 4px;
+        right: 4px;
+        width: 26px; height: 26px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border: 1px solid rgba(0, 0, 0, 0.6);
+        background: rgba(0, 0, 0, 0.7);
+        color: rgb(255, 200, 200);
+        border-radius: 999px;
+        cursor: pointer;
+        font-size: 0.9rem;
+        backdrop-filter: blur(4px);
+      }
+      .photo__delete:hover {
+        background: rgba(220, 80, 80, 0.55);
+        color: #fff;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <nav class="topnav">
+        <a href="/admin">Admin</a>
+        <a href="/admin/today">Today</a>
+        <a href="/admin/bookings">Bookings</a>
+        <a href="/admin/customers">Customers</a>
+        <a href="/admin/waitlist">Waitlist</a>
+        <a href="/admin/barbers">Barbers</a>
+        <a href="/admin/gallery" class="active">Gallery</a>
+        <a href="/admin/reviews">Reviews</a>
+      </nav>
+
+      <h1>Gallery</h1>
+      <p class="sub">
+        Every photo in the public <a href="/gallery" style="color: var(--gold-light);">/gallery</a>.
+        Curated + barber uploads, all in one Blob store.
+      </p>
+
+      {loadError && <p class="err">{loadError}</p>}
+
+      <section class="card" id="migrate-card">
+        <h2>Move bundled photos to Blob</h2>
+        <p class="helper">
+          One-time migration of the 28 photos bundled in <code>src/assets/gallery/*.jpg</code>
+          into the same Blob store. Idempotent — safe to re-run; already-migrated photos are
+          skipped.
+        </p>
+        <div class="actions">
+          <button type="button" class="btn" id="migrate-btn">Run migration</button>
+        </div>
+        <p class="status" id="migrate-status" hidden></p>
+      </section>
+
+      <section class="card" id="upload-card">
+        <h2>Add a photo</h2>
+        <p class="helper">JPEG, PNG, or WebP up to 10 MB. Uploads go to <code>gallery/curated/</code>.</p>
+        <form id="upload-form">
+          <div class="actions">
+            <label class="file-picker">
+              <input type="file" id="upload-input" accept="image/*" multiple />
+              <span class="btn btn--ghost">Choose photo(s)</span>
+            </label>
+            <button type="submit" class="btn" id="upload-submit" disabled>Upload</button>
+          </div>
+          <ul class="upload-queue" id="upload-queue" hidden></ul>
+          <p class="status" id="upload-status" hidden></p>
+        </form>
+      </section>
+
+      <h2>
+        All gallery photos
+        <span class="sub" style="display: inline; margin: 0 0 0 10px; font-size: 0.85rem;">
+          {rows.length} total · {curatedCount} curated · {barberCount} barber uploads
+        </span>
+      </h2>
+      {rows.length === 0 ? (
+        <p class="helper">No photos in the Blob store yet. Use the migration button above to bring in the bundled set, or add a new photo.</p>
+      ) : (
+        <ul class="gallery-grid" id="gallery-grid">
+          {rows.map((r) => (
+            <li class="photo" data-pathname={r.pathname}>
+              <img src={r.url} alt={r.filename} loading="lazy" />
+              <span class={`photo__source${r.kind === 'barber' ? ' photo__source--barber' : ''}`}>
+                {r.sourceLabel}
+              </span>
+              <button
+                type="button"
+                class="photo__delete"
+                aria-label={`Delete ${r.filename}`}
+                data-delete
+                data-filename={r.filename}
+              >
+                ✕
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+
+    <script is:inline>
+      (function () {
+        function $(id) { return document.getElementById(id); }
+        function showStatus(el, msg, kind) {
+          el.textContent = msg || '';
+          el.className = 'status' + (kind ? ' status--' + kind : '');
+          el.hidden = !msg;
+        }
+
+        // ---------- Migrate bundled → Blob ----------
+        const migrateBtn = $('migrate-btn');
+        const migrateStatus = $('migrate-status');
+        if (migrateBtn && migrateStatus) {
+          migrateBtn.addEventListener('click', async () => {
+            migrateBtn.disabled = true;
+            const originalLabel = migrateBtn.textContent;
+            migrateBtn.textContent = 'Running…';
+            showStatus(migrateStatus, '');
+            try {
+              const res = await fetch('/api/admin/gallery/migrate-bundled', {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: { 'Content-Type': 'application/json' },
+                body: '{}',
+              });
+              const data = await res.json();
+              if (!res.ok || !data.ok) {
+                showStatus(
+                  migrateStatus,
+                  (data && data.error && data.error.detail) || 'Migration failed.',
+                  'error',
+                );
+                migrateBtn.disabled = false;
+                migrateBtn.textContent = originalLabel;
+                return;
+              }
+              const msg =
+                data.migrated > 0
+                  ? 'Migrated ' + data.migrated + ' photos.' +
+                    (data.skipped ? ' (' + data.skipped + ' already in Blob, skipped.)' : '') +
+                    (data.failed ? ' ' + data.failed + ' failed.' : '')
+                  : data.skipped > 0
+                    ? 'All ' + data.skipped + ' photos already in Blob.'
+                    : 'Nothing to migrate.';
+              showStatus(migrateStatus, msg + ' Reloading…', 'ok');
+              setTimeout(() => window.location.reload(), 900);
+            } catch (err) {
+              showStatus(migrateStatus, 'Network error. Try again.', 'error');
+              migrateBtn.disabled = false;
+              migrateBtn.textContent = originalLabel;
+            }
+          });
+        }
+
+        // ---------- Upload (raw body POST) ----------
+        const form = $('upload-form');
+        const input = $('upload-input');
+        const submit = $('upload-submit');
+        const queue = $('upload-queue');
+        const statusEl = $('upload-status');
+        if (form && input && submit && queue && statusEl) {
+          const MAX_DIM = 2000;
+          const JPEG_QUALITY = 0.85;
+          const ACCEPTED = new Set(['image/jpeg', 'image/png', 'image/webp']);
+          let items = [];
+
+          function refreshSubmit() {
+            const pending = items.some((it) => it.status === 'queued');
+            submit.disabled = !pending;
+          }
+
+          function renderQueue() {
+            queue.innerHTML = '';
+            if (items.length === 0) { queue.hidden = true; return; }
+            queue.hidden = false;
+            for (const it of items) {
+              const li = document.createElement('li');
+              li.setAttribute('data-status', it.status);
+
+              const img = document.createElement('img');
+              img.className = 'upload-thumb';
+              img.src = it.previewUrl;
+              img.alt = '';
+              img.loading = 'lazy';
+              li.appendChild(img);
+
+              const text = document.createElement('div');
+              text.className = 'upload-text';
+              const name = document.createElement('span');
+              name.className = 'upload-name';
+              name.textContent = it.file.name || 'photo';
+              const label = document.createElement('span');
+              label.className = 'upload-label';
+              label.textContent = it.label;
+              text.appendChild(name); text.appendChild(label);
+              li.appendChild(text);
+
+              if (it.status === 'queued') {
+                const removeBtn = document.createElement('button');
+                removeBtn.type = 'button';
+                removeBtn.className = 'upload-remove';
+                removeBtn.textContent = '✕';
+                removeBtn.addEventListener('click', () => {
+                  URL.revokeObjectURL(it.previewUrl);
+                  items = items.filter((x) => x !== it);
+                  renderQueue();
+                  refreshSubmit();
+                });
+                li.appendChild(removeBtn);
+              }
+              queue.appendChild(li);
+            }
+          }
+
+          async function normalizeOrPassthrough(file) {
+            try {
+              let bitmap = null;
+              try { bitmap = await createImageBitmap(file); } catch {}
+              if (!bitmap) {
+                const url = URL.createObjectURL(file);
+                try {
+                  bitmap = await new Promise((resolve, reject) => {
+                    const i = new Image();
+                    i.onload = () => resolve(i);
+                    i.onerror = () => reject(new Error('decode-failed'));
+                    i.src = url;
+                  });
+                } finally {
+                  URL.revokeObjectURL(url);
+                }
+              }
+              const w = bitmap.width || bitmap.naturalWidth;
+              const h = bitmap.height || bitmap.naturalHeight;
+              if (!w || !h) throw new Error('no-dimensions');
+              const scale = Math.min(1, MAX_DIM / Math.max(w, h));
+              const canvas = document.createElement('canvas');
+              canvas.width = Math.round(w * scale);
+              canvas.height = Math.round(h * scale);
+              const ctx = canvas.getContext('2d');
+              if (!ctx) throw new Error('no-canvas-ctx');
+              ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+              const blob = await new Promise((resolve, reject) => {
+                canvas.toBlob(
+                  (b) => b ? resolve(b) : reject(new Error('encode-failed')),
+                  'image/jpeg',
+                  JPEG_QUALITY,
+                );
+              });
+              return { blob, mime: 'image/jpeg' };
+            } catch {}
+            if (!ACCEPTED.has(file.type)) {
+              throw new Error("Couldn't upload this photo. Try saving it as JPEG or PNG and re-picking.");
+            }
+            return { blob: file, mime: file.type };
+          }
+
+          async function uploadOne(it) {
+            it.status = 'uploading';
+            it.label = 'Processing…';
+            renderQueue();
+            let prepared;
+            try {
+              prepared = await normalizeOrPassthrough(it.file);
+            } catch (err) {
+              it.status = 'error';
+              it.label = err && err.message ? err.message : "Couldn't upload.";
+              renderQueue();
+              return false;
+            }
+            it.label = 'Uploading…';
+            renderQueue();
+            try {
+              const res = await fetch('/api/admin/gallery/upload', {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: { 'Content-Type': prepared.mime },
+                body: prepared.blob,
+              });
+              const data = await res.json();
+              if (!res.ok || !data.ok) {
+                it.status = 'error';
+                it.label = (data && data.error && data.error.detail) || ('HTTP ' + res.status);
+                renderQueue();
+                return false;
+              }
+              it.status = 'done';
+              it.label = 'Uploaded';
+              renderQueue();
+              URL.revokeObjectURL(it.previewUrl);
+              return true;
+            } catch (err) {
+              it.status = 'error';
+              it.label = err && err.message ? err.message : 'Network error.';
+              renderQueue();
+              return false;
+            }
+          }
+
+          input.addEventListener('change', () => {
+            const picked = Array.from(input.files || []);
+            for (const f of picked) {
+              items.push({
+                file: f,
+                previewUrl: URL.createObjectURL(f),
+                status: 'queued',
+                label: 'Ready',
+              });
+            }
+            input.value = '';
+            renderQueue();
+            refreshSubmit();
+          });
+
+          form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            if (items.filter((it) => it.status === 'queued').length === 0) return;
+            submit.disabled = true;
+            statusEl.hidden = true;
+            let ok = 0;
+            let total = 0;
+            for (const it of items) {
+              if (it.status !== 'queued') continue;
+              total++;
+              const success = await uploadOne(it);
+              if (success) ok++;
+            }
+            if (ok === total) {
+              showStatus(statusEl, 'Uploaded ' + ok + ' photo' + (ok === 1 ? '' : 's') + '. Reloading…', 'ok');
+              setTimeout(() => window.location.reload(), 700);
+            } else if (ok > 0) {
+              showStatus(statusEl, ok + ' of ' + total + ' uploaded. See the list above.', 'error');
+              refreshSubmit();
+            } else {
+              showStatus(statusEl, 'Upload failed. See the list above.', 'error');
+              refreshSubmit();
+            }
+          });
+        }
+
+        // ---------- Per-photo delete ----------
+        document.querySelectorAll('[data-delete]').forEach((btn) => {
+          const li = btn.closest('[data-pathname]');
+          if (!li) return;
+          const pathname = li.getAttribute('data-pathname') || '';
+          const filename = btn.getAttribute('data-filename') || 'this photo';
+          btn.addEventListener('click', async () => {
+            if (!confirm('Delete ' + filename + '? It disappears from /gallery on the next render.')) {
+              return;
+            }
+            btn.disabled = true;
+            const originalLabel = btn.textContent;
+            btn.textContent = '…';
+            try {
+              const res = await fetch('/api/admin/gallery/delete', {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ pathname: pathname }),
+              });
+              const data = await res.json();
+              if (!res.ok || !data.ok) {
+                alert((data && data.error && data.error.detail) || 'Could not delete.');
+                btn.disabled = false;
+                btn.textContent = originalLabel;
+                return;
+              }
+              li.remove();
+            } catch {
+              alert('Network error. Try again.');
+              btn.disabled = false;
+              btn.textContent = originalLabel;
+            }
+          });
+        });
+      })();
+    </script>
+  </body>
+</html>
