@@ -30,7 +30,7 @@
 // metadata key is ever lost.
 
 import { Redis } from '@upstash/redis';
-import { normalizePhone } from '../square/customers';
+import { normalizePhone } from '../phone';
 
 let _redis: Redis | null = null;
 
@@ -139,22 +139,55 @@ export async function listBlockedPhones(): Promise<BlockedEntry[]> {
   return entries;
 }
 
+export interface AddResult {
+  /** True when the phone was newly added; false when it was already blocked. */
+  added: boolean;
+  /** The stored entry — the existing one when already blocked (untouched),
+   *  the new one when added. */
+  entry: BlockedEntry;
+}
+
+/** Adds a phone to the block list. Idempotent: re-adding a phone that's
+ *  already blocked is a no-op (existing metadata is preserved — the
+ *  original blockedAt timestamp wins so the audit trail is intact). The
+ *  caller can distinguish via the `added` flag. */
 export async function addBlockedPhone(
   phone: string,
   opts: { reason?: string; blockedBy?: string } = {},
-): Promise<BlockedEntry> {
+): Promise<AddResult> {
   const e164 = normalizePhone(phone);
   if (!e164 || !/^\+\d{10,15}$/.test(e164)) {
     throw new Error(`Phone "${phone}" is not a valid E.164 number after normalization.`);
+  }
+  const redis = getRedis();
+  const added = await redis.sadd(KEY_SET, e164);
+  if (added === 0) {
+    // Already a member — return the existing metadata without touching
+    // the stored entry. Preserves blockedAt + original reason.
+    const raw = await redis.get<StoredEntry | string | null>(kPhone(e164));
+    const parsed: StoredEntry | null =
+      raw == null
+        ? null
+        : typeof raw === 'string'
+          ? safeParse(raw)
+          : (raw as StoredEntry);
+    return {
+      added: false,
+      entry: {
+        phone: e164,
+        reason: parsed?.reason,
+        blockedAt: parsed?.blockedAt ?? new Date(0).toISOString(),
+        blockedBy: parsed?.blockedBy,
+      },
+    };
   }
   const entry: StoredEntry = {
     blockedAt: new Date().toISOString(),
     ...(opts.reason ? { reason: opts.reason } : {}),
     ...(opts.blockedBy ? { blockedBy: opts.blockedBy } : {}),
   };
-  const redis = getRedis();
-  await Promise.all([redis.sadd(KEY_SET, e164), redis.set(kPhone(e164), JSON.stringify(entry))]);
-  return { phone: e164, ...entry };
+  await redis.set(kPhone(e164), JSON.stringify(entry));
+  return { added: true, entry: { phone: e164, ...entry } };
 }
 
 /** Removes a phone from the block list. Returns true if the phone was

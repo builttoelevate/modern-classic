@@ -59,8 +59,11 @@ export const POST: APIRoute = async ({ request }) => {
   const blockedBy =
     typeof body.blockedBy === 'string' ? body.blockedBy.trim().slice(0, 100) : undefined;
   try {
-    const entry = await addBlockedPhone(phone, { reason, blockedBy });
-    return Response.json({ ok: true, entry }, { status: 200 });
+    const result = await addBlockedPhone(phone, { reason, blockedBy });
+    return Response.json(
+      { ok: true, added: result.added, entry: result.entry },
+      { status: 200 },
+    );
   } catch (err) {
     const detail = err instanceof Error ? err.message : 'Unknown error';
     return Response.json({ ok: false, error: { detail } }, { status: 400 });

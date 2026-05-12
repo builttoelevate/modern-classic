@@ -1,4 +1,5 @@
 import { squareFetch, SquareApiError } from './client';
+import { normalizePhone } from '../phone';
 import type {
   CreateCustomerResponse,
   Customer,
@@ -497,10 +498,3 @@ function computeDiff(
   return Object.keys(diff).length > 0 ? diff : null;
 }
 
-export function normalizePhone(input: string): string {
-  const digits = input.replace(/\D/g, '');
-  // Square accepts E.164. Default to US (+1) if missing.
-  if (digits.length === 10) return `+1${digits}`;
-  if (digits.length === 11 && digits.startsWith('1')) return `+${digits}`;
-  return input;
-}
