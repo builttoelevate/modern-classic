@@ -1,6 +1,7 @@
 import { squareFetch } from './client';
 import { MODERN_CLASSIC_LOCATION_ID } from './locations';
 import type { AvailabilityResponse, AvailabilitySlot } from './types';
+import { listBlocks, slotIsBlocked, type BlockBundle } from '../barber/timeBlocks';
 
 export const SHOP_TIMEZONE = 'America/New_York';
 
@@ -195,5 +196,42 @@ export async function searchAvailability(
 
   // Sort earliest first.
   slots.sort((a, b) => a.startAtUtc.localeCompare(b.startAtUtc));
-  return slots;
+
+  return dropBlockedSlots(slots);
+}
+
+/**
+ * Post-filter for Square's availability response: drops any slot
+ * whose [startUtc, startUtc + durationMinutes) interval overlaps a
+ * block in the slot's barber's per-barber time-off store. Single
+ * Redis read per unique barberId in the result set (cached in a
+ * local Map for the duration of the call); typical customer search
+ * is scoped to one barber, so one round-trip.
+ *
+ * Failure mode: any Redis hiccup returns the raw slots unfiltered.
+ * Better for the customer to see (and book) a slot the barber meant
+ * to block than for the availability page to silently blank when
+ * our infra wobbles.
+ */
+async function dropBlockedSlots(
+  slots: AvailabilitySlot[],
+): Promise<AvailabilitySlot[]> {
+  if (slots.length === 0) return slots;
+  const barberIds = Array.from(new Set(slots.map((s) => s.teamMemberId)));
+  const cache = new Map<string, BlockBundle>();
+  try {
+    await Promise.all(
+      barberIds.map(async (id) => {
+        const bundle = await listBlocks(id);
+        cache.set(id, bundle);
+      }),
+    );
+  } catch {
+    return slots;
+  }
+  return slots.filter((s) => {
+    const bundle = cache.get(s.teamMemberId);
+    if (!bundle) return true;
+    return !slotIsBlocked(s, bundle);
+  });
 }

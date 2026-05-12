@@ -3,6 +3,11 @@ export const prerender = false;
 
 import { getBarberSession, refreshBarberSessionCookie } from '../../lib/auth/barberMiddleware';
 import { getAccount } from '../../lib/barber/accountStore';
+import {
+  listBlocks as listBarberBlocks,
+  type OneOffBlock,
+  type RecurringBlock,
+} from '../../lib/barber/timeBlocks';
 import { listBookings } from '../../lib/square/bookings';
 import { getBarbers } from '../../lib/square/team';
 import { getServices } from '../../lib/square/catalog';
@@ -61,9 +66,14 @@ const TERMINAL = new Set<Booking['status']>([
 // daily-driver use case; waitlist is the secondary "who's waiting"
 // tab. URL param so back/forward navigation works and so a barber can
 // bookmark the waitlist tab directly if they want.
-type Tab = 'appointments' | 'waitlist';
+type Tab = 'appointments' | 'waitlist' | 'time-off';
 const tabParam = Astro.url.searchParams.get('tab');
-const activeTab: Tab = tabParam === 'waitlist' ? 'waitlist' : 'appointments';
+const activeTab: Tab =
+  tabParam === 'waitlist'
+    ? 'waitlist'
+    : tabParam === 'time-off'
+      ? 'time-off'
+      : 'appointments';
 
 function shopDateKey(date: Date = new Date()): string {
   return new Intl.DateTimeFormat('en-CA', {
@@ -120,13 +130,19 @@ const serviceNames = new Map<string, string>();
 let waitlist: WaitlistEntry[] = [];
 let isOwner = false;
 
+let timeBlocks: { oneOff: OneOffBlock[]; recurring: RecurringBlock[] } = {
+  oneOff: [],
+  recurring: [],
+};
 try {
-  const [list, barbers, services, allWaitlist] = await Promise.all([
+  const [list, barbers, services, allWaitlist, blocks] = await Promise.all([
     listBookings({ startAtMin: startUtc.toISOString(), startAtMax: endUtc.toISOString(), limit: 200 }),
     getBarbers(),
     getServices(),
     listWaitlistEntries({ limit: 200 }).catch(() => [] as WaitlistEntry[]),
+    listBarberBlocks(session.barberId).catch(() => ({ oneOff: [], recurring: [] })),
   ]);
+  timeBlocks = blocks;
   bookings = list.bookings
     .filter((b) => !TERMINAL.has(b.status))
     .filter((b) => b.appointment_segments?.[0]?.team_member_id === session.barberId);
@@ -420,6 +436,19 @@ Astro.response.headers.append('Set-Cookie', refreshBarberSessionCookie(session))
           Waitlist
           {waitlistRows.length > 0 && <span class="bb-tab__count">{waitlistRows.length}</span>}
         </a>
+        <a
+          class={`bb-tab ${activeTab === 'time-off' ? 'is-active' : ''}`}
+          role="tab"
+          aria-selected={activeTab === 'time-off'}
+          href={`${base}/barber/dashboard?date=${filterDateKey}&tab=time-off`}
+        >
+          Time off
+          {(timeBlocks.oneOff.length + timeBlocks.recurring.length) > 0 && (
+            <span class="bb-tab__count">
+              {timeBlocks.oneOff.length + timeBlocks.recurring.length}
+            </span>
+          )}
+        </a>
       </nav>
 
       {activeTab === 'appointments' && (
@@ -629,6 +658,163 @@ Astro.response.headers.append('Set-Cookie', refreshBarberSessionCookie(session))
             })}
           </ul>
         )}
+      </section>
+      )}
+
+      {activeTab === 'time-off' && (
+      <section class="bb-timeoff">
+        <h2>
+          Time off
+          <span class="bb-sub">block times so customers can't book</span>
+        </h2>
+
+        <form class="bb-timeoff__form" id="bb-timeoff-one-off">
+          <h3 class="bb-timeoff__form-head">Add a one-off block</h3>
+          <div class="bb-timeoff__row">
+            <label class="bb-timeoff__field">
+              <span>Date</span>
+              <input type="date" name="date" required />
+            </label>
+            <label class="bb-timeoff__field">
+              <span>From</span>
+              <input type="time" name="startTime" required />
+            </label>
+            <label class="bb-timeoff__field">
+              <span>To</span>
+              <input type="time" name="endTime" required />
+            </label>
+          </div>
+          <label class="bb-timeoff__field">
+            <span>Note (optional)</span>
+            <input type="text" name="note" maxlength="200" placeholder="e.g. Dentist" />
+          </label>
+          <div class="bb-timeoff__actions">
+            <button type="submit" class="bb-btn bb-btn--sm">Add block</button>
+          </div>
+          <p class="bb-timeoff__status" data-status hidden></p>
+        </form>
+
+        <form class="bb-timeoff__form" id="bb-timeoff-recurring">
+          <h3 class="bb-timeoff__form-head">Add weekly recurring</h3>
+          <fieldset class="bb-timeoff__days">
+            <legend>Days</legend>
+            <label><input type="checkbox" name="dow" value="mon" /> Mon</label>
+            <label><input type="checkbox" name="dow" value="tue" /> Tue</label>
+            <label><input type="checkbox" name="dow" value="wed" /> Wed</label>
+            <label><input type="checkbox" name="dow" value="thu" /> Thu</label>
+            <label><input type="checkbox" name="dow" value="fri" /> Fri</label>
+            <label><input type="checkbox" name="dow" value="sat" /> Sat</label>
+          </fieldset>
+          <div class="bb-timeoff__row">
+            <label class="bb-timeoff__field">
+              <span>From</span>
+              <input type="time" name="startTime" required />
+            </label>
+            <label class="bb-timeoff__field">
+              <span>To</span>
+              <input type="time" name="endTime" required />
+            </label>
+          </div>
+          <div class="bb-timeoff__row">
+            <label class="bb-timeoff__field">
+              <span>Starts</span>
+              <input type="date" name="startsOn" required />
+            </label>
+            <label class="bb-timeoff__field">
+              <span>Ends (optional)</span>
+              <input type="date" name="endsOn" />
+            </label>
+          </div>
+          <label class="bb-timeoff__field">
+            <span>Note (optional)</span>
+            <input type="text" name="note" maxlength="200" placeholder="e.g. Lunch" />
+          </label>
+          <div class="bb-timeoff__actions">
+            <button type="submit" class="bb-btn bb-btn--sm">Add recurring block</button>
+          </div>
+          <p class="bb-timeoff__status" data-status hidden></p>
+        </form>
+
+        <div class="bb-timeoff__list">
+          <h3 class="bb-timeoff__form-head">Active blocks</h3>
+          {timeBlocks.oneOff.length + timeBlocks.recurring.length === 0 ? (
+            <p class="bb-empty">No blocks yet. Add one above.</p>
+          ) : (
+            <ul class="bb-list" id="bb-timeoff-active">
+              {timeBlocks.oneOff
+                .slice()
+                .sort((a, b) => a.startUtc.localeCompare(b.startUtc))
+                .map((b) => {
+                  const start = new Date(b.startUtc);
+                  const end = new Date(b.endUtc);
+                  const dateLabel = new Intl.DateTimeFormat('en-US', {
+                    timeZone: SHOP_TZ,
+                    weekday: 'short',
+                    month: 'short',
+                    day: 'numeric',
+                  }).format(start);
+                  const startLabel = new Intl.DateTimeFormat('en-US', {
+                    timeZone: SHOP_TZ,
+                    hour: 'numeric',
+                    minute: '2-digit',
+                    hour12: true,
+                  }).format(start);
+                  const endLabel = new Intl.DateTimeFormat('en-US', {
+                    timeZone: SHOP_TZ,
+                    hour: 'numeric',
+                    minute: '2-digit',
+                    hour12: true,
+                  }).format(end);
+                  return (
+                    <li class="bb-card bb-timeoff__row-card" data-block-id={b.id}>
+                      <div class="bb-card__row">
+                        <strong>
+                          {dateLabel} · {startLabel}–{endLabel}
+                        </strong>
+                        <span class="bb-pill bb-pill--ok">one-off</span>
+                      </div>
+                      {b.note && <p class="bb-timeoff__note">"{b.note}"</p>}
+                      <div class="bb-timeoff__row-actions">
+                        <button type="button" class="bb-btn bb-btn--ghost bb-btn--sm" data-delete>
+                          Delete
+                        </button>
+                      </div>
+                    </li>
+                  );
+                })}
+              {timeBlocks.recurring
+                .slice()
+                .sort((a, b) => a.startsOn.localeCompare(b.startsOn))
+                .map((b) => {
+                  const dayLabel = b.daysOfWeek
+                    .map((d) => d.charAt(0).toUpperCase() + d.slice(1))
+                    .join(', ');
+                  const fromHHMM = b.startTimeShop;
+                  const toHHMM = b.endTimeShop;
+                  return (
+                    <li class="bb-card bb-timeoff__row-card" data-block-id={b.id}>
+                      <div class="bb-card__row">
+                        <strong>
+                          Weekly: {dayLabel} · {fromHHMM}–{toHHMM}
+                        </strong>
+                        <span class="bb-pill bb-pill--pending">recurring</span>
+                      </div>
+                      <p class="bb-timeoff__note">
+                        Starts {b.startsOn}
+                        {b.endsOn ? ` · ends ${b.endsOn}` : ''}
+                        {b.note ? ` · "${b.note}"` : ''}
+                      </p>
+                      <div class="bb-timeoff__row-actions">
+                        <button type="button" class="bb-btn bb-btn--ghost bb-btn--sm" data-delete>
+                          Delete
+                        </button>
+                      </div>
+                    </li>
+                  );
+                })}
+            </ul>
+          )}
+        </div>
       </section>
       )}
     </div>
@@ -1231,6 +1417,195 @@ Astro.response.headers.append('Set-Cookie', refreshBarberSessionCookie(session))
             }
           });
         });
+      })();
+
+      // ---------- Time off (per-barber blocks) ----------
+      // Two forms (one-off + recurring) post to their respective
+      // endpoints; the active-blocks list has Delete buttons that
+      // call DELETE /api/barber/time-off/{id}. On any successful
+      // mutation we reload the page so the rendered list + the tab
+      // count match the new state without partial-update logic.
+      (function () {
+        const oneOffForm = document.getElementById('bb-timeoff-one-off');
+        const recurringForm = document.getElementById('bb-timeoff-recurring');
+        const activeList = document.getElementById('bb-timeoff-active');
+
+        function showStatus(form, msg, kind) {
+          const el = form.querySelector('[data-status]');
+          if (!el) return;
+          el.textContent = msg || '';
+          el.className =
+            'bb-timeoff__status' + (kind ? ' bb-timeoff__status--' + kind : '');
+          el.hidden = !msg;
+        }
+
+        if (oneOffForm) {
+          oneOffForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const fd = new FormData(oneOffForm);
+            const date = String(fd.get('date') || '').trim();
+            const startTime = String(fd.get('startTime') || '').trim();
+            const endTime = String(fd.get('endTime') || '').trim();
+            const note = String(fd.get('note') || '').trim();
+            if (!date || !startTime || !endTime) {
+              showStatus(oneOffForm, 'Date and times are required.', 'error');
+              return;
+            }
+            if (endTime <= startTime) {
+              showStatus(oneOffForm, 'End must be after start.', 'error');
+              return;
+            }
+            const startUtc = shopLocalToUtcIso(date + 'T' + startTime);
+            const endUtc = shopLocalToUtcIso(date + 'T' + endTime);
+            const btn = oneOffForm.querySelector('button[type="submit"]');
+            btn.disabled = true;
+            const originalLabel = btn.textContent;
+            btn.textContent = 'Saving…';
+            try {
+              const res = await fetch('/api/barber/time-off/one-off', {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  startUtc: startUtc,
+                  endUtc: endUtc,
+                  note: note,
+                }),
+              });
+              const data = await res.json();
+              if (!res.ok || !data.ok) {
+                showStatus(
+                  oneOffForm,
+                  (data && data.error && data.error.detail) || 'Could not add block.',
+                  'error',
+                );
+                btn.disabled = false;
+                btn.textContent = originalLabel;
+                return;
+              }
+              showStatus(oneOffForm, 'Block added. Refreshing…', 'ok');
+              setTimeout(
+                () =>
+                  (window.location.href =
+                    '/barber/dashboard?tab=time-off'),
+                500,
+              );
+            } catch {
+              showStatus(oneOffForm, 'Network error. Try again.', 'error');
+              btn.disabled = false;
+              btn.textContent = originalLabel;
+            }
+          });
+        }
+
+        if (recurringForm) {
+          recurringForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const fd = new FormData(recurringForm);
+            const days = fd.getAll('dow').map((v) => String(v));
+            const startTime = String(fd.get('startTime') || '').trim();
+            const endTime = String(fd.get('endTime') || '').trim();
+            const startsOn = String(fd.get('startsOn') || '').trim();
+            const endsOn = String(fd.get('endsOn') || '').trim();
+            const note = String(fd.get('note') || '').trim();
+            if (days.length === 0) {
+              showStatus(recurringForm, 'Pick at least one day.', 'error');
+              return;
+            }
+            if (!startTime || !endTime) {
+              showStatus(recurringForm, 'Start and end times are required.', 'error');
+              return;
+            }
+            if (endTime <= startTime) {
+              showStatus(recurringForm, 'End must be after start.', 'error');
+              return;
+            }
+            if (!startsOn) {
+              showStatus(recurringForm, 'Pick a start date.', 'error');
+              return;
+            }
+            const btn = recurringForm.querySelector('button[type="submit"]');
+            btn.disabled = true;
+            const originalLabel = btn.textContent;
+            btn.textContent = 'Saving…';
+            try {
+              const res = await fetch('/api/barber/time-off/recurring', {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  startTimeShop: startTime,
+                  endTimeShop: endTime,
+                  daysOfWeek: days,
+                  startsOn: startsOn,
+                  endsOn: endsOn || undefined,
+                  note: note,
+                }),
+              });
+              const data = await res.json();
+              if (!res.ok || !data.ok) {
+                showStatus(
+                  recurringForm,
+                  (data && data.error && data.error.detail) || 'Could not add block.',
+                  'error',
+                );
+                btn.disabled = false;
+                btn.textContent = originalLabel;
+                return;
+              }
+              showStatus(recurringForm, 'Recurring block added. Refreshing…', 'ok');
+              setTimeout(
+                () =>
+                  (window.location.href =
+                    '/barber/dashboard?tab=time-off'),
+                500,
+              );
+            } catch {
+              showStatus(recurringForm, 'Network error. Try again.', 'error');
+              btn.disabled = false;
+              btn.textContent = originalLabel;
+            }
+          });
+        }
+
+        if (activeList) {
+          activeList.querySelectorAll('[data-delete]').forEach((btn) => {
+            const li = btn.closest('[data-block-id]');
+            if (!li) return;
+            const blockId = li.getAttribute('data-block-id') || '';
+            btn.addEventListener('click', async () => {
+              if (!confirm('Delete this time-off block? Customers will be able to book these slots again.')) {
+                return;
+              }
+              btn.disabled = true;
+              const originalLabel = btn.textContent;
+              btn.textContent = 'Deleting…';
+              try {
+                const res = await fetch(
+                  '/api/barber/time-off/' + encodeURIComponent(blockId),
+                  { method: 'DELETE', credentials: 'same-origin' },
+                );
+                const data = await res.json();
+                if (!res.ok || !data.ok) {
+                  alert((data && data.error && data.error.detail) || 'Could not delete.');
+                  btn.disabled = false;
+                  btn.textContent = originalLabel;
+                  return;
+                }
+                li.remove();
+                // If that emptied the list, reload to surface the empty
+                // state and update the tab badge.
+                if (!activeList.querySelector('[data-block-id]')) {
+                  window.location.href = '/barber/dashboard?tab=time-off';
+                }
+              } catch {
+                alert('Network error. Try again.');
+                btn.disabled = false;
+                btn.textContent = originalLabel;
+              }
+            });
+          });
+        }
       })();
     </script>
   </body>
