@@ -17,6 +17,7 @@
 
 import type { APIRoute } from 'astro';
 import { runReviewRequestCron } from '../../../lib/square/reviewCron';
+import { getPublicOrigin } from '../../../lib/utils/origin';
 
 export const prerender = false;
 
@@ -76,7 +77,12 @@ async function handle(request: Request): Promise<Response> {
   const result = await runReviewRequestCron({
     dryRun,
     shiftDays: isFinite(shiftDays) ? shiftDays : 0,
-    origin: url.origin,
+    // request.url on Vercel serverless resolves to the lambda's
+    // internal host (typically http://localhost), which used to
+    // leak into every review email's click link. getPublicOrigin
+    // reads Vercel's x-forwarded-* headers for the real public
+    // domain.
+    origin: getPublicOrigin(request),
     manuallyTriggered: false,
   });
 

@@ -26,27 +26,12 @@ import {
 } from '../../../lib/customer/familyAccount';
 import { sendFamilyInviteAccepted } from '../../../lib/email/resend';
 import { redactEmail } from '../../../lib/booking/log';
+import { getPublicOrigin } from '../../../lib/utils/origin';
 
 export const prerender = false;
 
 const SHOP_ADDRESS = '819 Linden Avenue, Zanesville, OH 43701';
 const SHOP_PHONE = '740-297-4462';
-
-function siteOriginFromRequest(request: Request): string {
-  const env = import.meta.env.SITE_URL;
-  if (typeof env === 'string' && /^https?:\/\//i.test(env)) {
-    return env.replace(/\/$/, '');
-  }
-  const proto = request.headers.get('x-forwarded-proto') ?? 'https';
-  const host = request.headers.get('x-forwarded-host') ?? request.headers.get('host');
-  if (host) return `${proto}://${host}`.replace(/\/$/, '');
-  try {
-    const url = new URL(request.url);
-    return `${url.protocol}//${url.host}`.replace(/\/$/, '');
-  } catch {
-    return 'https://mdrnclassic.com';
-  }
-}
 
 function logFamily(payload: Record<string, unknown>): void {
   // eslint-disable-next-line no-console
@@ -215,7 +200,7 @@ export const POST: APIRoute = async ({ request }) => {
           `${inviter?.given_name ?? ''} ${inviter?.family_name ?? ''}`.trim() ||
           inviterEmail.split('@')[0] ||
           'there';
-        const origin = siteOriginFromRequest(request);
+        const origin = getPublicOrigin(request);
         const result = await sendFamilyInviteAccepted({
           to: inviterEmail,
           inviterName,

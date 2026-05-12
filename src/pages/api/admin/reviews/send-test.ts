@@ -17,6 +17,7 @@ import { checkBasicAuth } from '../../../../lib/admin/auth';
 import { sendReviewRequest } from '../../../../lib/email/resend';
 import { signClickToken } from '../../../../lib/marketing/clickToken';
 import { signUnsubscribeToken } from '../../../../lib/marketing/unsubscribeToken';
+import { getPublicOrigin } from '../../../../lib/utils/origin';
 
 export const prerender = false;
 
@@ -81,7 +82,7 @@ export const POST: APIRoute = async ({ request }) => {
   // that doesn't exist — harmless no-op.
   const syntheticCustomerId = 'test-' + crypto.randomUUID();
 
-  const origin = new URL(request.url).origin;
+  const origin = getPublicOrigin(request);
   const clickUrl = `${origin}/r/review?t=${encodeURIComponent(
     signClickToken({ reviewRequestId, destination: googleReviewUrlEnv }),
   )}`;
