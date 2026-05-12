@@ -420,6 +420,10 @@ Astro.response.headers.append('Set-Cookie', refreshBarberSessionCookie(session))
         </form>
         <ul class="bb-photo-upload__queue" id="bb-photo-queue" hidden></ul>
         <p class="bb-photo-upload__status" id="bb-photo-status" hidden></p>
+        <div class="bb-photo-mine" id="bb-photo-mine" hidden>
+          <p class="bb-photo-mine__head">Your uploads — tap a photo to delete</p>
+          <ul class="bb-photo-mine__grid" id="bb-photo-mine-grid"></ul>
+        </div>
       </section>
 
       <nav class="bb-tabs" role="tablist" aria-label="Dashboard sections">
@@ -1230,7 +1234,100 @@ Astro.response.headers.append('Set-Cookie', refreshBarberSessionCookie(session))
             showStatus('Upload failed. See the list above.', 'error');
           }
           refreshSubmitState();
+          // Refresh the "Your uploads" grid so the newly-uploaded
+          // photos appear with their delete affordance.
+          refreshMine();
         });
+
+        // ---------- Your uploads (delete affordance) ----------
+        // Loads the calling barber's gallery blobs and renders a
+        // thumbnail grid. Tapping a thumbnail prompts for confirm
+        // and posts to /api/barber/photos/delete. Lazy-loaded on
+        // first render to avoid blocking the page; refreshes after
+        // every successful upload.
+        const mineWrap = document.getElementById('bb-photo-mine');
+        const mineGrid = document.getElementById('bb-photo-mine-grid');
+
+        async function refreshMine() {
+          if (!mineWrap || !mineGrid) return;
+          try {
+            const res = await fetch('/api/barber/photos/mine', {
+              credentials: 'same-origin',
+            });
+            const data = await res.json();
+            if (!res.ok || !data.ok || !Array.isArray(data.photos)) {
+              mineWrap.hidden = true;
+              return;
+            }
+            const photos = data.photos;
+            if (photos.length === 0) {
+              mineWrap.hidden = true;
+              mineGrid.innerHTML = '';
+              return;
+            }
+            mineWrap.hidden = false;
+            mineGrid.innerHTML = '';
+            for (const p of photos) {
+              const li = document.createElement('li');
+              li.className = 'bb-photo-mine__item';
+              li.setAttribute('data-pathname', p.pathname);
+
+              const img = document.createElement('img');
+              img.className = 'bb-photo-mine__thumb';
+              img.src = p.url;
+              img.alt = '';
+              img.loading = 'lazy';
+              li.appendChild(img);
+
+              const btn = document.createElement('button');
+              btn.type = 'button';
+              btn.className = 'bb-photo-mine__delete';
+              btn.setAttribute('aria-label', 'Delete this photo');
+              btn.textContent = '✕';
+              btn.addEventListener('click', () => deleteMine(p.pathname, li, btn));
+              li.appendChild(btn);
+
+              mineGrid.appendChild(li);
+            }
+          } catch {
+            // Silent — leave whatever was there last render.
+          }
+        }
+
+        async function deleteMine(pathname, li, btn) {
+          if (!confirm('Delete this photo from the gallery? Customers won’t see it anymore.')) {
+            return;
+          }
+          btn.disabled = true;
+          const originalLabel = btn.textContent;
+          btn.textContent = '…';
+          try {
+            const res = await fetch('/api/barber/photos/delete', {
+              method: 'POST',
+              credentials: 'same-origin',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ pathname: pathname }),
+            });
+            const data = await res.json();
+            if (!res.ok || !data.ok) {
+              alert((data && data.error && data.error.detail) || 'Could not delete.');
+              btn.disabled = false;
+              btn.textContent = originalLabel;
+              return;
+            }
+            li.remove();
+            // If the grid is now empty, collapse the section.
+            if (mineGrid && !mineGrid.querySelector('[data-pathname]')) {
+              if (mineWrap) mineWrap.hidden = true;
+            }
+          } catch {
+            alert('Network error. Try again.');
+            btn.disabled = false;
+            btn.textContent = originalLabel;
+          }
+        }
+
+        refreshMine();
       })();
 
       // ---------- Schedule from waitlist ----------
