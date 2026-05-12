@@ -12,6 +12,11 @@ import {
   getEntryBarberPicks,
   type WaitlistEntry,
 } from '../../lib/marketing/waitlistLog';
+import {
+  formatWaitlistDays,
+  formatWaitlistTimes,
+  formatWaitlistWindow,
+} from '../../lib/marketing/waitlistFormat';
 import { SquareApiError } from '../../lib/square/client';
 import type { Booking, Customer } from '../../lib/square/types';
 import '../../styles/barber.css';
@@ -278,6 +283,11 @@ interface WaitlistRow {
    *  individual barbers don't see no-preference entries. */
   requestedBarbers: string[];
   preferredDate?: string;
+  /** Customer's available-window dates from the join form. Surfaced
+   *  on the card as the "When" row so the barber sees the actual
+   *  date the customer wants, not just the day-of-week digest. */
+  dateFrom?: string;
+  dateTo?: string;
   daysOfWeek: string[];
   timesOfDay: string[];
   note: string;
@@ -298,6 +308,8 @@ const waitlistRows: WaitlistRow[] = waitlist
       serviceName: e.serviceName,
       requestedBarbers: picks.map((p) => p.displayName),
       preferredDate: e.preferredDate,
+      dateFrom: e.dateFrom,
+      dateTo: e.dateTo,
       daysOfWeek: e.daysOfWeek ?? [],
       timesOfDay: e.timesOfDay ?? [],
       note: e.note ?? '',
@@ -543,8 +555,12 @@ Astro.response.headers.append('Set-Cookie', refreshBarberSessionCookie(session))
                     </div>
                   )}
                   {w.preferredDate && <div><dt>Preferred</dt><dd>{w.preferredDate}</dd></div>}
-                  {w.daysOfWeek.length > 0 && <div><dt>Days</dt><dd>{w.daysOfWeek.join(', ')}</dd></div>}
-                  {w.timesOfDay.length > 0 && <div><dt>Times</dt><dd>{w.timesOfDay.join(', ')}</dd></div>}
+                  {(() => {
+                    const window = formatWaitlistWindow(w.dateFrom, w.dateTo);
+                    return window ? <div><dt>When</dt><dd>{window}</dd></div> : null;
+                  })()}
+                  <div><dt>Days</dt><dd>{formatWaitlistDays(w.daysOfWeek)}</dd></div>
+                  <div><dt>Times</dt><dd>{formatWaitlistTimes(w.timesOfDay)}</dd></div>
                   {w.note && <div><dt>Note</dt><dd>{w.note}</dd></div>}
                   {w.adminNote && <div><dt>Shop note</dt><dd>{w.adminNote}</dd></div>}
                   {w.customerEmail && <div><dt>Email</dt><dd>{w.customerEmail}</dd></div>}
