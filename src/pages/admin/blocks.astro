@@ -1,0 +1,481 @@
+---
+export const prerender = false;
+
+import { checkBasicAuth } from '../../lib/admin/auth';
+import { listBlockedPhones, type BlockedEntry } from '../../lib/customer/blockedCustomers';
+
+const auth = checkBasicAuth(Astro.request);
+if (!auth.ok) {
+  return auth.challenge;
+}
+
+let initialEntries: BlockedEntry[] = [];
+let loadError: string | null = null;
+try {
+  initialEntries = await listBlockedPhones();
+} catch (err) {
+  loadError = err instanceof Error ? err.message : String(err);
+}
+
+function fmtPhone(e164: string): string {
+  // Pretty-print +1XXXXXXXXXX as (XXX) XXX-XXXX. Leaves other formats
+  // alone — we only handle the US case the rest of the codebase emits.
+  const m = /^\+1(\d{3})(\d{3})(\d{4})$/.exec(e164);
+  if (!m) return e164;
+  return `(${m[1]}) ${m[2]}-${m[3]}`;
+}
+
+function fmtDate(iso: string): string {
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return iso;
+  return new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York',
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  }).format(d);
+}
+---
+
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>Blocked customers — Admin</title>
+    <style>
+      :root {
+        --bg: #0b0a08;
+        --surface: #161311;
+        --surface-2: #1d1916;
+        --border: #2a2520;
+        --text: #f3ece0;
+        --muted: #b0a695;
+        --dim: #80776a;
+        --gold: #c9a35c;
+        --danger: #e07258;
+        --danger-bg: rgba(220, 80, 60, 0.1);
+        --ok: #a4d091;
+        --ok-bg: rgba(122, 184, 110, 0.12);
+      }
+      *, *::before, *::after { box-sizing: border-box; }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font: 16px/1.5 ui-sans-serif, system-ui, sans-serif;
+      }
+      .wrap { max-width: 60rem; margin: 0 auto; padding: clamp(20px, 4vw, 32px) clamp(16px, 4vw, 24px); }
+      .topnav {
+        display: flex;
+        gap: 1.25rem;
+        align-items: center;
+        flex-wrap: wrap;
+        padding-bottom: 14px;
+        margin-bottom: 22px;
+        border-bottom: 1px solid var(--border);
+        font-size: 0.74rem;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+      }
+      .topnav a {
+        color: var(--muted);
+        text-decoration: none;
+        padding-bottom: 4px;
+      }
+      .topnav a.active { color: var(--gold); border-bottom: 2px solid var(--gold); }
+      .topnav a:hover { color: var(--gold); }
+      h1 {
+        font-family: Georgia, serif;
+        font-weight: 400;
+        font-size: clamp(1.5rem, 4vw, 1.9rem);
+        margin: 0 0 6px;
+      }
+      .sub { color: var(--muted); font-size: 0.95rem; margin: 0 0 24px; }
+
+      .panel {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: clamp(16px, 3vw, 22px);
+        margin-bottom: 22px;
+      }
+      .panel h2 {
+        font-family: Georgia, serif;
+        font-weight: 400;
+        font-size: 1.15rem;
+        margin: 0 0 14px;
+      }
+
+      form#blockForm {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 12px;
+      }
+      @media (min-width: 640px) {
+        form#blockForm {
+          grid-template-columns: 1fr 1fr auto;
+          align-items: end;
+        }
+      }
+      .field { display: flex; flex-direction: column; gap: 6px; }
+      .field label {
+        font-size: 0.72rem;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: var(--muted);
+      }
+      .field input {
+        appearance: none;
+        background: var(--bg);
+        color: var(--text);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        padding: 11px 12px;
+        font: inherit;
+        font-size: 1rem;
+        min-height: 44px;
+      }
+      .field input:focus {
+        outline: none;
+        border-color: var(--gold);
+      }
+
+      .btn {
+        appearance: none;
+        background: var(--gold);
+        color: #1a140a;
+        border: 1px solid var(--gold);
+        padding: 11px 18px;
+        font: inherit;
+        font-size: 0.8rem;
+        font-weight: 700;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        border-radius: 6px;
+        cursor: pointer;
+        min-height: 44px;
+      }
+      .btn:disabled { opacity: 0.55; cursor: not-allowed; }
+      .btn--danger {
+        background: transparent;
+        color: var(--danger);
+        border-color: rgba(220, 80, 60, 0.4);
+        padding: 8px 12px;
+        font-size: 0.72rem;
+        min-height: 36px;
+      }
+      .btn--danger:hover { background: var(--danger-bg); }
+
+      .flash {
+        margin-top: 12px;
+        padding: 10px 14px;
+        border-radius: 6px;
+        font-size: 0.92rem;
+        display: none;
+      }
+      .flash--ok { display: block; background: var(--ok-bg); color: var(--ok); border: 1px solid rgba(122, 184, 110, 0.4); }
+      .flash--info { display: block; background: rgba(201, 163, 92, 0.08); color: #e6c785; border: 1px solid rgba(201, 163, 92, 0.4); }
+      .flash--err { display: block; background: var(--danger-bg); color: var(--danger); border: 1px solid rgba(220, 80, 60, 0.4); }
+
+      .table-scroll {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        background: var(--surface);
+      }
+      table {
+        width: 100%;
+        min-width: 560px;
+        border-collapse: collapse;
+        font-size: 0.94rem;
+      }
+      th, td {
+        padding: 11px 14px;
+        text-align: left;
+        border-bottom: 1px solid var(--border);
+        vertical-align: middle;
+        white-space: nowrap;
+      }
+      td.reason { white-space: normal; word-break: break-word; color: var(--muted); }
+      th {
+        font-size: 0.7rem;
+        font-weight: 700;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: var(--muted);
+        background: var(--surface);
+      }
+      tr:last-child td { border-bottom: none; }
+      tr:hover td { background: var(--surface-2); }
+      td.phone {
+        font-family: ui-monospace, Menlo, monospace;
+        font-size: 0.92rem;
+      }
+      td.date { color: var(--dim); font-size: 0.86rem; }
+      .empty {
+        padding: 22px 18px;
+        text-align: center;
+        color: var(--dim);
+      }
+      .err {
+        background: var(--danger-bg);
+        border: 1px solid rgba(220, 80, 60, 0.4);
+        color: #f0a37a;
+        padding: 12px 16px;
+        border-radius: 6px;
+        margin-bottom: 22px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <nav class="topnav">
+        <a href="/admin">Admin</a>
+        <a href="/admin/today">Today</a>
+        <a href="/admin/bookings">Bookings</a>
+        <a href="/admin/customers">Customers</a>
+        <a href="/admin/waitlist">Waitlist</a>
+        <a href="/admin/blocks" class="active">Blocks</a>
+        <a href="/admin/reviews">Reviews</a>
+      </nav>
+
+      <h1>Blocked customers</h1>
+      <p class="sub">
+        Phone numbers added here are refused at the booking step with a
+        generic "please call the shop" message. The customer is not told
+        they've been blocked.
+      </p>
+
+      {loadError && <div class="err">Couldn't load the block list: {loadError}</div>}
+
+      <section class="panel">
+        <h2>Block a phone</h2>
+        <form id="blockForm" novalidate>
+          <div class="field">
+            <label for="phone">Phone</label>
+            <input
+              id="phone"
+              name="phone"
+              type="tel"
+              autocomplete="off"
+              inputmode="tel"
+              placeholder="(740) 555-0123"
+              required
+            />
+          </div>
+          <div class="field">
+            <label for="reason">Reason (optional)</label>
+            <input
+              id="reason"
+              name="reason"
+              type="text"
+              autocomplete="off"
+              placeholder="No-show repeat"
+              maxlength="200"
+            />
+          </div>
+          <button type="submit" class="btn" id="blockSubmit">Block</button>
+        </form>
+        <div id="flash" class="flash" role="status" aria-live="polite"></div>
+      </section>
+
+      <section class="panel">
+        <h2>Currently blocked (<span id="countCell">{initialEntries.length}</span>)</h2>
+        <div class="table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>Phone</th>
+                <th>Reason</th>
+                <th>Blocked at</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="rows">
+              {initialEntries.length === 0 && (
+                <tr><td class="empty" colspan="4">No customers are blocked.</td></tr>
+              )}
+              {initialEntries.map((e) => (
+                <tr data-phone={e.phone}>
+                  <td class="phone">{fmtPhone(e.phone)}</td>
+                  <td class="reason">{e.reason ?? '—'}</td>
+                  <td class="date">{fmtDate(e.blockedAt)}</td>
+                  <td>
+                    <button type="button" class="btn btn--danger" data-action="remove">Remove</button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+
+    <script is:inline>
+      (function () {
+        const form = document.getElementById('blockForm');
+        const phoneInput = document.getElementById('phone');
+        const reasonInput = document.getElementById('reason');
+        const submitBtn = document.getElementById('blockSubmit');
+        const flash = document.getElementById('flash');
+        const rows = document.getElementById('rows');
+        const countCell = document.getElementById('countCell');
+
+        function showFlash(kind, msg) {
+          flash.className = 'flash flash--' + kind;
+          flash.textContent = msg;
+        }
+        function clearFlash() {
+          flash.className = 'flash';
+          flash.textContent = '';
+        }
+
+        function fmtPhone(e164) {
+          const m = /^\+1(\d{3})(\d{3})(\d{4})$/.exec(e164);
+          return m ? '(' + m[1] + ') ' + m[2] + '-' + m[3] : e164;
+        }
+        function fmtDate(iso) {
+          const d = new Date(iso);
+          if (isNaN(d.getTime())) return iso;
+          return new Intl.DateTimeFormat('en-US', {
+            timeZone: 'America/New_York',
+            month: 'short',
+            day: 'numeric',
+            year: 'numeric',
+            hour: 'numeric',
+            minute: '2-digit',
+            hour12: true,
+          }).format(d);
+        }
+
+        async function refreshList() {
+          const res = await fetch('/api/admin/blocks', {
+            method: 'GET',
+            credentials: 'same-origin',
+          });
+          if (!res.ok) {
+            showFlash('err', "Couldn't reload the list. Refresh the page.");
+            return;
+          }
+          const data = await res.json();
+          renderRows(data.entries || []);
+        }
+
+        function renderRows(entries) {
+          countCell.textContent = String(entries.length);
+          if (entries.length === 0) {
+            rows.innerHTML = '<tr><td class="empty" colspan="4">No customers are blocked.</td></tr>';
+            return;
+          }
+          rows.innerHTML = entries
+            .map(function (e) {
+              const phone = fmtPhone(e.phone);
+              const reason = e.reason ? escapeHtml(e.reason) : '—';
+              const date = fmtDate(e.blockedAt);
+              return (
+                '<tr data-phone="' + escapeAttr(e.phone) + '">' +
+                  '<td class="phone">' + escapeHtml(phone) + '</td>' +
+                  '<td class="reason">' + reason + '</td>' +
+                  '<td class="date">' + escapeHtml(date) + '</td>' +
+                  '<td><button type="button" class="btn btn--danger" data-action="remove">Remove</button></td>' +
+                '</tr>'
+              );
+            })
+            .join('');
+        }
+
+        function escapeHtml(s) {
+          return String(s)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+        }
+        function escapeAttr(s) {
+          return escapeHtml(s);
+        }
+
+        form.addEventListener('submit', async function (ev) {
+          ev.preventDefault();
+          clearFlash();
+          const phone = phoneInput.value.trim();
+          const reason = reasonInput.value.trim();
+          if (!phone) {
+            showFlash('err', 'Phone is required.');
+            return;
+          }
+          submitBtn.disabled = true;
+          submitBtn.textContent = 'Blocking…';
+          try {
+            const res = await fetch('/api/admin/blocks', {
+              method: 'POST',
+              credentials: 'same-origin',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ phone: phone, reason: reason || undefined }),
+            });
+            const data = await res.json().catch(function () { return {}; });
+            if (!res.ok || !data.ok) {
+              const detail = (data && data.error && data.error.detail) || 'Failed to block.';
+              showFlash('err', detail);
+              return;
+            }
+            const stored = data.entry && data.entry.phone ? data.entry.phone : phone;
+            if (data.added) {
+              showFlash('ok', 'Blocked ' + fmtPhone(stored) + '.');
+              phoneInput.value = '';
+              reasonInput.value = '';
+            } else {
+              showFlash('info', fmtPhone(stored) + ' is already blocked — no changes made.');
+            }
+            await refreshList();
+          } catch (err) {
+            showFlash('err', err && err.message ? err.message : 'Network error.');
+          } finally {
+            submitBtn.disabled = false;
+            submitBtn.textContent = 'Block';
+          }
+        });
+
+        rows.addEventListener('click', async function (ev) {
+          const btn = ev.target.closest('button[data-action="remove"]');
+          if (!btn) return;
+          const tr = btn.closest('tr');
+          const phone = tr && tr.getAttribute('data-phone');
+          if (!phone) return;
+          if (!confirm('Remove ' + fmtPhone(phone) + ' from the block list?')) return;
+          btn.disabled = true;
+          btn.textContent = 'Removing…';
+          clearFlash();
+          try {
+            const res = await fetch('/api/admin/blocks', {
+              method: 'DELETE',
+              credentials: 'same-origin',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ phone: phone }),
+            });
+            const data = await res.json().catch(function () { return {}; });
+            if (!res.ok || !data.ok) {
+              const detail = (data && data.error && data.error.detail) || 'Failed to remove.';
+              showFlash('err', detail);
+              btn.disabled = false;
+              btn.textContent = 'Remove';
+              return;
+            }
+            showFlash('ok', 'Removed ' + fmtPhone(phone) + '.');
+            await refreshList();
+          } catch (err) {
+            showFlash('err', err && err.message ? err.message : 'Network error.');
+            btn.disabled = false;
+            btn.textContent = 'Remove';
+          }
+        });
+      })();
+    </script>
+  </body>
+</html>
