@@ -198,11 +198,13 @@
   gap: 4px;
   border-bottom: 1px solid var(--bb-border);
   margin-bottom: 18px;
-  overflow-x: auto;
 }
 .bb-tab {
+  flex: 1;
+  min-width: 0;
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 8px;
   padding: 10px 16px;
   font-size: 0.78rem;
@@ -238,6 +240,24 @@
 .bb-tab.is-active .bb-tab__count {
   background: var(--bb-gold);
   color: #1a140a;
+}
+/* Phone-width: tighten everything so three (or four) tabs fit a
+   390px viewport without horizontal scroll. The uppercase +
+   letter-spacing combo eats most of the row width; keep the
+   uppercase but drop most of the spacing on small screens. */
+@media (max-width: 480px) {
+  .bb-tab {
+    gap: 4px;
+    padding: 10px 6px;
+    font-size: 0.72rem;
+    letter-spacing: 0.04em;
+  }
+  .bb-tab__count {
+    min-width: 1.15rem;
+    height: 1.15rem;
+    padding: 0 4px;
+    font-size: 0.65rem;
+  }
 }
 
 /* ---------- Filters ---------- */
