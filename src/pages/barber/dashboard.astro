@@ -398,11 +398,16 @@ Astro.response.headers.append('Set-Cookie', refreshBarberSessionCookie(session))
         </header>
         <form id="bb-photo-form" class="bb-photo-upload__form">
           <label class="bb-photo-upload__picker">
+            {/* No `capture` — iOS treats the attribute as a force-
+                to-camera hint, which hides the Photo Library option.
+                With just `accept="image/*"`, iOS shows the standard
+                three-way sheet (Photo Library / Take Photo / Choose
+                File) so a barber can either snap a new one or grab
+                an existing photo from their roll. */}
             <input
               type="file"
               id="bb-photo-input"
               accept="image/*"
-              capture="environment"
               multiple
             />
             <span class="bb-btn bb-btn--ghost bb-btn--sm">
@@ -670,6 +675,10 @@ Astro.response.headers.append('Set-Cookie', refreshBarberSessionCookie(session))
 
         <form class="bb-timeoff__form" id="bb-timeoff-one-off">
           <h3 class="bb-timeoff__form-head">Add a one-off block</h3>
+          <label class="bb-timeoff__all-day">
+            <input type="checkbox" data-all-day name="allDay" />
+            <span>All day</span>
+          </label>
           <div class="bb-timeoff__row">
             <label class="bb-timeoff__field">
               <span>Date</span>
@@ -705,6 +714,10 @@ Astro.response.headers.append('Set-Cookie', refreshBarberSessionCookie(session))
             <label><input type="checkbox" name="dow" value="fri" /> Fri</label>
             <label><input type="checkbox" name="dow" value="sat" /> Sat</label>
           </fieldset>
+          <label class="bb-timeoff__all-day">
+            <input type="checkbox" data-all-day name="allDay" />
+            <span>All day</span>
+          </label>
           <div class="bb-timeoff__row">
             <label class="bb-timeoff__field">
               <span>From</span>
@@ -1441,13 +1454,41 @@ Astro.response.headers.append('Set-Cookie', refreshBarberSessionCookie(session))
           el.hidden = !msg;
         }
 
+        // Wire "All day" checkboxes: when checked, disable the
+        // From / To time inputs in the same form (visual cue +
+        // bypasses the browser's required-field check). The submit
+        // handler also overrides the values to 00:00 / 23:59.
+        function wireAllDay(form) {
+          if (!form) return;
+          const cb = form.querySelector('[data-all-day]');
+          if (!cb) return;
+          const startEl = form.querySelector('input[name="startTime"]');
+          const endEl = form.querySelector('input[name="endTime"]');
+          const sync = () => {
+            const off = cb.checked;
+            if (startEl) {
+              startEl.disabled = off;
+              startEl.required = !off;
+            }
+            if (endEl) {
+              endEl.disabled = off;
+              endEl.required = !off;
+            }
+          };
+          cb.addEventListener('change', sync);
+          sync();
+        }
+        wireAllDay(oneOffForm);
+        wireAllDay(recurringForm);
+
         if (oneOffForm) {
           oneOffForm.addEventListener('submit', async (e) => {
             e.preventDefault();
             const fd = new FormData(oneOffForm);
             const date = String(fd.get('date') || '').trim();
-            const startTime = String(fd.get('startTime') || '').trim();
-            const endTime = String(fd.get('endTime') || '').trim();
+            const allDay = String(fd.get('allDay') || '') === 'on';
+            const startTime = allDay ? '00:00' : String(fd.get('startTime') || '').trim();
+            const endTime = allDay ? '23:59' : String(fd.get('endTime') || '').trim();
             const note = String(fd.get('note') || '').trim();
             if (!date || !startTime || !endTime) {
               showStatus(oneOffForm, 'Date and times are required.', 'error');
@@ -1505,8 +1546,9 @@ Astro.response.headers.append('Set-Cookie', refreshBarberSessionCookie(session))
             e.preventDefault();
             const fd = new FormData(recurringForm);
             const days = fd.getAll('dow').map((v) => String(v));
-            const startTime = String(fd.get('startTime') || '').trim();
-            const endTime = String(fd.get('endTime') || '').trim();
+            const allDay = String(fd.get('allDay') || '') === 'on';
+            const startTime = allDay ? '00:00' : String(fd.get('startTime') || '').trim();
+            const endTime = allDay ? '23:59' : String(fd.get('endTime') || '').trim();
             const startsOn = String(fd.get('startsOn') || '').trim();
             const endsOn = String(fd.get('endsOn') || '').trim();
             const note = String(fd.get('note') || '').trim();
