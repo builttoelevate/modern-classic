@@ -22,6 +22,17 @@ export interface CustomerInfo {
    * under GDPR/CAN-SPAM best practice.
    */
   marketingConsent: boolean;
+  /**
+   * When the customer flips Step 4's "Who is this appointment for?"
+   * radio to "Someone else", the kid's first name lives here. null
+   * means "booking for me" — the existing single-record flow. When
+   * present, the server creates (or matches via listLinkedPeople
+   * dedupe) a kid customer record under the adult and books the
+   * appointment under the kid. Adult fields (givenName/familyName/
+   * email/phone) stay on the parent record so magic-link sign-in
+   * still works for the parent.
+   */
+  bookingFor: { givenName: string } | null;
 }
 
 /** Card-capture step (Step 4.5) — only relevant for new customers. */
@@ -120,6 +131,7 @@ export const initialCustomer: CustomerInfo = {
   note: '',
   updateContact: false,
   marketingConsent: false,
+  bookingFor: null,
 };
 
 export const initialSeries: SeriesState = {
@@ -475,6 +487,9 @@ export function customerInfoValid(c: CustomerInfo): boolean {
   if (!/^\S+@\S+\.\S+$/.test(c.email.trim())) return false;
   if (digits(c.phone).length !== 10) return false;
   if (c.note.length > 500) return false;
+  // When "Someone else" is selected, the kid's first name is also
+  // required. Last name is optional in v1.
+  if (c.bookingFor && !c.bookingFor.givenName.trim()) return false;
   return true;
 }
 

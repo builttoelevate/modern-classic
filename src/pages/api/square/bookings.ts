@@ -1,6 +1,6 @@
 import type { APIRoute } from 'astro';
 import { SquareApiError } from '../../../lib/square/client';
-import { findOrCreateCustomer, getCustomerById, type MarketingConsentDecision } from '../../../lib/square/customers';
+import { createCustomer, findOrCreateCustomer, getCustomerById, type MarketingConsentDecision } from '../../../lib/square/customers';
 import {
   CustomerBlockedError,
   assertPhoneNotBlocked,
@@ -10,7 +10,7 @@ import { createBooking } from '../../../lib/square/bookings';
 import { bookingIdempotencyKey } from '../../../lib/booking/idempotency';
 import { customerInitials, logBooking, redactEmail } from '../../../lib/booking/log';
 import { getSession } from '../../../lib/auth/middleware';
-import { listLinkedPeople } from '../../../lib/customer/profileLinks';
+import { linkPerson, listLinkedPeople } from '../../../lib/customer/profileLinks';
 import { createBookingCardRecord } from '../../../lib/booking/cardIndex';
 import { getCard } from '../../../lib/square/cards';
 import type {
@@ -100,6 +100,15 @@ function validate(p: unknown): string | null {
   if (!r.customer?.phone) return 'customer.phone is required';
   if (r.customer.phone.replace(/\D/g, '').length < 10) return 'customer.phone must be 10 digits';
   if (r.customer.note && r.customer.note.length > 500) return 'customer.note exceeds 500 chars';
+  if (r.customer.bookingFor !== undefined) {
+    if (typeof r.customer.bookingFor !== 'object' || r.customer.bookingFor === null) {
+      return 'customer.bookingFor must be an object';
+    }
+    if (typeof r.customer.bookingFor.givenName !== 'string' ||
+        !r.customer.bookingFor.givenName.trim()) {
+      return 'customer.bookingFor.givenName is required';
+    }
+  }
   return null;
 }
 
@@ -325,6 +334,113 @@ export const POST: APIRoute = async ({ request }) => {
         return blockedBookingPublicResponse();
       }
       throw err;
+    }
+
+    // "Someone else" gate from Step 4 — bookingFor in the request
+    // means the contact fields above belong to the ADULT (now
+    // resolvedCustomerId), and the booking itself should be created
+    // under a CHILD record linked to that adult.
+    //
+    // 1. Dedupe by normalized first name against the adult's existing
+    //    linked people — repeat kid bookings reuse the same kid record
+    //    instead of spawning a fresh one each visit.
+    // 2. If nothing matched, create the kid (name + parent's phone,
+    //    empty email — kids aren't sign-in candidates) and write the
+    //    link record so /my-bookings can show this booking under the
+    //    parent.
+    // 3. Swap resolvedCustomerId so the createBooking below targets
+    //    the kid, not the adult.
+    //
+    // Suppressed when existingCustomerId is set — that path is for
+    // rebook/reschedule, where the booking inherits the existing
+    // customer relationship and the radio gate doesn't apply.
+    if (
+      payload.customer.bookingFor &&
+      payload.customer.bookingFor.givenName.trim() &&
+      !(payload.existingCustomerId && payload.existingCustomerId.trim())
+    ) {
+      const kidGivenName = payload.customer.bookingFor.givenName.trim();
+      const normalized = kidGivenName.toLowerCase();
+      const adultCustomerId = resolvedCustomerId;
+
+      let kidCustomerId: string | null = null;
+      try {
+        const linked = await listLinkedPeople(adultCustomerId);
+        const match = linked.find((p) => {
+          const first = p.displayName.trim().split(/\s+/)[0] ?? '';
+          return first.toLowerCase() === normalized;
+        });
+        if (match) {
+          kidCustomerId = match.customerId;
+          logBooking({
+            phase: 'booking-for-kid-reused-link',
+            attemptId,
+            adultCustomerId,
+            kidCustomerId,
+            kidGivenName,
+          });
+        }
+      } catch {
+        // KV outage: fall through to creating a fresh kid record.
+        // A duplicate is recoverable; a failed booking is not.
+      }
+
+      if (!kidCustomerId) {
+        try {
+          const kid = await createCustomer({
+            givenName: kidGivenName,
+            familyName: '',
+            email: '',
+            phone: payload.customer.phone,
+          });
+          kidCustomerId = kid.id;
+          try {
+            await linkPerson(adultCustomerId, {
+              customerId: kid.id,
+              displayName: kidGivenName,
+              relationship: undefined,
+              linkedAt: new Date().toISOString(),
+            });
+          } catch (linkErr) {
+            // Link write failed but the kid record exists in Square
+            // and the booking should still go through under it. The
+            // adult just won't see this booking on /my-bookings until
+            // the link is repaired (admin can re-link in
+            // /admin/customers). Log loud so we notice.
+            logBooking({
+              phase: 'booking-for-kid-link-write-failed',
+              attemptId,
+              adultCustomerId,
+              kidCustomerId: kid.id,
+              detail: linkErr instanceof Error ? linkErr.message : String(linkErr),
+            });
+          }
+          logBooking({
+            phase: 'booking-for-kid-created',
+            attemptId,
+            adultCustomerId,
+            kidCustomerId,
+            kidGivenName,
+          });
+        } catch (createErr) {
+          logBooking({
+            phase: 'booking-for-kid-create-failed',
+            attemptId,
+            adultCustomerId,
+            kidGivenName,
+            detail: createErr instanceof Error ? createErr.message : String(createErr),
+          });
+          return fail(
+            502,
+            'KID_CUSTOMER_CREATE_FAILED',
+            createErr instanceof Error
+              ? createErr.message
+              : "Couldn't create the kid's customer record.",
+          );
+        }
+      }
+
+      resolvedCustomerId = kidCustomerId;
     }
 
     // Run the booking creation and marketing consent application in

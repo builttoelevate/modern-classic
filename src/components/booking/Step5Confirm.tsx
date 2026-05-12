@@ -357,8 +357,20 @@ export function Step5Confirm({
         </div>
         {!rescheduleMode && (
           <>
+            {customer.bookingFor && customer.bookingFor.givenName.trim() && (
+              <div className="bw-summary-row">
+                <span className="bw-summary-label">For</span>
+                <span className="bw-summary-value">
+                  {customer.bookingFor.givenName.trim()}
+                </span>
+              </div>
+            )}
             <div className="bw-summary-row">
-              <span className="bw-summary-label">Name</span>
+              <span className="bw-summary-label">
+                {customer.bookingFor && customer.bookingFor.givenName.trim()
+                  ? 'Contact'
+                  : 'Name'}
+              </span>
               <span className="bw-summary-value">{customer.givenName} {customer.familyName}</span>
             </div>
             <div className="bw-summary-row">

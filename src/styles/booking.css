@@ -844,6 +844,69 @@
   text-align: right;
 }
 
+/* "Who is this appointment for?" radio gate on Step 4. Sits above
+   the contact-info fields and reveals the kid-name field when
+   "Someone else" is chosen. */
+.bw-booking-for {
+  border: 1px solid var(--color-border-soft);
+  border-radius: 6px;
+  padding: 0.9rem 1rem;
+  margin: 0 0 1.1rem;
+  background: rgba(201, 163, 92, 0.04);
+  display: grid;
+  gap: 0.6rem;
+}
+.bw-booking-for legend {
+  padding: 0 0.4rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+}
+.bw-booking-for__choices {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+.bw-radio {
+  flex: 1 1 130px;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.55rem 0.85rem;
+  border: 1px solid var(--color-border);
+  border-radius: 5px;
+  background: rgba(0, 0, 0, 0.15);
+  cursor: pointer;
+  user-select: none;
+  transition: border-color 120ms ease, background 120ms ease, color 120ms ease;
+}
+.bw-radio:hover { border-color: var(--color-gold); }
+.bw-radio--selected {
+  border-color: var(--color-gold);
+  background: rgba(201, 163, 92, 0.12);
+  color: var(--color-text);
+}
+.bw-radio input[type='radio'] { accent-color: var(--color-gold); }
+.bw-booking-for__helper {
+  margin: 0;
+  font-size: 0.85rem;
+  line-height: 1.45;
+  color: var(--color-text-muted);
+}
+
+/* Section headings between "Your info" + "Who's the appointment for?"
+   when the radio is set to Someone else. */
+.bw-section-head {
+  margin: 0.6rem 0 0.1rem;
+  font-family: var(--font-display, serif);
+  font-size: 1rem;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  color: var(--color-text);
+}
+
 /* Marketing consent checkbox (Phase 7). Subtle, optional-feeling. */
 .bw-consent {
   display: flex;
