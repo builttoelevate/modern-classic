@@ -1149,13 +1149,18 @@ Astro.response.headers.append('Set-Cookie', refreshBarberSessionCookie(session))
           }
           it.label = 'Uploading…';
           renderQueue();
-          const fd = new FormData();
-          fd.append('photo', prepared.blob, prepared.filename);
+          // Raw-body POST (not multipart). iOS Safari's multipart
+          // encoder occasionally throws DOMException ("The string
+          // did not match the expected pattern.") on lazy iOS Photos
+          // File objects; sending the bytes directly bypasses that
+          // entire layer. The server reads Content-Type for the
+          // MIME and request.arrayBuffer() for the body.
           try {
             const res = await fetch('/api/barber/photos/upload', {
               method: 'POST',
               credentials: 'same-origin',
-              body: fd,
+              headers: { 'Content-Type': prepared.mime },
+              body: prepared.blob,
             });
             const data = await res.json();
             if (!res.ok || !data.ok) {
