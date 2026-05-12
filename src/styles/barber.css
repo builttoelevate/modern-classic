@@ -451,6 +451,29 @@
   background: transparent;
 }
 .bb-btn--sm { padding: 5px 10px; font-size: 0.7rem; letter-spacing: 0.1em; }
+.bb-btn--danger {
+  background: transparent;
+  color: #e07258;
+  border-color: rgba(220, 80, 60, 0.45);
+}
+.bb-btn--danger:hover {
+  background: rgba(220, 80, 60, 0.1);
+  color: #f0a37a;
+  border-color: rgba(220, 80, 60, 0.7);
+}
+
+.bb-filters--barber { margin-top: -12px; }
+
+.bb-owner-note {
+  margin: 0 0 16px;
+  padding: 10px 14px;
+  background: rgba(201, 163, 92, 0.08);
+  border: 1px solid rgba(201, 163, 92, 0.4);
+  color: #e6c785;
+  border-radius: 6px;
+  font-size: 0.88rem;
+}
+.bb-owner-note a { color: inherit; text-decoration: underline; }
 
 /* ---------- Errors / messages ---------- */
 .bb-err {

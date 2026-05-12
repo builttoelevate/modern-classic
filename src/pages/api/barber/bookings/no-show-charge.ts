@@ -1,13 +1,23 @@
-// "Mark no-show & charge" — fired from /admin/bookings when Michael
-// notices a customer didn't show.
+// Barber-initiated no-show charge. Owner-only — the gate is the
+// shop's owner role (set via ROLE_BY_ID in src/lib/square/team.ts).
+// Regular barbers report no-shows to Michael verbally; only he can
+// fire the actual charge.
 //
-// Thin wrapper over chargeNoShowBooking() in src/lib/booking/noShowCharge.ts.
-// Auth: HTTP Basic Auth (admin). The barber-side endpoint at
-// /api/barber/bookings/no-show-charge.ts uses the same helper with a
-// session-cookie + owner-role gate.
+// Authorization differs from the other /api/barber/bookings/*
+// endpoints: cancel/reschedule check `booking.team_member_id ===
+// session.barberId`. This one does NOT — the owner needs to act on
+// bookings assigned to other barbers, which is the entire point.
+// The role gate is the only ownership check.
+//
+// Logic is identical to /api/admin/bookings/no-show-charge — both
+// thin-wrap chargeNoShowBooking() in src/lib/booking/noShowCharge.ts.
 
 import type { APIRoute } from 'astro';
-import { checkBasicAuth } from '../../../../lib/admin/auth';
+import {
+  BarberAuthRequiredError,
+  requireBarberSession,
+} from '../../../../lib/auth/barberMiddleware';
+import { isBarberOwner } from '../../../../lib/auth/barberPermissions';
 import {
   NoShowChargeError,
   chargeNoShowBooking,
@@ -26,8 +36,17 @@ function fail(status: number, code: string, detail: string): Response {
 }
 
 export const POST: APIRoute = async ({ request }) => {
-  const auth = checkBasicAuth(request);
-  if (!auth.ok) return auth.challenge;
+  let session;
+  try {
+    session = requireBarberSession(request);
+  } catch (err) {
+    if (err instanceof BarberAuthRequiredError) return err.response;
+    throw err;
+  }
+
+  if (!(await isBarberOwner(session.barberId))) {
+    return fail(403, 'FORBIDDEN', 'Only the owner can charge no-shows.');
+  }
 
   let bookingId: string;
   try {
