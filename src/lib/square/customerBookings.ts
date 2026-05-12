@@ -5,7 +5,7 @@
 // display name (from team-members) so the UI doesn't have to do a second
 // round of lookups.
 
-import { squareFetch } from './client';
+import { squareFetch, SquareApiError } from './client';
 import { MODERN_CLASSIC_LOCATION_ID } from './locations';
 import { getServices } from './catalog';
 import { getBarbers } from './team';
@@ -277,6 +277,78 @@ const WINDOW_DAYS = 30;
 const PAST_WINDOWS = 6;
 const FUTURE_WINDOWS = 13;
 
+// Per-window retry config. Without this, a 429 (Square per-second
+// rate limit) or transient 5xx on any one of the 19 windows silently
+// drops that window's bookings via Promise.allSettled — and the next
+// /my-bookings refresh fires the same burst, fails a DIFFERENT
+// window, drops different bookings. Result: bookings flap in and
+// out of the list between refreshes. Family-account customers feel
+// this hardest: a 2-adult-1-kid family fires 57 windows per render.
+//
+// Retry budget keeps the worst case bounded: 3 attempts × (200ms +
+// jitter + 600ms + jitter + 1.5s + jitter) ≈ ~3s extra in the
+// absolute worst case, which is far better than the current
+// silent-drop behavior.
+const MAX_RETRIES = 3;
+const BACKOFF_BASE_MS = [200, 600, 1500];
+
+function logBookings(payload: Record<string, unknown>): void {
+  // eslint-disable-next-line no-console
+  console.log(`[BOOK] ${JSON.stringify({ ts: new Date().toISOString(), ...payload })}`);
+}
+
+/**
+ * Should we retry this error? Yes on 429 (rate limit), 5xx (Square
+ * transient), and AbortError-shaped network blips. No on 4xx other
+ * than 429 — those are programmer errors and retrying just delays
+ * the surfaced failure.
+ */
+function isRetryable(err: unknown): boolean {
+  if (err instanceof SquareApiError) {
+    if (err.status === 429) return true;
+    if (err.status >= 500 && err.status < 600) return true;
+    return false;
+  }
+  // Network blip (fetch threw, not a Square API status).
+  return true;
+}
+
+function backoffMs(attempt: number): number {
+  const base = BACKOFF_BASE_MS[attempt] ?? BACKOFF_BASE_MS[BACKOFF_BASE_MS.length - 1];
+  // Full jitter (AWS recommended pattern): random 0..base. Stops a
+  // burst of N windows that all 429ed at the same instant from
+  // retrying at the same instant.
+  return Math.floor(Math.random() * base);
+}
+
+async function fetchBookingsPage(
+  query: Record<string, string | number | undefined>,
+  windowLabel: string,
+): Promise<ListBookingsResponse> {
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      return await squareFetch<ListBookingsResponse>('/v2/bookings', { query });
+    } catch (err) {
+      if (attempt < MAX_RETRIES && isRetryable(err)) {
+        const delay = backoffMs(attempt);
+        logBookings({
+          phase: 'bookings-window-retry',
+          windowLabel,
+          attempt: attempt + 1,
+          status: err instanceof SquareApiError ? err.status : 'network',
+          delayMs: delay,
+        });
+        await new Promise((r) => setTimeout(r, delay));
+        continue;
+      }
+      throw err;
+    }
+  }
+  // Unreachable — last attempt either returned or threw above. The
+  // throw inside the catch block keeps the type narrow.
+  throw new Error('fetchBookingsPage exhausted retries without throwing — unreachable.');
+}
+
 async function fetchBookingsWindow(
   customerId: string,
   startAtMinMs: number,
@@ -284,6 +356,7 @@ async function fetchBookingsWindow(
 ): Promise<Booking[]> {
   const all: Booking[] = [];
   let cursor: string | undefined;
+  const windowLabel = `${new Date(startAtMinMs).toISOString().slice(0, 10)}..${new Date(startAtMaxMs).toISOString().slice(0, 10)}`;
   do {
     const query: Record<string, string | number | undefined> = {
       location_id: MODERN_CLASSIC_LOCATION_ID,
@@ -293,7 +366,7 @@ async function fetchBookingsWindow(
       start_at_max: new Date(startAtMaxMs).toISOString(),
       cursor,
     };
-    const res = await squareFetch<ListBookingsResponse>('/v2/bookings', { query });
+    const res = await fetchBookingsPage(query, `${customerId}@${windowLabel}`);
     all.push(...(res.bookings ?? []));
     cursor = res.cursor;
   } while (cursor);
