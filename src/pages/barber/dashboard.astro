@@ -278,10 +278,18 @@ interface WaitlistRow {
   customerPhoneE164: string;
   customerEmail: string;
   serviceName: string;
+  /** Square service-variation id resolved at customer submit-time.
+   *  Null on legacy entries pre-PR 8 — the Schedule button hides
+   *  for those (the barber can text the customer and book the
+   *  old way until the entry expires). */
+  serviceVariationId: string | null;
   /** Display names of every barber this entry requested. Empty array
    *  means "any barber" — only shown on the owner view since
    *  individual barbers don't see no-preference entries. */
   requestedBarbers: string[];
+  /** Square team-member ids parallel to requestedBarbers — used to
+   *  gate the Schedule button to the calling barber's own chair. */
+  requestedBarberIds: string[];
   preferredDate?: string;
   /** Customer's available-window dates from the join form. Surfaced
    *  on the card as the "When" row so the barber sees the actual
@@ -306,7 +314,9 @@ const waitlistRows: WaitlistRow[] = waitlist
       customerPhoneE164: (e.customerPhone || '').replace(/[^0-9+]/g, ''),
       customerEmail: e.customerEmail,
       serviceName: e.serviceName,
+      serviceVariationId: e.serviceVariationId,
       requestedBarbers: picks.map((p) => p.displayName),
+      requestedBarberIds: picks.map((p) => p.id),
       preferredDate: e.preferredDate,
       dateFrom: e.dateFrom,
       dateTo: e.dateTo,
@@ -523,8 +533,20 @@ Astro.response.headers.append('Set-Cookie', refreshBarberSessionCookie(session))
           </p>
         ) : (
           <ul class="bb-list">
-            {waitlistRows.map((w) => (
-              <li class="bb-card">
+            {waitlistRows.map((w) => {
+              // "Schedule" is available only when this entry can be
+              // booked under the CALLING barber's chair: either it
+              // asked for no specific barber (any-barber entry) OR
+              // the calling barber is one of the requested ones.
+              // Legacy entries without a resolved serviceVariationId
+              // are hidden too — see the field comment.
+              const canSchedule =
+                !!w.serviceVariationId &&
+                (w.requestedBarberIds.length === 0 ||
+                  w.requestedBarberIds.includes(session.barberId));
+              const firstName = w.customerName.trim().split(/\s+/)[0] || w.customerName;
+              return (
+              <li class="bb-card" data-waitlist-row={w.id}>
                 <div class="bb-card__row">
                   <strong>{w.customerName}</strong>
                   <span class={`bb-pill bb-pill--${w.status === 'contacted' ? 'pending' : 'ok'}`}>
@@ -544,6 +566,21 @@ Astro.response.headers.append('Set-Cookie', refreshBarberSessionCookie(session))
                         Text customer
                       </a>
                     </>
+                  )}
+                  {canSchedule && (
+                    <button
+                      type="button"
+                      class="bb-btn bb-btn--sm"
+                      data-schedule-btn
+                      data-entry-id={w.id}
+                      data-service-variation-id={w.serviceVariationId}
+                      data-service-name={w.serviceName}
+                      data-customer-first-name={firstName}
+                      data-date-from={w.dateFrom ?? ''}
+                      data-date-to={w.dateTo ?? ''}
+                    >
+                      Schedule
+                    </button>
                   )}
                 </div>
                 <dl class="bb-card__details">
@@ -565,8 +602,31 @@ Astro.response.headers.append('Set-Cookie', refreshBarberSessionCookie(session))
                   {w.adminNote && <div><dt>Shop note</dt><dd>{w.adminNote}</dd></div>}
                   {w.customerEmail && <div><dt>Email</dt><dd>{w.customerEmail}</dd></div>}
                 </dl>
+                {canSchedule && (
+                  <div class="bb-schedule-panel" data-schedule-panel hidden>
+                    <p class="bb-schedule-panel__head">
+                      <strong>Choose a slot</strong> to schedule {firstName} for {w.serviceName}.
+                    </p>
+                    <p class="bb-schedule-panel__hint">
+                      Customer prefers: {formatWaitlistTimes(w.timesOfDay)} · {formatWaitlistDays(w.daysOfWeek)}
+                    </p>
+                    <div class="bb-schedule-panel__slots" data-slots>
+                      <p class="bb-schedule-panel__loading">Loading openings…</p>
+                    </div>
+                    <p class="bb-schedule-panel__status" data-schedule-status hidden></p>
+                    <div class="bb-schedule-panel__actions">
+                      <button type="button" class="bb-btn bb-btn--ghost bb-btn--sm" data-extend hidden>
+                        Show next 14 days →
+                      </button>
+                      <button type="button" class="bb-btn bb-btn--ghost bb-btn--sm" data-cancel-schedule>
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                )}
               </li>
-            ))}
+              );
+            })}
           </ul>
         )}
       </section>
@@ -905,6 +965,271 @@ Astro.response.headers.append('Set-Cookie', refreshBarberSessionCookie(session))
             showStatus('Upload failed. See the list above.', 'error');
           }
           input.value = '';
+        });
+      })();
+
+      // ---------- Schedule from waitlist ----------
+      // Wires the "Schedule" button on each waitlist row → expands an
+      // inline slot picker → POSTs the chosen slot to the
+      // /api/barber/bookings/from-waitlist endpoint, which resolves
+      // the customer, creates the booking under the calling barber,
+      // and marks the entry as 'booked'. On success the whole row
+      // drops out of the list.
+      (function () {
+        const TZ_LABEL = SHOP_TZ;
+
+        // Today in shop tz as YYYY-MM-DD. Used for the default window
+        // when the customer's preferred dates are missing or have
+        // already passed. Mirrors the keyShopDate helper above.
+        function shopTodayKey() {
+          const now = new Date();
+          const parts = new Intl.DateTimeFormat('en-CA', {
+            timeZone: TZ_LABEL,
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+          }).formatToParts(now);
+          const y = parts.find((p) => p.type === 'year')?.value;
+          const m = parts.find((p) => p.type === 'month')?.value;
+          const d = parts.find((p) => p.type === 'day')?.value;
+          return y + '-' + m + '-' + d;
+        }
+        function addDays(ymd, n) {
+          const [y, m, d] = ymd.split('-').map(Number);
+          const dt = new Date(Date.UTC(y, m - 1, d));
+          dt.setUTCDate(dt.getUTCDate() + n);
+          return (
+            dt.getUTCFullYear() + '-' +
+            String(dt.getUTCMonth() + 1).padStart(2, '0') + '-' +
+            String(dt.getUTCDate()).padStart(2, '0')
+          );
+        }
+        // Convert a shop-tz YYYY-MM-DD to the UTC ISO at midnight
+        // shop-local. Identical to shopLocalToUtcIso above but for
+        // date-only inputs.
+        function shopDateStartUtc(ymd) {
+          return shopLocalToUtcIso(ymd + 'T00:00');
+        }
+        function shopDateEndUtc(ymd) {
+          // 23:59 of that day, shop tz.
+          return shopLocalToUtcIso(ymd + 'T23:59');
+        }
+
+        function formatSlotTime(utc) {
+          const date = new Date(utc);
+          return new Intl.DateTimeFormat('en-US', {
+            timeZone: TZ_LABEL,
+            hour: 'numeric',
+            minute: '2-digit',
+            hour12: true,
+          }).format(date);
+        }
+        function formatSlotDateHeader(utc) {
+          const date = new Date(utc);
+          return new Intl.DateTimeFormat('en-US', {
+            timeZone: TZ_LABEL,
+            weekday: 'short',
+            month: 'short',
+            day: 'numeric',
+          }).format(date);
+        }
+        function slotDateKey(utc) {
+          const date = new Date(utc);
+          return new Intl.DateTimeFormat('en-CA', {
+            timeZone: TZ_LABEL,
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+          }).format(date);
+        }
+
+        function setStatus(panel, msg, kind) {
+          const el = panel.querySelector('[data-schedule-status]');
+          if (!el) return;
+          el.textContent = msg || '';
+          el.className =
+            'bb-schedule-panel__status' +
+            (kind ? ' bb-schedule-panel__status--' + kind : '');
+          el.hidden = !msg;
+        }
+
+        function renderSlots(panel, slots, btn) {
+          const container = panel.querySelector('[data-slots]');
+          if (!container) return;
+          container.innerHTML = '';
+          if (!slots || slots.length === 0) {
+            container.innerHTML =
+              '<p class="bb-schedule-panel__loading">No openings in the customer’s window.</p>';
+            const extend = panel.querySelector('[data-extend]');
+            if (extend) extend.hidden = false;
+            return;
+          }
+          // Group by shop-tz date.
+          const byDate = {};
+          for (const s of slots) {
+            const key = slotDateKey(s.startAtUtc);
+            if (!byDate[key]) byDate[key] = [];
+            byDate[key].push(s);
+          }
+          const dateKeys = Object.keys(byDate).sort();
+          for (const dk of dateKeys) {
+            const day = byDate[dk];
+            const h = document.createElement('p');
+            h.className = 'bb-schedule-panel__date';
+            h.textContent = formatSlotDateHeader(day[0].startAtUtc);
+            container.appendChild(h);
+            const row = document.createElement('div');
+            row.className = 'bb-schedule-panel__row';
+            day.sort((a, b) => (a.startAtUtc < b.startAtUtc ? -1 : 1));
+            for (const s of day) {
+              const slotBtn = document.createElement('button');
+              slotBtn.type = 'button';
+              slotBtn.className = 'bb-btn bb-btn--ghost bb-btn--sm bb-schedule-slot';
+              slotBtn.textContent = formatSlotTime(s.startAtUtc);
+              slotBtn.setAttribute('data-start-at-utc', s.startAtUtc);
+              row.appendChild(slotBtn);
+            }
+            container.appendChild(row);
+          }
+        }
+
+        function effectiveWindow(btn, extended) {
+          const today = shopTodayKey();
+          const dateFrom = btn.getAttribute('data-date-from') || '';
+          const dateTo = btn.getAttribute('data-date-to') || '';
+          // "Show next 14 days" forces today..today+14 regardless of
+          // the customer's preferred window.
+          if (extended) {
+            return { from: today, to: addDays(today, 14) };
+          }
+          // Customer's preferred window — but clamp the start to
+          // today (don't ask Square about days that have already
+          // passed) and fall back to today..today+14 entirely if
+          // the whole window is in the past.
+          if (dateFrom && dateTo) {
+            const from = dateFrom < today ? today : dateFrom;
+            if (dateTo < today) {
+              return { from: today, to: addDays(today, 14) };
+            }
+            return { from, to: dateTo };
+          }
+          return { from: today, to: addDays(today, 14) };
+        }
+
+        async function fetchSlots(panel, btn, extended) {
+          const win = effectiveWindow(btn, extended);
+          const variationId = btn.getAttribute('data-service-variation-id') || '';
+          const params = new URLSearchParams({
+            serviceVariationId: variationId,
+            startAt: shopDateStartUtc(win.from),
+            endAt: shopDateEndUtc(win.to),
+          });
+          const container = panel.querySelector('[data-slots]');
+          if (container) {
+            container.innerHTML =
+              '<p class="bb-schedule-panel__loading">Loading openings…</p>';
+          }
+          setStatus(panel, '');
+          const extend = panel.querySelector('[data-extend]');
+          if (extend) extend.hidden = true;
+          try {
+            const res = await fetch('/api/barber/availability?' + params.toString(), {
+              credentials: 'same-origin',
+            });
+            const data = await res.json();
+            if (!res.ok || !data.ok) {
+              setStatus(
+                panel,
+                (data && data.error && data.error.detail) || 'Could not load openings.',
+                'error',
+              );
+              return;
+            }
+            renderSlots(panel, data.slots || [], btn);
+            // If the preferred window came back empty AND we haven't
+            // yet extended, surface the extend button so the barber
+            // can tap to widen the search.
+            if ((!data.slots || data.slots.length === 0) && !extended) {
+              if (extend) extend.hidden = false;
+            }
+          } catch {
+            setStatus(panel, 'Network error. Try again.', 'error');
+          }
+        }
+
+        async function bookSlot(panel, btn, startAtUtc) {
+          const entryId = btn.getAttribute('data-entry-id') || '';
+          const firstName = btn.getAttribute('data-customer-first-name') || 'this customer';
+          const serviceName = btn.getAttribute('data-service-name') || 'this service';
+          const slotLabel = formatSlotDateHeader(startAtUtc) + ' at ' + formatSlotTime(startAtUtc);
+          if (
+            !confirm('Book ' + firstName + ' for ' + serviceName + ' on ' + slotLabel + '?')
+          ) {
+            return;
+          }
+          // Lock every slot button in this panel while the POST is
+          // in flight so a fast double-tap can't fire two requests.
+          const slotButtons = panel.querySelectorAll('.bb-schedule-slot');
+          slotButtons.forEach((b) => (b.disabled = true));
+          setStatus(panel, 'Booking…', 'ok');
+          try {
+            const res = await fetch('/api/barber/bookings/from-waitlist', {
+              method: 'POST',
+              credentials: 'same-origin',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                waitlistEntryId: entryId,
+                startAtUtc: startAtUtc,
+              }),
+            });
+            const data = await res.json();
+            if (!res.ok || !data.ok) {
+              setStatus(
+                panel,
+                (data && data.error && data.error.detail) || 'Could not book.',
+                'error',
+              );
+              slotButtons.forEach((b) => (b.disabled = false));
+              return;
+            }
+            setStatus(panel, 'Booked. Refreshing…', 'ok');
+            setTimeout(() => window.location.reload(), 700);
+          } catch {
+            setStatus(panel, 'Network error. Try again.', 'error');
+            slotButtons.forEach((b) => (b.disabled = false));
+          }
+        }
+
+        document.querySelectorAll('[data-schedule-btn]').forEach((btn) => {
+          const card = btn.closest('[data-waitlist-row]');
+          if (!card) return;
+          const panel = card.querySelector('[data-schedule-panel]');
+          if (!panel) return;
+          btn.addEventListener('click', () => {
+            const wasHidden = panel.hidden;
+            panel.hidden = !wasHidden;
+            btn.textContent = wasHidden ? 'Hide' : 'Schedule';
+            if (wasHidden) fetchSlots(panel, btn, false);
+          });
+          panel.addEventListener('click', (e) => {
+            const target = e.target;
+            if (!(target instanceof HTMLElement)) return;
+            const slotEl = target.closest('.bb-schedule-slot');
+            if (slotEl && !slotEl.hasAttribute('disabled')) {
+              const startAtUtc = slotEl.getAttribute('data-start-at-utc');
+              if (startAtUtc) bookSlot(panel, btn, startAtUtc);
+              return;
+            }
+            if (target.closest('[data-extend]')) {
+              fetchSlots(panel, btn, true);
+              return;
+            }
+            if (target.closest('[data-cancel-schedule]')) {
+              panel.hidden = true;
+              btn.textContent = 'Schedule';
+              return;
+            }
+          });
         });
       })();
     </script>

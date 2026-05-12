@@ -432,6 +432,68 @@
   color: var(--bb-text);
 }
 
+/* ---------- Schedule-from-waitlist inline panel ---------- */
+.bb-schedule-panel {
+  margin-top: 10px;
+  padding: 12px;
+  border: 1px solid rgba(201, 163, 92, 0.4);
+  border-radius: var(--bb-radius);
+  background: rgba(201, 163, 92, 0.05);
+  display: grid;
+  gap: 0.55rem;
+}
+.bb-schedule-panel__head {
+  margin: 0;
+  font-size: 0.95rem;
+  color: var(--bb-text);
+}
+.bb-schedule-panel__head strong { color: var(--bb-gold-light); }
+.bb-schedule-panel__hint {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--bb-text-dim);
+}
+.bb-schedule-panel__slots { display: grid; gap: 0.55rem; }
+.bb-schedule-panel__date {
+  margin: 0.25rem 0 0;
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--bb-text-dim);
+}
+.bb-schedule-panel__row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.bb-schedule-slot { min-width: 76px; }
+.bb-schedule-panel__loading {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--bb-text-dim);
+}
+.bb-schedule-panel__status {
+  margin: 0;
+  font-size: 0.85rem;
+  padding: 6px 10px;
+  border-radius: 6px;
+}
+.bb-schedule-panel__status--ok {
+  background: rgba(60, 180, 100, 0.15);
+  color: rgb(130, 220, 160);
+}
+.bb-schedule-panel__status--error {
+  background: rgba(220, 80, 80, 0.15);
+  color: rgb(255, 160, 160);
+}
+.bb-schedule-panel__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
 .bb-card__actions {
   display: flex;
   flex-wrap: wrap;
