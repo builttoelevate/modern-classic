@@ -7,6 +7,7 @@ import {
   findCustomerByPhone,
 } from '../../../lib/square/customers';
 import { redactEmail } from '../../../lib/booking/log';
+import { getPublicOrigin } from '../../../lib/utils/origin';
 
 export const prerender = false;
 
@@ -36,21 +37,6 @@ function looksLikePhone(s: string): boolean {
   return digits.length >= 7 && digits.length <= 16;
 }
 
-function siteOriginFromRequest(request: Request): string {
-  const env = import.meta.env.SITE_URL;
-  if (typeof env === 'string' && /^https?:\/\//i.test(env)) {
-    return env.replace(/\/$/, '');
-  }
-  const proto = request.headers.get('x-forwarded-proto') ?? 'https';
-  const host = request.headers.get('x-forwarded-host') ?? request.headers.get('host');
-  if (host) return `${proto}://${host}`.replace(/\/$/, '');
-  try {
-    const url = new URL(request.url);
-    return `${url.protocol}//${url.host}`.replace(/\/$/, '');
-  } catch {
-    return 'https://mdrnclassic.com';
-  }
-}
 
 function logAuth(payload: Record<string, unknown>): void {
   // eslint-disable-next-line no-console
@@ -182,7 +168,7 @@ export const POST: APIRoute = async ({ request }) => {
     }
 
     const token = signMagicToken({ email: customerEmail });
-    const origin = siteOriginFromRequest(request);
+    const origin = getPublicOrigin(request);
     const magicUrl = `${origin}/auth/verify?token=${encodeURIComponent(token)}`;
     const customerName = customer.given_name?.trim();
     try {

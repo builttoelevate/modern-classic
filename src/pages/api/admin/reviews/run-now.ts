@@ -1,6 +1,7 @@
 import type { APIRoute } from 'astro';
 import { checkBasicAuth } from '../../../../lib/admin/auth';
 import { runReviewRequestCron } from '../../../../lib/square/reviewCron';
+import { getPublicOrigin } from '../../../../lib/utils/origin';
 
 export const prerender = false;
 
@@ -45,7 +46,7 @@ export const POST: APIRoute = async ({ request }) => {
   const shiftRaw = typeof b.windowShiftDays === 'number' ? b.windowShiftDays : 0;
   const shiftDays = Math.max(-30, Math.min(30, isFinite(shiftRaw) ? shiftRaw : 0));
 
-  const origin = new URL(request.url).origin;
+  const origin = getPublicOrigin(request);
   const result = await runReviewRequestCron({
     dryRun,
     shiftDays,
