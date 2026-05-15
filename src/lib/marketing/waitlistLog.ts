@@ -44,6 +44,12 @@ function getRedis(): Redis {
 
 export type WaitlistStatus = 'new' | 'contacted' | 'booked' | 'archived';
 
+/** How strictly the cron matches `exactTimes` against Square's slots.
+ *  'loose' (default) allows ±30-min slack so the customer doesn't miss
+ *  near-misses on services whose grid doesn't land on their requested
+ *  minute. 'exact' requires a precise minute-of-day match. */
+export type ExactTimeMatchMode = 'exact' | 'loose';
+
 export interface WaitlistEntry {
   id: string;
   customerName: string;
@@ -87,8 +93,24 @@ export interface WaitlistEntry {
   daysOfWeek?: string[];
   /** Subset of ['morning','afternoon','evening']. Bands: morning < 12,
    * afternoon 12–15, evening ≥ 15 (matches WaitlistSheet TIME_OPTIONS
-   * sub-labels and waitlistMatch.bandFor). Empty/absent = any time. */
+   * sub-labels and waitlistMatch.bandFor). Empty/absent = any time.
+   *
+   * Mutually exclusive with `exactTimes` at submit time — the customer
+   * picks one mode in the form, the API rejects payloads that send
+   * both. */
   timesOfDay?: string[];
+
+  /** Specific times the customer wants notified about, "HH:MM" in shop
+   * tz, e.g. ["15:00", "17:30"]. Up to 5 entries. Mutually exclusive
+   * with `timesOfDay`. When set, the matcher uses `exactTimesMatchMode`
+   * to decide the tolerance. */
+  exactTimes?: string[];
+
+  /** Strictness for `exactTimes` matching. Only meaningful when
+   * `exactTimes` is non-empty. Treated as `'loose'` when undefined so
+   * any legacy entry (shouldn't exist, but defensively) gets the
+   * friendlier default. */
+  exactTimesMatchMode?: ExactTimeMatchMode;
 
   /** Notify bookkeeping — set by the cron once we email the customer
    * about an opening. lastNotifiedAt powers the 12-hour cooldown,
@@ -133,6 +155,9 @@ export interface RecordWaitlistInput {
   dateTo?: string;
   daysOfWeek?: string[];
   timesOfDay?: string[];
+  /** Specific-times mode (mutually exclusive with timesOfDay). */
+  exactTimes?: string[];
+  exactTimesMatchMode?: ExactTimeMatchMode;
 }
 
 export async function recordWaitlistEntry(
@@ -157,6 +182,8 @@ export async function recordWaitlistEntry(
     dateTo: input.dateTo,
     daysOfWeek: input.daysOfWeek,
     timesOfDay: input.timesOfDay,
+    exactTimes: input.exactTimes,
+    exactTimesMatchMode: input.exactTimesMatchMode,
     submittedAt,
     status: 'new',
     statusChangedAt: submittedAt,

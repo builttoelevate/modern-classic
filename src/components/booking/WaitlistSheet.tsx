@@ -39,6 +39,14 @@ type Status = 'idle' | 'submitting' | 'success' | 'error';
 
 type DayKey = 'mon' | 'tue' | 'wed' | 'thu' | 'fri' | 'sat';
 type TimeKey = 'morning' | 'afternoon' | 'evening';
+type TimeMode = 'bands' | 'exact';
+type ExactMatchMode = 'loose' | 'exact';
+
+const EXACT_TIMES_MAX = 5;
+/** Default first-row time when the customer flips to specific-times
+ *  mode. 10:00 AM is a sensible mid-morning anchor that almost every
+ *  shop has on the grid. */
+const EXACT_TIMES_DEFAULT_FIRST = '10:00';
 
 const DAY_OPTIONS: Array<{ key: DayKey; label: string }> = [
   { key: 'mon', label: 'Mon' },
@@ -116,6 +124,12 @@ export function WaitlistSheet({
     'afternoon',
     'evening',
   ]);
+  // Specific-times mode. Mutually exclusive with timesOfDay above;
+  // toggled by `timeMode`. Defaults to one row at 10:00 AM so the
+  // customer sees a working example as soon as they flip the toggle.
+  const [timeMode, setTimeMode] = useState<TimeMode>('bands');
+  const [exactTimes, setExactTimes] = useState<string[]>([EXACT_TIMES_DEFAULT_FIRST]);
+  const [exactMatchMode, setExactMatchMode] = useState<ExactMatchMode>('loose');
   const [note, setNote] = useState('');
   const [status, setStatus] = useState<Status>('idle');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -153,6 +167,18 @@ export function WaitlistSheet({
       prev.includes(key) ? prev.filter((d) => d !== key) : [...prev, key],
     );
   }
+  function setExactTimeAt(idx: number, value: string) {
+    setExactTimes((prev) => prev.map((t, i) => (i === idx ? value : t)));
+  }
+  function removeExactTimeAt(idx: number) {
+    setExactTimes((prev) => (prev.length <= 1 ? prev : prev.filter((_, i) => i !== idx)));
+  }
+  function addExactTime() {
+    setExactTimes((prev) =>
+      prev.length >= EXACT_TIMES_MAX ? prev : [...prev, EXACT_TIMES_DEFAULT_FIRST],
+    );
+  }
+
   function toggleTime(key: TimeKey) {
     setTimesOfDay((prev) =>
       prev.includes(key) ? prev.filter((t) => t !== key) : [...prev, key],
@@ -283,6 +309,13 @@ export function WaitlistSheet({
     setStatus('submitting');
     setErrorMsg(null);
     try {
+      // Send fields matching the active time mode. The API rejects
+      // payloads with BOTH timesOfDay and exactTimes populated, so we
+      // explicitly omit the other.
+      const cleanedExactTimes =
+        timeMode === 'exact'
+          ? Array.from(new Set(exactTimes.map((t) => t.trim()).filter(Boolean)))
+          : undefined;
       const res = await fetch('/api/waitlist', {
         method: 'POST',
         credentials: 'same-origin',
@@ -300,7 +333,9 @@ export function WaitlistSheet({
           dateFrom: dateFrom || undefined,
           dateTo: dateTo || undefined,
           daysOfWeek,
-          timesOfDay,
+          timesOfDay: timeMode === 'bands' ? timesOfDay : undefined,
+          exactTimes: cleanedExactTimes,
+          exactTimesMatchMode: timeMode === 'exact' ? exactMatchMode : undefined,
           note: note.trim() || undefined,
         }),
       });
@@ -509,26 +544,103 @@ export function WaitlistSheet({
               )}
 
               <div className="bw-field">
-                <span className="bw-field__label">
-                  Times that work <span className="bw-field__optional">(tap to toggle)</span>
-                </span>
-                <div className="bw-chip-row" role="group" aria-label="Times of day">
-                  {TIME_OPTIONS.map((opt) => {
-                    const active = timesOfDay.includes(opt.key);
-                    return (
-                      <button
-                        key={opt.key}
-                        type="button"
-                        className={`bw-chip bw-chip--wide${active ? ' bw-chip--on' : ''}`}
-                        aria-pressed={active}
-                        onClick={() => toggleTime(opt.key)}
-                      >
-                        <span className="bw-chip__label">{opt.label}</span>
-                        <span className="bw-chip__sub">{opt.sub}</span>
-                      </button>
-                    );
-                  })}
+                <span className="bw-field__label">Times that work</span>
+                <div className="bw-mode-toggle" role="group" aria-label="Time mode">
+                  <button
+                    type="button"
+                    className={`bw-chip${timeMode === 'bands' ? ' bw-chip--on' : ''}`}
+                    aria-pressed={timeMode === 'bands'}
+                    onClick={() => setTimeMode('bands')}
+                  >
+                    By part of day
+                  </button>
+                  <button
+                    type="button"
+                    className={`bw-chip${timeMode === 'exact' ? ' bw-chip--on' : ''}`}
+                    aria-pressed={timeMode === 'exact'}
+                    onClick={() => setTimeMode('exact')}
+                  >
+                    Specific times
+                  </button>
                 </div>
+
+                {timeMode === 'bands' ? (
+                  <div className="bw-chip-row" role="group" aria-label="Times of day">
+                    {TIME_OPTIONS.map((opt) => {
+                      const active = timesOfDay.includes(opt.key);
+                      return (
+                        <button
+                          key={opt.key}
+                          type="button"
+                          className={`bw-chip bw-chip--wide${active ? ' bw-chip--on' : ''}`}
+                          aria-pressed={active}
+                          onClick={() => toggleTime(opt.key)}
+                        >
+                          <span className="bw-chip__label">{opt.label}</span>
+                          <span className="bw-chip__sub">{opt.sub}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="bw-exact-times" role="group" aria-label="Specific times">
+                    {exactTimes.map((t, idx) => (
+                      <div key={idx} className="bw-exact-times__row">
+                        <input
+                          type="time"
+                          step={900}
+                          value={t}
+                          onChange={(e) => setExactTimeAt(idx, e.target.value)}
+                          aria-label={`Time ${idx + 1}`}
+                        />
+                        {exactTimes.length > 1 && (
+                          <button
+                            type="button"
+                            className="bw-exact-times__remove"
+                            aria-label={`Remove time ${idx + 1}`}
+                            onClick={() => removeExactTimeAt(idx)}
+                          >
+                            ×
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                    {exactTimes.length < EXACT_TIMES_MAX && (
+                      <button
+                        type="button"
+                        className="bw-exact-times__add"
+                        onClick={addExactTime}
+                      >
+                        + Add another time
+                      </button>
+                    )}
+
+                    <div className="bw-field__sub">Match how close?</div>
+                    <div className="bw-mode-toggle" role="group" aria-label="Match strictness">
+                      <button
+                        type="button"
+                        className={`bw-chip${exactMatchMode === 'loose' ? ' bw-chip--on' : ''}`}
+                        aria-pressed={exactMatchMode === 'loose'}
+                        onClick={() => setExactMatchMode('loose')}
+                      >
+                        Within 30 minutes
+                      </button>
+                      <button
+                        type="button"
+                        className={`bw-chip${exactMatchMode === 'exact' ? ' bw-chip--on' : ''}`}
+                        aria-pressed={exactMatchMode === 'exact'}
+                        onClick={() => setExactMatchMode('exact')}
+                      >
+                        Exact time only
+                      </button>
+                    </div>
+                    <p className="bw-field--hint">
+                      {exactMatchMode === 'loose'
+                        ? "We'll notify you when an opening lands within 30 minutes of any of these times."
+                        : "We'll only notify you when an opening starts exactly at one of these times."}
+                    </p>
+                  </div>
+                )}
               </div>
             </div>
 

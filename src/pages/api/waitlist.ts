@@ -54,6 +54,50 @@ function buildPreferenceLabel(
   return parts.join(' · ');
 }
 
+/** Customer-facing echo for the confirmation email. Pretty-prints the
+ *  selected time preference — band list, single-time, multi-time —
+ *  with strictness suffix when meaningful. Returns empty when the
+ *  customer made no time selection. */
+function buildTimePreferenceLabel(
+  timesOfDay: string[] | undefined,
+  exactTimes: string[] | undefined,
+  exactMode: 'exact' | 'loose' | undefined,
+): string {
+  if (exactTimes && exactTimes.length > 0) {
+    const fmt12 = (hhmm: string): string => {
+      const m = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(hhmm);
+      if (!m) return hhmm;
+      const h = Number(m[1]);
+      const min = m[2];
+      const period = h >= 12 ? 'PM' : 'AM';
+      const h12 = h % 12 === 0 ? 12 : h % 12;
+      return `${h12}:${min} ${period}`;
+    };
+    const pretty = exactTimes.map(fmt12);
+    const joined =
+      pretty.length === 1
+        ? pretty[0]
+        : pretty.length === 2
+          ? `${pretty[0]} or ${pretty[1]}`
+          : `${pretty.slice(0, -1).join(', ')}, or ${pretty[pretty.length - 1]}`;
+    return exactMode === 'exact'
+      ? `Exactly at ${joined}`
+      : `Within 30 minutes of ${joined}`;
+  }
+  if (timesOfDay && timesOfDay.length > 0 && timesOfDay.length < 3) {
+    const bandPretty: Record<string, string> = {
+      morning: 'Mornings',
+      afternoon: 'Afternoons',
+      evening: 'Evenings',
+    };
+    const labels = timesOfDay.map((k) => bandPretty[k] ?? k).filter(Boolean);
+    if (labels.length === 1) return `${labels[0]} only`;
+    if (labels.length === 2) return `${labels[0]} or ${labels[1]}`;
+    return labels.join(', ');
+  }
+  return '';
+}
+
 const RATE_LIMIT_SECONDS = 60;
 const lastSubmittedAt = new Map<string, number>();
 
@@ -176,7 +220,7 @@ export const POST: APIRoute = async ({ request, clientAddress }) => {
         ),
       )
     : undefined;
-  const timesOfDay = Array.isArray(b.timesOfDay)
+  const timesOfDayCandidate = Array.isArray(b.timesOfDay)
     ? Array.from(
         new Set(
           b.timesOfDay.filter(
@@ -185,6 +229,50 @@ export const POST: APIRoute = async ({ request, clientAddress }) => {
         ),
       )
     : undefined;
+
+  // Specific-times mode — mutually exclusive with timesOfDay above.
+  // The form lets the customer pick one mode at a time; the API
+  // rejects payloads that send both populated.
+  const EXACT_TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
+  const EXACT_TIMES_MAX = 5;
+  const exactTimesCandidate = Array.isArray(b.exactTimes)
+    ? Array.from(
+        new Set(
+          b.exactTimes.filter(
+            (t): t is string => typeof t === 'string' && EXACT_TIME_RE.test(t),
+          ),
+        ),
+      ).slice(0, EXACT_TIMES_MAX)
+    : undefined;
+  const exactTimesMatchModeCandidate: 'exact' | 'loose' | undefined =
+    b.exactTimesMatchMode === 'exact'
+      ? 'exact'
+      : b.exactTimesMatchMode === 'loose'
+        ? 'loose'
+        : undefined;
+
+  const hasTimesOfDay = !!(timesOfDayCandidate && timesOfDayCandidate.length > 0);
+  const hasExactTimes = !!(exactTimesCandidate && exactTimesCandidate.length > 0);
+  if (hasTimesOfDay && hasExactTimes) {
+    return Response.json(
+      {
+        ok: false,
+        error: {
+          code: 'BAD_REQUEST',
+          detail:
+            'Pick one time-of-day mode — either parts of the day (Morning / Afternoon / Evening) OR specific times, not both.',
+        },
+      },
+      { status: 400 },
+    );
+  }
+
+  // Resolve the final stored values: when exactTimes is the active
+  // mode, timesOfDay is dropped; mode metadata is only persisted when
+  // exactTimes is non-empty.
+  const timesOfDay = hasExactTimes ? undefined : timesOfDayCandidate;
+  const exactTimes = hasExactTimes ? exactTimesCandidate : undefined;
+  const exactTimesMatchMode = hasExactTimes ? exactTimesMatchModeCandidate : undefined;
 
   if (!name || !email || !phone || !serviceName || !barberName) {
     return Response.json(
@@ -282,6 +370,8 @@ export const POST: APIRoute = async ({ request, clientAddress }) => {
         dateTo,
         daysOfWeek,
         timesOfDay,
+        exactTimes,
+        exactTimesMatchMode,
       });
     } catch (err) {
       const detail = err instanceof Error ? err.message : String(err);
@@ -293,6 +383,11 @@ export const POST: APIRoute = async ({ request, clientAddress }) => {
     // state, so a missing acknowledgment email shouldn't surface as an
     // error to the customer.
     const windowLabel = formatWindow(dateFrom, dateTo);
+    const timePreferenceLabel = buildTimePreferenceLabel(
+      timesOfDay,
+      exactTimes,
+      exactTimesMatchMode,
+    );
     try {
       const confirmResult = await sendWaitlistConfirmation({
         to: email,
@@ -300,6 +395,7 @@ export const POST: APIRoute = async ({ request, clientAddress }) => {
         serviceName,
         barberName,
         windowLabel,
+        timePreferenceLabel: timePreferenceLabel || undefined,
         shopAddress: SHOP_ADDRESS,
         shopPhone: SHOP_PHONE,
       });

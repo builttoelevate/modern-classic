@@ -16,6 +16,12 @@ const HOUR_FMT = new Intl.DateTimeFormat('en-US', {
   hour: '2-digit',
   hour12: false,
 });
+const HM_FMT = new Intl.DateTimeFormat('en-US', {
+  timeZone: SHOP_TZ,
+  hour: '2-digit',
+  minute: '2-digit',
+  hour12: false,
+});
 
 const DOW_LOOKUP: Record<string, string> = {
   Mon: 'mon',
@@ -60,6 +66,32 @@ function hourFor(slot: AvailabilitySlot): number {
   return n === 24 ? 0 : n;
 }
 
+/** Returns the slot's minute-of-day (0–1439) in shop tz — used by the
+ *  exactTimes matcher to compute absolute distance from each requested
+ *  time. */
+function minuteOfDayFor(slot: AvailabilitySlot): number {
+  const utc = new Date(slot.startAtUtc);
+  const parts = HM_FMT.formatToParts(utc);
+  const g = (t: string) => parts.find((p) => p.type === t)?.value ?? '0';
+  const hour = g('hour');
+  const minute = g('minute');
+  const h = Number(hour) === 24 ? 0 : Number(hour);
+  const m = Number(minute);
+  if (!Number.isFinite(h) || !Number.isFinite(m)) return 0;
+  return h * 60 + m;
+}
+
+const LOOSE_TOLERANCE_MINUTES = 30;
+const EXACT_TOLERANCE_MINUTES = 0;
+
+/** Parses "HH:MM" → minute-of-day. Returns null on garbage input so the
+ *  matcher can ignore unparseable entries rather than match-everything. */
+function parsePrefMinutes(hhmm: string): number | null {
+  const m = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(hhmm);
+  if (!m) return null;
+  return Number(m[1]) * 60 + Number(m[2]);
+}
+
 /**
  * Predicate shared by `findMatchingSlot` (cron, first-match) and
  * `findMatchingSlotsForEntry` (admin page, multi-match). Pure — no
@@ -70,7 +102,12 @@ function hourFor(slot: AvailabilitySlot): number {
  *   - The exact slot already notified about (per-slot dedup).
  *   - Slots whose local date is outside [dateFrom, dateTo].
  *   - Slots whose local day-of-week isn't in daysOfWeek (when set + non-empty).
- *   - Slots whose local hour band isn't in timesOfDay (when set + non-empty).
+ *   - Slots whose local hour band isn't in timesOfDay (when set + non-empty),
+ *     OR slots that don't fall within the customer's exactTimes tolerance
+ *     window (when exactTimes is set + non-empty).
+ *
+ * `exactTimes` wins over `timesOfDay` if both are present (the submit API
+ * enforces mutual exclusion, but the matcher is defensive).
  */
 function slotMatchesEntryPrefs(entry: WaitlistEntry, slot: AvailabilitySlot): boolean {
   if (entry.notifiedSlotStartAtUtc && slot.startAtUtc === entry.notifiedSlotStartAtUtc) {
@@ -84,6 +121,19 @@ function slotMatchesEntryPrefs(entry: WaitlistEntry, slot: AvailabilitySlot): bo
   if (entry.daysOfWeek && entry.daysOfWeek.length > 0) {
     const dow = dayOfWeekFor(slot);
     if (!dow || !entry.daysOfWeek.includes(dow)) return false;
+  }
+
+  if (entry.exactTimes && entry.exactTimes.length > 0) {
+    const tolerance =
+      entry.exactTimesMatchMode === 'exact'
+        ? EXACT_TOLERANCE_MINUTES
+        : LOOSE_TOLERANCE_MINUTES;
+    const slotMin = minuteOfDayFor(slot);
+    return entry.exactTimes.some((t) => {
+      const prefMin = parsePrefMinutes(t);
+      if (prefMin === null) return false;
+      return Math.abs(slotMin - prefMin) <= tolerance;
+    });
   }
 
   if (entry.timesOfDay && entry.timesOfDay.length > 0) {

@@ -695,6 +695,81 @@
   font-size: 0.85rem;
   font-style: italic;
 }
+.bw-field__sub {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  margin-top: 0.6rem;
+  letter-spacing: 0.04em;
+}
+
+/* ---------- Waitlist: mode toggle + specific-times input ---------- */
+.bw-mode-toggle {
+  display: flex;
+  gap: 0.4rem;
+  margin-bottom: 0.6rem;
+}
+.bw-exact-times {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 0.4rem;
+}
+.bw-exact-times__row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.bw-exact-times__row input[type='time'] {
+  appearance: none;
+  font: inherit;
+  color: var(--color-text);
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  padding: 0.55rem 0.7rem;
+  min-height: 44px;
+  min-width: 9rem;
+}
+.bw-exact-times__row input[type='time']:focus {
+  outline: none;
+  border-color: var(--color-gold);
+}
+.bw-exact-times__remove {
+  appearance: none;
+  width: 32px;
+  height: 32px;
+  border-radius: 999px;
+  border: 1px solid var(--color-border);
+  background: transparent;
+  color: var(--color-text-dim);
+  cursor: pointer;
+  font-size: 1.1rem;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.bw-exact-times__remove:hover {
+  color: #f0a37a;
+  border-color: rgba(220, 80, 80, 0.55);
+}
+.bw-exact-times__add {
+  align-self: flex-start;
+  appearance: none;
+  font: inherit;
+  font-size: 0.84rem;
+  color: var(--color-gold-light);
+  background: transparent;
+  border: 1px dashed var(--color-border);
+  border-radius: 6px;
+  padding: 0.4rem 0.8rem;
+  cursor: pointer;
+}
+.bw-exact-times__add:hover {
+  border-color: var(--color-gold);
+  color: var(--color-gold);
+}
 
 /* ---------- Form ---------- */
 .bw-form {

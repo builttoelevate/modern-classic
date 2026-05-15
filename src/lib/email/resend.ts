@@ -227,6 +227,9 @@ export interface SendWaitlistConfirmationInput {
   /** Optional pre-formatted "May 11 – May 18, 2026" string. Empty
    *  string / undefined → the window line is suppressed in the body. */
   windowLabel?: string;
+  /** Optional time-of-day echo, e.g. "Mornings only" or "Within 30
+   *  minutes of 3:00 PM or 5:30 PM". Suppressed when empty/undefined. */
+  timePreferenceLabel?: string;
   shopAddress: string;
   shopPhone: string;
 }
