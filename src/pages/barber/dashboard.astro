@@ -2,6 +2,7 @@
 export const prerender = false;
 
 import { getBarberSession, refreshBarberSessionCookie } from '../../lib/auth/barberMiddleware';
+import { isBarberOwner } from '../../lib/auth/barberPermissions';
 import { getAccount } from '../../lib/barber/accountStore';
 import {
   listBlocks as listBarberBlocks,
@@ -12,6 +13,8 @@ import { listBookings } from '../../lib/square/bookings';
 import { getBarbers } from '../../lib/square/team';
 import { getServices } from '../../lib/square/catalog';
 import { getCustomerById } from '../../lib/square/customers';
+import { getBookingCardRecord, type BookingCardRecord } from '../../lib/booking/cardIndex';
+import { canChargeNoShow } from '../../lib/booking/noShowCharge';
 import {
   listWaitlistEntries,
   getEntryBarberPicks,
@@ -122,13 +125,26 @@ const [dy, dm, dd] = filterDateKey.split('-').map(Number);
 const startUtc = shopMidnightUtcFor(dy, dm, dd);
 const endUtc = shopMidnightUtcFor(dy, dm, dd + 1);
 
+// Owner role + barber-filter dropdown selection. Resolved up-front
+// because the bookings filter (below) needs to know whether to
+// honour a `?barberId=` query param. Regular barbers always see
+// their own day; owners can switch.
+const isOwner = await isBarberOwner(session.barberId);
+const requestedBarberId = (Astro.url.searchParams.get('barberId') ?? '').trim();
+const effectiveBarberId =
+  isOwner && requestedBarberId && requestedBarberId !== session.barberId
+    ? requestedBarberId
+    : session.barberId;
+const viewingOtherBarber = effectiveBarberId !== session.barberId;
+
 let bookings: Booking[] = [];
 let customers = new Map<string, Customer>();
+let cardRecords = new Map<string, BookingCardRecord>();
 let loadError: string | null = null;
 const barberNames = new Map<string, string>();
 const serviceNames = new Map<string, string>();
+let allBarbers: Awaited<ReturnType<typeof getBarbers>> = [];
 let waitlist: WaitlistEntry[] = [];
-let isOwner = false;
 
 let timeBlocks: { oneOff: OneOffBlock[]; recurring: RecurringBlock[] } = {
   oneOff: [],
@@ -143,20 +159,14 @@ try {
     listBarberBlocks(session.barberId).catch(() => ({ oneOff: [], recurring: [] })),
   ]);
   timeBlocks = blocks;
+  allBarbers = barbers;
   bookings = list.bookings
     .filter((b) => !TERMINAL.has(b.status))
-    .filter((b) => b.appointment_segments?.[0]?.team_member_id === session.barberId);
+    .filter((b) => b.appointment_segments?.[0]?.team_member_id === effectiveBarberId);
   for (const b of barbers) barberNames.set(b.id, b.displayName);
   for (const s of services) {
     for (const v of s.variations) serviceNames.set(v.id, s.name);
   }
-
-  // Owner (Michael) sees the shop-wide waitlist; every other barber
-  // sees only entries where they were specifically requested. Role
-  // is sourced from src/lib/square/team.ts → ROLE_BY_ID, so adding a
-  // new owner there automatically propagates here.
-  const self = barbers.find((b) => b.id === session.barberId);
-  isOwner = self?.role === 'Owner';
 
   // Active statuses only — booked + archived shouldn't clutter the
   // dashboard.
@@ -184,6 +194,25 @@ try {
     }),
   );
   customers = new Map(customerEntries.filter((e): e is readonly [string, Customer] => e !== null));
+
+  // Card-on-file lookups. Owner-only: regular barbers never see the
+  // charge button so we save the Redis traffic and keep the row data
+  // identical to the pre-PR shape for them.
+  if (isOwner) {
+    const cardEntries = await Promise.all(
+      bookings.map(async (b) => {
+        try {
+          const r = await getBookingCardRecord(b.id);
+          return r ? ([b.id, r] as const) : null;
+        } catch {
+          return null;
+        }
+      }),
+    );
+    cardRecords = new Map(
+      cardEntries.filter((e): e is readonly [string, BookingCardRecord] => e !== null),
+    );
+  }
 } catch (err) {
   if (err instanceof SquareApiError) {
     loadError = `${err.code}: ${err.detail}`;
@@ -205,6 +234,9 @@ interface Row {
   customerEmail: string;
   note: string;
   status: Booking['status'];
+  /** Populated only when isOwner. The amount the customer authorized
+   *  for the no-show / late-cancel charge at Step 4.5. */
+  chargeableAmountCents: number | null;
 }
 
 const inputFmt = new Intl.DateTimeFormat('en-CA', {
@@ -234,6 +266,8 @@ const rows: Row[] = bookings
     const c = b.customer_id ? customers.get(b.customer_id) : undefined;
     const startUtc = new Date(b.start_at);
     const phoneRaw = c?.phone_number?.trim() ?? '';
+    const cardRecord = cardRecords.get(b.id) ?? null;
+    const chargeable = isOwner && canChargeNoShow(b, cardRecord);
     return {
       bookingId: b.id,
       bookingVersion: b.version,
@@ -254,6 +288,7 @@ const rows: Row[] = bookings
       customerEmail: c?.email_address?.trim() ?? '',
       note: b.customer_note?.trim() ?? '',
       status: b.status,
+      chargeableAmountCents: chargeable && cardRecord ? cardRecord.servicePriceCents : null,
     };
   })
   .sort((a, b) => a.startUtc.getTime() - b.startUtc.getTime());
@@ -466,19 +501,46 @@ Astro.response.headers.append('Set-Cookie', refreshBarberSessionCookie(session))
           <div class="bb-filters__quick">
             <a
               class={`bb-chip ${isToday ? 'is-active' : ''}`}
-              href={`${base}/barber/dashboard?date=${todayKey}&tab=appointments`}
+              href={`${base}/barber/dashboard?date=${todayKey}&tab=appointments${viewingOtherBarber ? `&barberId=${effectiveBarberId}` : ''}`}
             >Today</a>
             <a
               class={`bb-chip ${isTomorrow ? 'is-active' : ''}`}
-              href={`${base}/barber/dashboard?date=${tomorrowKey}&tab=appointments`}
+              href={`${base}/barber/dashboard?date=${tomorrowKey}&tab=appointments${viewingOtherBarber ? `&barberId=${effectiveBarberId}` : ''}`}
             >Tomorrow</a>
           </div>
           <label class="bb-field bb-field--inline">
             <span class="bb-field__label">Date</span>
             <input type="date" name="date" value={filterDateKey} />
           </label>
+          {isOwner && viewingOtherBarber && (
+            <input type="hidden" name="barberId" value={effectiveBarberId} />
+          )}
           <button type="submit" class="bb-btn bb-btn--ghost">Show</button>
         </form>
+      )}
+
+      {activeTab === 'appointments' && isOwner && allBarbers.length > 1 && (
+        <form class="bb-filters bb-filters--barber" method="get" action="/barber/dashboard">
+          <input type="hidden" name="tab" value="appointments" />
+          <input type="hidden" name="date" value={filterDateKey} />
+          <label class="bb-field bb-field--inline">
+            <span class="bb-field__label">Viewing</span>
+            <select name="barberId" onchange="this.form.submit()">
+              {allBarbers.map((b) => (
+                <option value={b.id} selected={b.id === effectiveBarberId}>
+                  {b.displayName}{b.id === session.barberId ? ' (me)' : ''}
+                </option>
+              ))}
+            </select>
+          </label>
+        </form>
+      )}
+
+      {viewingOtherBarber && (
+        <p class="bb-owner-note">
+          Viewing {barberNames.get(effectiveBarberId) ?? 'this barber'}'s day as owner.
+          To cancel or reschedule, use <a href={`${base}/admin/bookings`}>/admin/bookings</a>.
+        </p>
       )}
 
       {loadError && <p class="bb-err">Couldn't load: {loadError}</p>}
@@ -528,8 +590,23 @@ Astro.response.headers.append('Set-Cookie', refreshBarberSessionCookie(session))
                   {r.customerEmail && <div><dt>Email</dt><dd>{r.customerEmail}</dd></div>}
                 </dl>
                 <div class="bb-card__actions">
-                  <button type="button" class="bb-btn bb-btn--ghost" data-cancel-btn>Cancel</button>
-                  <button type="button" class="bb-btn bb-btn--ghost" data-reschedule-btn>Reschedule</button>
+                  {!viewingOtherBarber && (
+                    <>
+                      <button type="button" class="bb-btn bb-btn--ghost" data-cancel-btn>Cancel</button>
+                      <button type="button" class="bb-btn bb-btn--ghost" data-reschedule-btn>Reschedule</button>
+                    </>
+                  )}
+                  {r.chargeableAmountCents !== null && (
+                    <button
+                      type="button"
+                      class="bb-btn bb-btn--danger"
+                      data-charge-btn
+                      data-booking-id={r.bookingId}
+                      data-amount-cents={r.chargeableAmountCents}
+                    >
+                      Mark no-show &amp; charge ${(r.chargeableAmountCents / 100).toFixed(2)}
+                    </button>
+                  )}
                 </div>
                 <div class="bb-card__reschedule" data-reschedule-panel hidden>
                   <label class="bb-field bb-field--inline">
@@ -973,6 +1050,59 @@ Astro.response.headers.append('Set-Cookie', refreshBarberSessionCookie(session))
                 showMsg(card, 'Network error. Try again.', true);
                 rescheduleSubmit.disabled = false;
                 rescheduleSubmit.textContent = original;
+              }
+            });
+          }
+
+          // Owner-only: charge a no-show. Renders only when the
+          // server-side gate (isOwner + canChargeNoShow) passed, but
+          // the endpoint re-checks both — never trust the client.
+          const chargeBtn = card.querySelector('[data-charge-btn]');
+          if (chargeBtn) {
+            chargeBtn.addEventListener('click', async () => {
+              const amount = Number(chargeBtn.dataset.amountCents || 0);
+              const amountLabel = `$${(amount / 100).toFixed(2)}`;
+              if (
+                !confirm(
+                  `Charge this customer ${amountLabel} for the no-show? ` +
+                    `This cancels the booking and charges the card on file. ` +
+                    `Refunds must be issued from Square.`,
+                )
+              ) {
+                return;
+              }
+              chargeBtn.disabled = true;
+              const original = chargeBtn.textContent;
+              chargeBtn.textContent = 'Charging…';
+              try {
+                const res = await fetch('/api/barber/bookings/no-show-charge', {
+                  method: 'POST',
+                  credentials: 'same-origin',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ bookingId }),
+                });
+                const body = await res.json();
+                if (!body.ok) {
+                  showMsg(card, body?.error?.detail || 'Could not charge.', true);
+                  chargeBtn.disabled = false;
+                  chargeBtn.textContent = original;
+                  return;
+                }
+                if (body.chargeFailed) {
+                  showMsg(
+                    card,
+                    `Cancelled, but charge failed: ${body.chargeFailed.detail}. The card record is marked retryable.`,
+                    true,
+                  );
+                  setTimeout(() => window.location.reload(), 1800);
+                  return;
+                }
+                showMsg(card, `Charged ${amountLabel}. Refreshing…`, false);
+                setTimeout(() => window.location.reload(), 900);
+              } catch (_err) {
+                showMsg(card, 'Network error. Try again.', true);
+                chargeBtn.disabled = false;
+                chargeBtn.textContent = original;
               }
             });
           }
