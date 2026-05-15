@@ -117,6 +117,18 @@ const TIME_LABELS: Record<string, string> = {
   morning: 'Morning', afternoon: 'Afternoon', evening: 'Evening',
 };
 
+/** Format a "HH:MM" string (shop tz) as a 12-hour display string, e.g.
+ *  "15:00" → "3:00 PM". Returns the input unchanged on garbage. */
+function fmtTime12(hhmm: string): string {
+  const m = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(hhmm);
+  if (!m) return hhmm;
+  const h = Number(m[1]);
+  const min = m[2];
+  const period = h >= 12 ? 'PM' : 'AM';
+  const h12 = h % 12 === 0 ? 12 : h % 12;
+  return `${h12}:${min} ${period}`;
+}
+
 /** Builds the "May 5 – May 20 · Tue/Wed/Thu · Afternoon" subtitle.
  * Skips segments that are fully open (all chips on or empty). Returns
  * null when no window info is set so admin row can hide it. */
@@ -124,12 +136,25 @@ function fmtWindow(entry: WaitlistEntry): string | null {
   const range = fmtDateRange(entry.dateFrom, entry.dateTo);
   const days = entry.daysOfWeek;
   const showDays = Array.isArray(days) && days.length > 0 && days.length < 6;
-  const times = entry.timesOfDay;
-  const showTimes = Array.isArray(times) && times.length > 0 && times.length < 3;
   const parts: string[] = [];
   if (range) parts.push(range);
   if (showDays) parts.push(days!.map((d) => DAY_LABELS[d] ?? d).join('/'));
-  if (showTimes) parts.push(times!.map((t) => TIME_LABELS[t] ?? t).join('/'));
+
+  const exactTimes = entry.exactTimes;
+  if (Array.isArray(exactTimes) && exactTimes.length > 0) {
+    const timeList = exactTimes.map(fmtTime12).join(', ');
+    // Append the strictness suffix only when it's meaningful — multiple
+    // times need disambiguation, and the strict mode is unusual so
+    // worth surfacing even for a single time.
+    const isExact = entry.exactTimesMatchMode === 'exact';
+    const showSuffix = isExact || exactTimes.length > 1;
+    const suffix = showSuffix ? (isExact ? ' (exact)' : ' (±30 min)') : '';
+    parts.push(`${timeList}${suffix}`);
+  } else {
+    const times = entry.timesOfDay;
+    const showTimes = Array.isArray(times) && times.length > 0 && times.length < 3;
+    if (showTimes) parts.push(times!.map((t) => TIME_LABELS[t] ?? t).join('/'));
+  }
   return parts.length > 0 ? parts.join(' · ') : null;
 }
 

@@ -17,6 +17,12 @@ export interface WaitlistConfirmationProps {
   /** Optional pre-formatted "May 11 – May 18, 2026" or single date.
    * Empty/undefined → the window line is suppressed. */
   windowLabel?: string;
+  /** Optional pre-formatted time preference echo, e.g.
+   *   - "Mornings only" / "Mornings or evenings"
+   *   - "Within 30 minutes of 3:00 PM or 5:30 PM"
+   *   - "Exactly at 4:00 PM"
+   * Empty/undefined → the time-preference line is suppressed. */
+  timePreferenceLabel?: string;
   /** Shop physical address — currently 819 Linden Avenue, Zanesville, OH 43701. */
   shopAddress: string;
   /** Shop phone for footer. */
@@ -58,6 +64,9 @@ export function waitlistConfirmationHtml(props: WaitlistConfirmationProps): stri
   const service = escapeHtml(props.serviceName);
   const barber = escapeHtml(props.barberName);
   const windowLabel = props.windowLabel ? escapeHtml(props.windowLabel) : '';
+  const timePreferenceLabel = props.timePreferenceLabel
+    ? escapeHtml(props.timePreferenceLabel)
+    : '';
   const address = escapeHtml(props.shopAddress);
   const phone = escapeHtml(props.shopPhone);
 
@@ -97,9 +106,11 @@ export function waitlistConfirmationHtml(props: WaitlistConfirmationProps): stri
                       <p style="margin:0 0 6px;font-size:13px;letter-spacing:0.16em;text-transform:uppercase;color:${COLORS.gold};font-weight:700;">Service</p>
                       <p style="margin:0 0 14px;font-size:16px;color:${COLORS.ink};">${service}</p>
                       <p style="margin:0 0 6px;font-size:13px;letter-spacing:0.16em;text-transform:uppercase;color:${COLORS.gold};font-weight:700;">Barber</p>
-                      <p style="margin:0${windowLabel ? ' 0 14px' : ''};font-size:16px;color:${COLORS.ink};">${barber}</p>
+                      <p style="margin:0${windowLabel || timePreferenceLabel ? ' 0 14px' : ''};font-size:16px;color:${COLORS.ink};">${barber}</p>
                       ${windowLabel ? `<p style="margin:0 0 6px;font-size:13px;letter-spacing:0.16em;text-transform:uppercase;color:${COLORS.gold};font-weight:700;">When you're available</p>
-                      <p style="margin:0;font-size:16px;color:${COLORS.ink};">${windowLabel}</p>` : ''}
+                      <p style="margin:0${timePreferenceLabel ? ' 0 14px' : ''};font-size:16px;color:${COLORS.ink};">${windowLabel}</p>` : ''}
+                      ${timePreferenceLabel ? `<p style="margin:0 0 6px;font-size:13px;letter-spacing:0.16em;text-transform:uppercase;color:${COLORS.gold};font-weight:700;">Times you want</p>
+                      <p style="margin:0;font-size:16px;color:${COLORS.ink};">${timePreferenceLabel}</p>` : ''}
                     </td>
                   </tr>
                 </table>
@@ -142,6 +153,9 @@ export function waitlistConfirmationText(props: WaitlistConfirmationProps): stri
   ];
   if (props.windowLabel) {
     lines.push(`  When:    ${props.windowLabel}`);
+  }
+  if (props.timePreferenceLabel) {
+    lines.push(`  Times:   ${props.timePreferenceLabel}`);
   }
   lines.push(
     '',
