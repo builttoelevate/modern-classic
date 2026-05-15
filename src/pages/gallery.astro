@@ -10,7 +10,11 @@ import BaseLayout from '../layouts/BaseLayout.astro';
 import Header from '../components/Header.astro';
 import Footer from '../components/Footer.astro';
 import MobileBookCTA from '../components/MobileBookCTA.astro';
-import { listGalleryPhotos, type GalleryBlobPhoto } from '../lib/gallery/blobPhotos';
+import {
+  listBundledTombstones,
+  listGalleryPhotos,
+  type GalleryBlobPhoto,
+} from '../lib/gallery/blobPhotos';
 
 const imageModules = import.meta.glob<ImageMetadata>(
   '../assets/gallery/*.jpg',
@@ -30,11 +34,21 @@ const bundledPhotosAll = Object.entries(imageModules)
 // + delete endpoints invalidate the cache so the surface stays
 // fresh. Falls back to [] on any failure — page still renders the
 // bundled curated photos.
+//
+// Tombstones: bundled-asset filenames the operator has explicitly
+// hidden via /admin/gallery. Without these, a bundled photo whose
+// Blob curated copy was deleted would silently re-surface. See
+// src/lib/gallery/blobPhotos.ts.
 let blobPhotos: GalleryBlobPhoto[] = [];
+let tombstones: Set<string> = new Set();
 try {
-  blobPhotos = await listGalleryPhotos();
+  [blobPhotos, tombstones] = await Promise.all([
+    listGalleryPhotos().catch(() => [] as GalleryBlobPhoto[]),
+    listBundledTombstones().catch(() => new Set<string>()),
+  ]);
 } catch {
   blobPhotos = [];
+  tombstones = new Set();
 }
 
 // Dedup bundled vs Blob. After the admin runs the one-time migrate
@@ -43,7 +57,9 @@ try {
 // would render and the gallery would double. Skipping any
 // bundled whose filename appears as a curated Blob makes the
 // pre-migration → post-migration → bundled-removed transition
-// visually seamless.
+// visually seamless. The tombstone set extends that: once an
+// operator hides a bundled filename, it stays hidden even if no
+// Blob copy is currently masking it.
 const curatedBlobBasenames = new Set<string>(
   blobPhotos
     .filter((p) => p.kind === 'curated')
@@ -53,7 +69,7 @@ const curatedBlobBasenames = new Set<string>(
     }),
 );
 const bundledPhotos = bundledPhotosAll.filter(
-  (p) => !curatedBlobBasenames.has(p.filename),
+  (p) => !curatedBlobBasenames.has(p.filename) && !tombstones.has(p.filename),
 );
 
 // Use our local /book wizard on Vercel/prod; only fall back to the

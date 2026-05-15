@@ -9,9 +9,30 @@ import type { APIRoute } from 'astro';
 import { del } from '@vercel/blob';
 import { checkBasicAuth } from '../../../../lib/admin/auth';
 import {
+  CURATED_BARBER_ID,
   GALLERY_PREFIX,
+  hideBundledFilename,
   invalidateGalleryCache,
 } from '../../../../lib/gallery/blobPhotos';
+
+// Bundled-asset filenames live in src/assets/gallery/*.jpg and are
+// deduped against Blob curated by basename in the public /gallery.
+// If we delete a Blob curated photo whose basename matches a bundled
+// file, the bundled version would silently re-surface — so we also
+// write a tombstone for that filename. Bundled deletions go through
+// /api/admin/gallery/hide-bundled directly.
+const bundledImageModules = (
+  import.meta as unknown as {
+    glob: <T>(
+      pattern: string,
+      opts: { eager: true; import: 'default' },
+    ) => Record<string, T>;
+  }
+).glob<unknown>('../../../../assets/gallery/*.jpg', { eager: true, import: 'default' });
+const BUNDLED_BASENAMES = new Set<string>(
+  Object.keys(bundledImageModules).map((p) => p.split('/').pop() ?? ''),
+);
+const CURATED_PREFIX = `${GALLERY_PREFIX}${CURATED_BARBER_ID}/`;
 
 export const prerender = false;
 
@@ -54,9 +75,33 @@ export const POST: APIRoute = async ({ request }) => {
 
   try {
     await del(pathname);
+    // If this was a curated Blob whose basename matches a bundled
+    // asset, also tombstone the bundled filename — otherwise the
+    // bundled version re-appears on /gallery and the delete looks
+    // like it didn't take.
+    let tombstonedBundled: string | null = null;
+    if (pathname.startsWith(CURATED_PREFIX)) {
+      const basename = pathname.slice(CURATED_PREFIX.length);
+      if (BUNDLED_BASENAMES.has(basename)) {
+        try {
+          await hideBundledFilename(basename);
+          tombstonedBundled = basename;
+        } catch (err) {
+          // Non-fatal — Blob delete already succeeded. Surface so it's
+          // visible in logs and the operator can re-tombstone via the
+          // hide-bundled endpoint if it matters.
+          logAdmin({
+            phase: 'admin-gallery-tombstone-after-delete-failed',
+            pathname,
+            basename,
+            detail: err instanceof Error ? err.message : String(err),
+          });
+        }
+      }
+    }
     await invalidateGalleryCache();
-    logAdmin({ phase: 'admin-gallery-photo-deleted', pathname });
-    return Response.json({ ok: true, pathname });
+    logAdmin({ phase: 'admin-gallery-photo-deleted', pathname, tombstonedBundled });
+    return Response.json({ ok: true, pathname, tombstonedBundled });
   } catch (err) {
     const detail = err instanceof Error ? err.message : 'Unknown delete error.';
     logAdmin({ phase: 'admin-gallery-photo-delete-failed', pathname, detail });
