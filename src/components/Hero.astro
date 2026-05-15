@@ -22,11 +22,21 @@ interface Props {
    * "Any service" sentinel (which means the cron will skip the entry —
    * we want this list populated whenever Square is reachable). */
   waitlistServiceOptions?: Array<{ id: string; name: string }>;
+  /** When the visitor is signed in, the host page resolves their customer
+   * record and forwards name/email/phone so the hero's waitlist sheet
+   * doesn't ask them to retype it. Empty strings fall through to the
+   * sheet's "type it" UI for guests. */
+  waitlistPrefillName?: string;
+  waitlistPrefillEmail?: string;
+  waitlistPrefillPhone?: string;
 }
 const {
   availability,
   waitlistBarberOptions = [],
   waitlistServiceOptions = [],
+  waitlistPrefillName = '',
+  waitlistPrefillEmail = '',
+  waitlistPrefillPhone = '',
 } = Astro.props as Props;
 
 const base = import.meta.env.BASE_URL.replace(/\/$/, '');
@@ -119,6 +129,9 @@ const bookRel = isGhPages ? 'noopener' : '';
             teamMemberId={availability.teamMemberId}
             barberOptions={waitlistBarberOptions}
             serviceOptions={waitlistServiceOptions}
+            prefillName={waitlistPrefillName}
+            prefillEmail={waitlistPrefillEmail}
+            prefillPhone={waitlistPrefillPhone}
           />
         )}
       </div>

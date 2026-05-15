@@ -35,6 +35,7 @@ import {
 } from '../lib/availability/nextAvailable';
 import { getSession } from '../lib/auth/middleware';
 import { getCustomerBookings } from '../lib/square/customerBookings';
+import { getCustomerById } from '../lib/square/customers';
 import { getBarbers } from '../lib/square/team';
 import { getServicesCached } from '../lib/catalog/liveServices';
 import { findUsualCombo } from '../lib/booking/usual';
@@ -73,6 +74,13 @@ try {
 // serviceVariationId (matches the shape /api/waitlist + cron expect).
 const HIDDEN_WAITLIST_ITEM_IDS = new Set<string>(['REEU27HVQBIP27KEI47RI73V']);
 let waitlistServiceOptions: Array<{ id: string; name: string }> = [];
+
+// Signed-in customers see the hero waitlist sheet pre-filled with the
+// name / email / phone we already have on their Square record. Defaults
+// to empty strings for guests (the sheet collects them in the form).
+let waitlistPrefillName = '';
+let waitlistPrefillEmail = '';
+let waitlistPrefillPhone = '';
 try {
   const services = await getServicesCached();
   for (const s of services) {
@@ -90,12 +98,23 @@ try {
   if (session) {
     // Signed-in path: try to find their usual barber and that barber's
     // next slot. If we can't, fall through to the warm CTA — guests are
-    // the only audience for the "earliest across barbers" line.
+    // the only audience for the "earliest across barbers" line. Also
+    // resolve the customer's contact info so the hero waitlist sheet
+    // can pre-fill name / email / phone (parallel with the other
+    // lookups — no added round-trip).
     try {
-      const [bookings, barbers] = await Promise.all([
+      const [bookings, barbers, customer] = await Promise.all([
         getCustomerBookings(session.customerId),
         getBarbers(),
+        getCustomerById(session.customerId).catch(() => null),
       ]);
+      if (customer) {
+        const givenName = customer.given_name?.trim() ?? '';
+        const familyName = customer.family_name?.trim() ?? '';
+        waitlistPrefillName = [givenName, familyName].filter(Boolean).join(' ').trim();
+        waitlistPrefillEmail = session.email;
+        waitlistPrefillPhone = customer.phone_number?.trim() ?? '';
+      }
       const activeBarberIds = new Set(barbers.map((b) => b.id));
       const usual = findUsualCombo(
         [...bookings.upcoming, ...bookings.past],
@@ -140,6 +159,9 @@ try {
       availability={availability}
       waitlistBarberOptions={waitlistBarberOptions}
       waitlistServiceOptions={waitlistServiceOptions}
+      waitlistPrefillName={waitlistPrefillName}
+      waitlistPrefillEmail={waitlistPrefillEmail}
+      waitlistPrefillPhone={waitlistPrefillPhone}
     />
     <QuickActions />
     <Barbers />
