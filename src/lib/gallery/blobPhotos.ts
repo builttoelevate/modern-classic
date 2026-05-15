@@ -21,6 +21,14 @@ export const GALLERY_PREFIX = 'gallery/';
 const CACHE_KEY = 'mc:gallery:blob-list:v1';
 const CACHE_TTL_SECONDS = 60;
 
+// Tombstone set for bundled-asset filenames the operator has hidden
+// from the public /gallery. Without this, deleting a Blob curated
+// photo whose filename matches a bundled JPG silently re-surfaces
+// the bundled version (the public gallery's dedup logic only hides
+// bundled photos that are STILL in Blob curated). The tombstone is
+// the missing "stay hidden" signal.
+export const BUNDLED_TOMBSTONES_KEY = 'mc:gallery:bundled-tombstones';
+
 let _redis: Redis | null = null;
 function getRedis(): Redis | null {
   if (_redis) return _redis;
@@ -142,4 +150,39 @@ export async function invalidateGalleryCache(): Promise<void> {
   } catch {
     // Non-fatal — cache will TTL out within 60s anyway.
   }
+}
+
+/**
+ * Returns the set of bundled-asset filenames that should NOT render
+ * on the public /gallery, even if they're not present in Blob.
+ * Returns an empty Set on any failure (fail-open — better to show a
+ * photo than to hide everything because Redis blipped).
+ */
+export async function listBundledTombstones(): Promise<Set<string>> {
+  const redis = getRedis();
+  if (!redis) return new Set<string>();
+  try {
+    const members = (await redis.smembers(BUNDLED_TOMBSTONES_KEY)) as string[];
+    return new Set(members);
+  } catch {
+    return new Set<string>();
+  }
+}
+
+/** Adds a bundled filename (e.g. "mc002.jpg") to the tombstone set so
+ *  the public /gallery stops rendering it. Idempotent. */
+export async function hideBundledFilename(filename: string): Promise<void> {
+  const redis = getRedis();
+  if (!redis) return;
+  await redis.sadd(BUNDLED_TOMBSTONES_KEY, filename);
+  await invalidateGalleryCache();
+}
+
+/** Removes a bundled filename from the tombstone set so the public
+ *  /gallery starts rendering it again. Idempotent. */
+export async function unhideBundledFilename(filename: string): Promise<void> {
+  const redis = getRedis();
+  if (!redis) return;
+  await redis.srem(BUNDLED_TOMBSTONES_KEY, filename);
+  await invalidateGalleryCache();
 }

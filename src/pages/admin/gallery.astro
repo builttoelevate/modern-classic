@@ -3,12 +3,16 @@ export const prerender = false;
 
 import { checkBasicAuth } from '../../lib/admin/auth';
 import { getBarbers } from '../../lib/square/team';
-import { listGalleryPhotos, type GalleryBlobPhoto } from '../../lib/gallery/blobPhotos';
+import {
+  listBundledTombstones,
+  listGalleryPhotos,
+  type GalleryBlobPhoto,
+} from '../../lib/gallery/blobPhotos';
 
 const auth = checkBasicAuth(Astro.request);
 if (!auth.ok) return auth.challenge;
 
-interface Row {
+interface BlobRow {
   url: string;
   pathname: string;
   filename: string;
@@ -17,16 +21,38 @@ interface Row {
   uploadedAt: string;
   sizeBytes: number;
 }
+interface BundledRow {
+  src: string;
+  filename: string;
+}
+
+// Bundled photos baked into the build by Astro's import.meta.glob —
+// same source the public /gallery uses. Surfaced here so the operator
+// can hide them without first migrating to Blob.
+const bundledImageModules = import.meta.glob<ImageMetadata>(
+  '../../assets/gallery/*.jpg',
+  { eager: true, import: 'default' },
+);
+const bundledAll: BundledRow[] = Object.entries(bundledImageModules)
+  .map(([path, src]) => ({
+    src: src.src,
+    filename: path.split('/').pop() ?? '',
+  }))
+  .filter((b) => b.filename)
+  .sort((a, b) => a.filename.localeCompare(b.filename));
 
 let photos: GalleryBlobPhoto[] = [];
+let tombstones: Set<string> = new Set();
 let barberNameById = new Map<string, string>();
 let loadError: string | null = null;
 try {
-  const [p, barbers] = await Promise.all([
+  const [p, barbers, ts] = await Promise.all([
     listGalleryPhotos(),
     getBarbers().catch(() => []),
+    listBundledTombstones().catch(() => new Set<string>()),
   ]);
   photos = p;
+  tombstones = ts;
   for (const b of barbers) barberNameById.set(b.id, b.displayName);
 } catch (err) {
   loadError = err instanceof Error ? err.message : 'Failed to load gallery.';
@@ -37,7 +63,7 @@ function basename(pathname: string): string {
   return lastSlash === -1 ? pathname : pathname.slice(lastSlash + 1);
 }
 
-const rows: Row[] = photos.map((p) => {
+const blobRows: BlobRow[] = photos.map((p) => {
   const filename = basename(p.pathname);
   const sourceLabel =
     p.kind === 'curated'
@@ -54,8 +80,25 @@ const rows: Row[] = photos.map((p) => {
   };
 });
 
-const curatedCount = rows.filter((r) => r.kind === 'curated').length;
-const barberCount = rows.filter((r) => r.kind === 'barber').length;
+const curatedBlobBasenames = new Set<string>(
+  blobRows.filter((r) => r.kind === 'curated').map((r) => r.filename),
+);
+
+// Categorize each bundled photo for the admin UI:
+//  - shadowed: exists in Blob curated; the Blob row above already
+//    represents it. Don't render separately to avoid a duplicate tile.
+//  - hidden: tombstoned. Render in a "hidden" section with a Restore
+//    button so the operator can put it back.
+//  - visible: the bundled photo that's actually rendering on /gallery
+//    right now. Render with a "Hide" button.
+const visibleBundled = bundledAll.filter(
+  (b) => !curatedBlobBasenames.has(b.filename) && !tombstones.has(b.filename),
+);
+const hiddenBundled = bundledAll.filter((b) => tombstones.has(b.filename));
+
+const curatedCount = blobRows.filter((r) => r.kind === 'curated').length;
+const barberCount = blobRows.filter((r) => r.kind === 'barber').length;
+const totalVisibleOnGallery = blobRows.length + visibleBundled.length;
 ---
 <html lang="en">
   <head>
@@ -277,6 +320,28 @@ const barberCount = rows.filter((r) => r.kind === 'barber').length;
         background: rgba(220, 80, 80, 0.55);
         color: #fff;
       }
+      .photo--hidden { opacity: 0.55; }
+      .photo--hidden:hover { opacity: 1; }
+      .photo__restore {
+        position: absolute;
+        top: 4px;
+        right: 4px;
+        width: 26px; height: 26px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border: 1px solid rgba(0, 0, 0, 0.6);
+        background: rgba(0, 0, 0, 0.7);
+        color: var(--gold-light);
+        border-radius: 999px;
+        cursor: pointer;
+        font-size: 0.95rem;
+        backdrop-filter: blur(4px);
+      }
+      .photo__restore:hover {
+        background: rgba(201, 163, 92, 0.4);
+        color: #fff;
+      }
     </style>
   </head>
   <body>
@@ -294,21 +359,23 @@ const barberCount = rows.filter((r) => r.kind === 'barber').length;
 
       <h1>Gallery</h1>
       <p class="sub">
-        Every photo in the public <a href="/gallery" style="color: var(--gold-light);">/gallery</a>.
-        Curated + barber uploads, all in one Blob store.
+        Every photo on the public <a href="/gallery" style="color: var(--gold-light);">/gallery</a> —
+        bundled-from-build, curated uploads, and barber uploads. Tap the ✕ on any to remove it.
       </p>
 
       {loadError && <p class="err">{loadError}</p>}
 
       <section class="card" id="migrate-card">
-        <h2>Move bundled photos to Blob</h2>
+        <h2>Move bundled photos to Blob (optional)</h2>
         <p class="helper">
-          One-time migration of the 28 photos bundled in <code>src/assets/gallery/*.jpg</code>
-          into the same Blob store. Idempotent — safe to re-run; already-migrated photos are
-          skipped.
+          Optional one-time copy of the 28 photos bundled in <code>src/assets/gallery/*.jpg</code>
+          into Blob storage. Idempotent — safe to re-run; already-migrated photos are skipped.
+          Not required for managing the gallery — the section below lets you hide bundled photos
+          directly. Migration is only useful if you want a Blob copy you can replace later, or
+          you eventually want to remove the bundled files from the repo.
         </p>
         <div class="actions">
-          <button type="button" class="btn" id="migrate-btn">Run migration</button>
+          <button type="button" class="btn btn--ghost" id="migrate-btn">Run migration</button>
         </div>
         <p class="status" id="migrate-status" hidden></p>
       </section>
@@ -330,16 +397,35 @@ const barberCount = rows.filter((r) => r.kind === 'barber').length;
       </section>
 
       <h2>
-        All gallery photos
+        On the public gallery now
         <span class="sub" style="display: inline; margin: 0 0 0 10px; font-size: 0.85rem;">
-          {rows.length} total · {curatedCount} curated · {barberCount} barber uploads
+          {totalVisibleOnGallery} total · {visibleBundled.length} bundled · {curatedCount} curated · {barberCount} barber uploads
         </span>
       </h2>
-      {rows.length === 0 ? (
-        <p class="helper">No photos in the Blob store yet. Use the migration button above to bring in the bundled set, or add a new photo.</p>
+      <p class="helper">
+        Tap the ✕ on any photo to remove it from <a href="/gallery" style="color: var(--gold-light);">/gallery</a>.
+        Bundled photos are baked into the build; hiding them writes a tombstone you can restore from the section below.
+      </p>
+      {totalVisibleOnGallery === 0 ? (
+        <p class="helper">Nothing visible on the public gallery yet. Add a photo above.</p>
       ) : (
         <ul class="gallery-grid" id="gallery-grid">
-          {rows.map((r) => (
+          {visibleBundled.map((b) => (
+            <li class="photo" data-bundled-filename={b.filename}>
+              <img src={b.src} alt={b.filename} loading="lazy" />
+              <span class="photo__source">bundled</span>
+              <button
+                type="button"
+                class="photo__delete"
+                aria-label={`Hide ${b.filename}`}
+                data-hide-bundled
+                data-filename={b.filename}
+              >
+                ✕
+              </button>
+            </li>
+          ))}
+          {blobRows.map((r) => (
             <li class="photo" data-pathname={r.pathname}>
               <img src={r.url} alt={r.filename} loading="lazy" />
               <span class={`photo__source${r.kind === 'barber' ? ' photo__source--barber' : ''}`}>
@@ -357,6 +443,35 @@ const barberCount = rows.filter((r) => r.kind === 'barber').length;
             </li>
           ))}
         </ul>
+      )}
+
+      {hiddenBundled.length > 0 && (
+        <>
+          <h2>
+            Hidden bundled photos
+            <span class="sub" style="display: inline; margin: 0 0 0 10px; font-size: 0.85rem;">
+              {hiddenBundled.length} hidden — won't appear publicly
+            </span>
+          </h2>
+          <p class="helper">Tap to restore. The photo will reappear on /gallery.</p>
+          <ul class="gallery-grid" id="hidden-grid">
+            {hiddenBundled.map((b) => (
+              <li class="photo photo--hidden" data-bundled-filename={b.filename}>
+                <img src={b.src} alt={b.filename} loading="lazy" />
+                <span class="photo__source">hidden</span>
+                <button
+                  type="button"
+                  class="photo__restore"
+                  aria-label={`Restore ${b.filename}`}
+                  data-restore-bundled
+                  data-filename={b.filename}
+                >
+                  ↺
+                </button>
+              </li>
+            ))}
+          </ul>
+        </>
       )}
     </div>
 
@@ -599,7 +714,7 @@ const barberCount = rows.filter((r) => r.kind === 'barber').length;
           });
         }
 
-        // ---------- Per-photo delete ----------
+        // ---------- Per-photo delete (Blob photos) ----------
         document.querySelectorAll('[data-delete]').forEach((btn) => {
           const li = btn.closest('[data-pathname]');
           if (!li) return;
@@ -627,6 +742,75 @@ const barberCount = rows.filter((r) => r.kind === 'barber').length;
                 return;
               }
               li.remove();
+            } catch {
+              alert('Network error. Try again.');
+              btn.disabled = false;
+              btn.textContent = originalLabel;
+            }
+          });
+        });
+
+        // ---------- Hide a bundled photo (writes Redis tombstone) ----------
+        document.querySelectorAll('[data-hide-bundled]').forEach((btn) => {
+          const li = btn.closest('[data-bundled-filename]');
+          if (!li) return;
+          const filename = li.getAttribute('data-bundled-filename') || '';
+          btn.addEventListener('click', async () => {
+            if (!confirm('Hide ' + filename + ' from /gallery? You can restore it from the section below.')) {
+              return;
+            }
+            btn.disabled = true;
+            const originalLabel = btn.textContent;
+            btn.textContent = '…';
+            try {
+              const res = await fetch('/api/admin/gallery/hide-bundled', {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ filename: filename, hidden: true }),
+              });
+              const data = await res.json();
+              if (!res.ok || !data.ok) {
+                alert((data && data.error && data.error.detail) || 'Could not hide.');
+                btn.disabled = false;
+                btn.textContent = originalLabel;
+                return;
+              }
+              // Reload so the photo moves to the "Hidden" section without
+              // a fragile manual DOM rebuild.
+              window.location.reload();
+            } catch {
+              alert('Network error. Try again.');
+              btn.disabled = false;
+              btn.textContent = originalLabel;
+            }
+          });
+        });
+
+        // ---------- Restore a bundled photo (clears tombstone) ----------
+        document.querySelectorAll('[data-restore-bundled]').forEach((btn) => {
+          const li = btn.closest('[data-bundled-filename]');
+          if (!li) return;
+          const filename = li.getAttribute('data-bundled-filename') || '';
+          btn.addEventListener('click', async () => {
+            btn.disabled = true;
+            const originalLabel = btn.textContent;
+            btn.textContent = '…';
+            try {
+              const res = await fetch('/api/admin/gallery/hide-bundled', {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ filename: filename, hidden: false }),
+              });
+              const data = await res.json();
+              if (!res.ok || !data.ok) {
+                alert((data && data.error && data.error.detail) || 'Could not restore.');
+                btn.disabled = false;
+                btn.textContent = originalLabel;
+                return;
+              }
+              window.location.reload();
             } catch {
               alert('Network error. Try again.');
               btn.disabled = false;
