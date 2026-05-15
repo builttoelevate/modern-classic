@@ -18,6 +18,12 @@ interface Props {
    * with no serviceVariationId and the hourly cron would skip it as
    * `noVariation`, breaking the auto-notify promise. */
   serviceOptions?: Array<{ id: string; name: string }>;
+  /** When the visitor is signed in, the host page resolves their
+   * customer record and forwards name/email/phone here so the waitlist
+   * sheet doesn't ask them to retype info we already have. */
+  prefillName?: string;
+  prefillEmail?: string;
+  prefillPhone?: string;
 }
 
 /**
@@ -35,6 +41,9 @@ export function HeroWaitlistTrigger({
   teamMemberId = null,
   barberOptions,
   serviceOptions,
+  prefillName = '',
+  prefillEmail = '',
+  prefillPhone = '',
 }: Props) {
   const [open, setOpen] = useState(false);
 
@@ -73,6 +82,9 @@ export function HeroWaitlistTrigger({
         serviceVariationId={null}
         barberOptions={barberOptions}
         serviceOptions={serviceOptions}
+        prefillName={prefillName}
+        prefillEmail={prefillEmail}
+        prefillPhone={prefillPhone}
       />
     </>
   );
