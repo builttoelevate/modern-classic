@@ -24,15 +24,16 @@ if (session) {
 >
   <Header />
   <main id="main" class="auth-page">
-    <div class="auth-card" data-state="form">
+    <div class="auth-card" data-redirect-target={redirectTarget}>
       <div class="auth-eyebrow">Customer sign in</div>
       <h1>Manage your bookings</h1>
       <p class="auth-body">
         Enter the email <em>or</em> phone number you used to book. We'll send a
-        one-tap sign-in link to the email on your account.
+        6-digit code to your email — type it here to sign in.
       </p>
 
-      <form id="signin-form" class="signin-form" novalidate>
+      <!-- Step 1: identify the customer + request a code. -->
+      <form id="identify-form" class="signin-form" novalidate>
         <label for="identifier">Email or phone</label>
         <input
           id="identifier"
@@ -45,26 +46,41 @@ if (session) {
           required
           placeholder="you@example.com  or  (740) 555‑0123"
         />
-        <button type="submit" class="auth-btn" data-submit-label="Send me a sign-in link">
-          Send me a sign-in link
+        <button type="submit" class="auth-btn" data-submit-label="Send me a code">
+          Send me a code
         </button>
-        <p class="signin-error" id="signin-error" role="alert" hidden></p>
+        <p class="signin-error" id="identify-error" role="alert" hidden></p>
       </form>
 
-      <div class="signin-success" hidden>
-        <p>
-          <strong>Check your email.</strong> If <span data-success-id></span>{' '}
-          matches a customer on file, we just sent a sign-in link. It expires in
-          15&nbsp;minutes.
+      <!-- Step 2: verify the code. Hidden until step 1 succeeds. -->
+      <form id="verify-form" class="signin-form" novalidate hidden>
+        <p class="verify-instruction">
+          We sent a 6-digit code to <strong data-sent-to></strong>.
+          Type it below — it expires in 15 minutes.
         </p>
-        <p class="signin-success__hint">
-          Don't see it? Check your spam folder — it'll come from
-          <strong>bookings@designedtoelevate.co</strong>.
-        </p>
-        <button type="button" class="auth-btn auth-btn--ghost" data-resend>
-          Try a different email or phone
+        <label for="code">Your sign-in code</label>
+        <input
+          id="code"
+          name="code"
+          type="text"
+          inputmode="numeric"
+          autocomplete="one-time-code"
+          pattern="[0-9]*"
+          maxlength="6"
+          required
+          placeholder="6-digit code"
+        />
+        <button type="submit" class="auth-btn" data-submit-label="Sign in">
+          Sign in
         </button>
-      </div>
+        <p class="signin-error" id="verify-error" role="alert" hidden></p>
+        <button type="button" class="auth-btn auth-btn--ghost" data-request-new-code>
+          Send a new code
+        </button>
+        <button type="button" class="auth-btn auth-btn--ghost" data-change-email>
+          Use a different email or phone
+        </button>
+      </form>
 
       <p class="auth-help">
         Trouble signing in? Call the shop at{' '}
@@ -76,6 +92,23 @@ if (session) {
         New to Modern Classic? <a class="link-gold" href={`${base}/book`}>Book a visit</a> first
         — your account is created automatically when you book.
       </p>
+
+      <details class="auth-alt">
+        <summary>Prefer a sign-in link instead?</summary>
+        <p>
+          On a desktop where your browser and email app share cookies, you
+          can use the link-based flow. (Not recommended on phones — some
+          email apps open links in their own private browser that won't
+          share the sign-in with your home-screen icon.)
+        </p>
+        <button type="button" class="auth-btn auth-btn--ghost" id="use-magic-link">
+          Send me a sign-in link instead
+        </button>
+        <p class="signin-success" id="magic-link-sent" hidden>
+          <strong>Check your email.</strong> If we found an account, we sent a
+          sign-in link. It expires in 15&nbsp;minutes.
+        </p>
+      </details>
     </div>
   </main>
   <Footer />
@@ -83,23 +116,29 @@ if (session) {
 
 <script is:inline>
   (function () {
-    const card = document.querySelector('.auth-card[data-state="form"]');
-    const form = document.getElementById('signin-form');
-    const error = document.getElementById('signin-error');
-    if (!card || !form || !error) return;
+    const identifyForm = document.getElementById('identify-form');
+    const identifyError = document.getElementById('identify-error');
+    const verifyForm = document.getElementById('verify-form');
+    const verifyError = document.getElementById('verify-error');
+    const sentTo = document.querySelector('[data-sent-to]');
+    const requestNewBtn = document.querySelector('[data-request-new-code]');
+    const changeEmailBtn = document.querySelector('[data-change-email]');
+    const useMagicLinkBtn = document.getElementById('use-magic-link');
+    const magicLinkSent = document.getElementById('magic-link-sent');
+    const card = document.querySelector('.auth-card[data-redirect-target]');
+    const redirectTarget = (card && card.getAttribute('data-redirect-target')) || '/my-bookings';
+    if (!identifyForm || !verifyForm || !identifyError || !verifyError || !sentTo) return;
 
-    const successPanel = card.querySelector('.signin-success');
-    const successId = card.querySelector('[data-success-id]');
-    const resendBtn = card.querySelector('[data-resend]');
-    const submit = form.querySelector('button[type="submit"]');
+    let lastIdentifier = '';
+    let lastEmail = '';
 
-    const showError = (msg) => {
-      error.textContent = msg;
-      error.hidden = false;
+    const showError = (el, msg) => {
+      el.textContent = msg;
+      el.hidden = false;
     };
-    const clearError = () => {
-      error.textContent = '';
-      error.hidden = true;
+    const clearError = (el) => {
+      el.textContent = '';
+      el.hidden = true;
     };
     const looksLikeEmail = (s) => /^\S+@\S+\.\S+$/.test(s);
     const looksLikePhone = (s) => {
@@ -107,70 +146,207 @@ if (session) {
       return d.length >= 7 && d.length <= 16;
     };
 
-    form.addEventListener('submit', async (e) => {
+    function setBusy(form, busy) {
+      const btn = form.querySelector('button[type="submit"]');
+      if (!btn) return;
+      btn.disabled = busy;
+      btn.textContent = busy ? 'Sending…' : btn.dataset.submitLabel;
+    }
+
+    function showVerifyStep(emailDisplay) {
+      sentTo.textContent = emailDisplay;
+      identifyForm.hidden = true;
+      verifyForm.hidden = false;
+      const codeInput = verifyForm.querySelector('#code');
+      if (codeInput) {
+        codeInput.value = '';
+        setTimeout(() => codeInput.focus(), 50);
+      }
+      clearError(verifyError);
+    }
+    function showIdentifyStep() {
+      verifyForm.hidden = true;
+      identifyForm.hidden = false;
+      clearError(verifyError);
+      const codeInput = verifyForm.querySelector('#code');
+      if (codeInput) codeInput.value = '';
+      const submit = identifyForm.querySelector('button[type="submit"]');
+      if (submit) {
+        submit.disabled = false;
+        submit.textContent = submit.dataset.submitLabel;
+      }
+    }
+
+    async function postRequestCode(identifier) {
+      const res = await fetch('/api/auth/request-code', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ identifier }),
+      });
+      const data = await res.json().catch(() => ({}));
+      return { res, data };
+    }
+
+    identifyForm.addEventListener('submit', async (e) => {
       e.preventDefault();
-      clearError();
-      const raw = form.identifier.value.trim();
+      clearError(identifyError);
+      const raw = identifyForm.identifier.value.trim();
       if (!raw) {
-        showError('Enter the email or phone you used to book.');
+        showError(identifyError, 'Enter the email or phone you used to book.');
         return;
       }
       if (!looksLikeEmail(raw) && !looksLikePhone(raw)) {
-        showError("That doesn't look like an email or a phone number.");
+        showError(identifyError, "That doesn't look like an email or a phone number.");
         return;
       }
-      submit.disabled = true;
-      submit.textContent = 'Sending…';
+      lastIdentifier = raw;
+      setBusy(identifyForm, true);
+      try {
+        const { res, data } = await postRequestCode(raw);
+        if (res.status === 429) {
+          showError(identifyError, data?.error?.detail || 'Please wait a moment before requesting another code.');
+          setBusy(identifyForm, false);
+          return;
+        }
+        if (data?.error?.code === 'NO_EMAIL_ON_FILE') {
+          showError(identifyError, data.error.detail);
+          setBusy(identifyForm, false);
+          return;
+        }
+        if (!res.ok || !data.ok) {
+          showError(identifyError, data?.error?.detail || 'Something went wrong. Please try again.');
+          setBusy(identifyForm, false);
+          return;
+        }
+        // The server returns the lowercased email if it matched a
+        // customer; otherwise it returns the generic OK without email
+        // (anti-enumeration). Either way, show the verify step so we
+        // don't leak whether the account exists. The customer who
+        // typed a bad address will fail at code entry instead.
+        lastEmail = typeof data.email === 'string' ? data.email : '';
+        showVerifyStep(lastEmail || raw);
+        setBusy(identifyForm, false);
+      } catch {
+        showError(identifyError, 'Network error. Please try again.');
+        setBusy(identifyForm, false);
+      }
+    });
+
+    verifyForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      clearError(verifyError);
+      const code = (verifyForm.code.value || '').replace(/\D/g, '');
+      if (code.length !== 6) {
+        showError(verifyError, 'Type the 6-digit code from your email.');
+        return;
+      }
+      if (!lastEmail) {
+        // Defensive: if the server didn't tell us the email (generic
+        // OK), they typed a bad identifier. Send them back.
+        showError(verifyError, "We can't verify a code for that account. Try again from the start.");
+        return;
+      }
+      setBusy(verifyForm, true);
+      try {
+        const res = await fetch('/api/auth/verify-code', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: lastEmail, code }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (res.ok && data.ok) {
+          window.location.href = redirectTarget;
+          return;
+        }
+        showError(verifyError, data?.error?.detail || "That didn't work. Try again.");
+        setBusy(verifyForm, false);
+        // For expired / locked, the next likely action is "request a
+        // new code" — focus that button so a tap is one motion away.
+        if (data?.error?.code === 'CODE_EXPIRED' || data?.error?.code === 'CODE_LOCKED') {
+          requestNewBtn?.focus();
+        }
+      } catch {
+        showError(verifyError, 'Network error. Please try again.');
+        setBusy(verifyForm, false);
+      }
+    });
+
+    requestNewBtn?.addEventListener('click', async () => {
+      if (!lastIdentifier) return;
+      clearError(verifyError);
+      requestNewBtn.disabled = true;
+      const original = requestNewBtn.textContent;
+      requestNewBtn.textContent = 'Sending…';
+      try {
+        const { res, data } = await postRequestCode(lastIdentifier);
+        if (res.status === 429) {
+          showError(verifyError, data?.error?.detail || 'Please wait a moment.');
+          return;
+        }
+        if (!res.ok || !data.ok) {
+          showError(verifyError, data?.error?.detail || 'Could not send a new code.');
+          return;
+        }
+        lastEmail = typeof data.email === 'string' ? data.email : lastEmail;
+        sentTo.textContent = lastEmail || lastIdentifier;
+        const codeInput = verifyForm.querySelector('#code');
+        if (codeInput) {
+          codeInput.value = '';
+          codeInput.focus();
+        }
+        showError(verifyError, '');
+        // Brief visual confirm.
+        requestNewBtn.textContent = 'Sent. Check your email.';
+        setTimeout(() => { requestNewBtn.textContent = original; }, 2200);
+      } catch {
+        showError(verifyError, 'Network error. Please try again.');
+      } finally {
+        requestNewBtn.disabled = false;
+      }
+    });
+
+    changeEmailBtn?.addEventListener('click', () => {
+      lastIdentifier = '';
+      lastEmail = '';
+      identifyForm.identifier.value = '';
+      showIdentifyStep();
+      setTimeout(() => identifyForm.identifier.focus(), 50);
+    });
+
+    // Magic-link fallback for desktop users whose browser and mail
+    // app share cookies. Kept inside <details> so it's discoverable
+    // but not pushed at mobile users where it's the broken path.
+    useMagicLinkBtn?.addEventListener('click', async () => {
+      const raw = identifyForm.identifier.value.trim() || lastIdentifier;
+      if (!raw) {
+        showError(identifyError, 'Enter your email or phone above first.');
+        identifyForm.identifier.focus();
+        return;
+      }
+      useMagicLinkBtn.disabled = true;
+      const original = useMagicLinkBtn.textContent;
+      useMagicLinkBtn.textContent = 'Sending…';
       try {
         const res = await fetch('/api/auth/request', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ identifier: raw }),
         });
-        const data = await res.json();
-        if (res.status === 429) {
-          showError(data?.error?.detail || 'Please wait a moment before requesting another link.');
-          submit.disabled = false;
-          submit.textContent = submit.dataset.submitLabel;
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || !data.ok) {
+          showError(identifyError, data?.error?.detail || 'Could not send the link.');
+          useMagicLinkBtn.disabled = false;
+          useMagicLinkBtn.textContent = original;
           return;
         }
-        // Phone-path dead end: customer found but no email on file.
-        // Surface the message verbatim so they know to call the shop.
-        if (data?.error?.code === 'NO_EMAIL_ON_FILE') {
-          showError(data.error.detail);
-          submit.disabled = false;
-          submit.textContent = submit.dataset.submitLabel;
-          return;
-        }
-        if (!res.ok) {
-          showError(data?.error?.detail || 'Something went wrong. Please try again.');
-          submit.disabled = false;
-          submit.textContent = submit.dataset.submitLabel;
-          return;
-        }
-        if (successId) successId.textContent = raw;
-        if (form) form.hidden = true;
-        if (successPanel) successPanel.hidden = false;
+        if (magicLinkSent) magicLinkSent.hidden = false;
+        useMagicLinkBtn.textContent = 'Link sent.';
       } catch {
-        showError('Network error. Please try again.');
-        submit.disabled = false;
-        submit.textContent = submit.dataset.submitLabel;
+        showError(identifyError, 'Network error. Please try again.');
+        useMagicLinkBtn.disabled = false;
+        useMagicLinkBtn.textContent = original;
       }
     });
-
-    if (resendBtn) {
-      resendBtn.addEventListener('click', () => {
-        if (form) {
-          form.hidden = false;
-          form.identifier.value = '';
-          submit.disabled = false;
-          submit.textContent = submit.dataset.submitLabel;
-          form.identifier.focus();
-        }
-        if (successPanel) successPanel.hidden = true;
-        clearError();
-      });
-    }
   })();
 </script>
 
@@ -209,6 +385,11 @@ if (session) {
     line-height: 1.6;
     margin: 0 0 1.5rem;
   }
+  .auth-body em {
+    color: var(--color-gold);
+    font-style: normal;
+    font-weight: 600;
+  }
   .signin-form {
     display: grid;
     gap: 0.5rem;
@@ -236,27 +417,37 @@ if (session) {
     outline: none;
     border-color: var(--color-gold);
   }
-  .auth-body em {
-    color: var(--color-gold);
-    font-style: normal;
-    font-weight: 600;
+  .signin-form input#code {
+    font-family: 'SF Mono', Menlo, Consolas, monospace;
+    font-size: 1.25rem;
+    letter-spacing: 0.5em;
+    padding-left: 1.4rem;
+    text-align: center;
   }
-  .signin-success__hint {
-    font-size: 0.86rem;
+  .verify-instruction {
+    margin: 0 0 0.5rem;
     color: var(--color-text-muted);
     line-height: 1.5;
   }
-  .signin-success__hint strong {
+  .verify-instruction strong {
     color: var(--color-gold-light);
     font-weight: 600;
+    word-break: break-all;
   }
-  .auth-help {
-    margin-top: 1.25rem;
-    padding-top: 1rem;
-    border-top: 1px solid var(--color-border);
-    font-size: 0.86rem;
-    color: var(--color-text-muted);
-    line-height: 1.5;
+  .signin-error {
+    margin: 0.5rem 0 0;
+    color: #f5a682;
+    font-size: 0.92rem;
+    line-height: 1.4;
+  }
+  .signin-success {
+    color: var(--color-text);
+    line-height: 1.6;
+    margin: 1rem 0 0;
+  }
+  .signin-success strong {
+    color: var(--color-gold-light);
+    font-weight: 600;
   }
   .auth-btn {
     margin-top: 0.5rem;
@@ -279,7 +470,7 @@ if (session) {
   .auth-btn:hover { background: var(--color-gold-light); }
   .auth-btn[disabled] { opacity: 0.7; cursor: not-allowed; }
   .auth-btn--ghost {
-    margin-top: 0.75rem;
+    margin-top: 0.5rem;
     background: transparent;
     color: var(--color-text);
     border-color: var(--color-border);
@@ -287,22 +478,38 @@ if (session) {
   .auth-btn--ghost:hover {
     border-color: var(--color-gold);
     color: var(--color-gold-light);
+    background: transparent;
   }
-  .signin-error {
-    margin: 0.5rem 0 0;
-    color: #f5a682;
-    font-size: 0.92rem;
-    line-height: 1.4;
+  .auth-help {
+    margin-top: 1.25rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--color-border);
+    font-size: 0.86rem;
+    color: var(--color-text-muted);
+    line-height: 1.5;
   }
-  .signin-success {
-    color: var(--color-text);
-    line-height: 1.6;
-  }
-  .signin-success p { margin: 0 0 1rem; }
   .auth-fineprint {
     margin-top: 1rem;
     font-size: 0.85rem;
     color: var(--color-text-dim);
+  }
+  .auth-alt {
+    margin-top: 1.5rem;
+    padding-top: 1rem;
+    border-top: 1px dashed var(--color-border);
+  }
+  .auth-alt > summary {
+    cursor: pointer;
+    font-size: 0.85rem;
+    color: var(--color-text-muted);
+    list-style: revert;
+  }
+  .auth-alt > summary:hover { color: var(--color-gold); }
+  .auth-alt > p {
+    margin: 0.75rem 0;
+    font-size: 0.85rem;
+    color: var(--color-text-dim);
+    line-height: 1.5;
   }
   .link-gold { color: var(--color-gold); }
   .link-gold:hover { color: var(--color-gold-light); }

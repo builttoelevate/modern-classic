@@ -151,6 +151,43 @@ export async function sendMagicLink(input: SendMagicLinkInput): Promise<{ id: st
   });
 }
 
+export interface SendAuthCodeInput {
+  to: string;
+  code: string;
+  ttlMinutes: number;
+  customerName?: string;
+  shopPhone: string;
+}
+
+/**
+ * Send the customer their 6-digit sign-in code. The link-free
+ * counterpart to sendMagicLink — used when the customer's email
+ * client opens links in a cookie-isolated in-app browser (the
+ * iOS ProtonMail case). They read the code, swipe back to their
+ * sign-in form, type it in. Cookie lands in the right jar.
+ */
+export async function sendAuthCode(input: SendAuthCodeInput): Promise<{ id: string }> {
+  const { authCodeHtml, authCodeText, authCodeSubject } = await import('./templates/authCode');
+  const html = authCodeHtml({
+    code: input.code,
+    customerName: input.customerName,
+    ttlMinutes: input.ttlMinutes,
+    shopPhone: input.shopPhone,
+  });
+  const text = authCodeText({
+    code: input.code,
+    customerName: input.customerName,
+    ttlMinutes: input.ttlMinutes,
+    shopPhone: input.shopPhone,
+  });
+  return sendEmail({
+    to: input.to,
+    subject: authCodeSubject(input.code),
+    html,
+    text,
+  });
+}
+
 export interface SendWaitlistInput {
   to: string;
   customerName: string;

@@ -22,7 +22,11 @@
 //   5. Hardcoded production fallback so emails never go out with
 //      a broken link even if every other lookup fails.
 
-const FALLBACK_ORIGIN = 'https://mdrnclassic.com';
+// Apex of the barbershop site (this codebase). NOT mdrnclassic.com —
+// that's the separate Shopify storefront for grooming products. Sending
+// magic links / review emails to mdrnclassic.com would dead-end on
+// 404 from Shopify.
+const FALLBACK_ORIGIN = 'https://modernclassicbarbershop.com';
 
 export function getPublicOrigin(request: Request): string {
   const env = import.meta.env.SITE_URL;
