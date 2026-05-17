@@ -47,6 +47,18 @@ function getReplyTo(): string {
   return v;
 }
 
+/**
+ * Extract the bare email address from an RFC 5322 "Name <addr@domain>"
+ * string, or return the input unchanged if no angle brackets are
+ * present. Used by sendReviewRequest() to build a per-call From with
+ * a personal display name while keeping the same address as the
+ * global RESEND_FROM_ADDRESS.
+ */
+function parseAddressOnly(rfcAddress: string): string {
+  const m = /<([^>]+)>/.exec(rfcAddress);
+  return (m ? m[1] : rfcAddress).trim();
+}
+
 export class ResendApiError extends Error {
   readonly status: number;
   readonly body: string;
@@ -76,6 +88,16 @@ interface SendEmailInput {
   text: string;
   replyTo?: string;
   /**
+   * Optional per-call RFC 5322 From line. When set, overrides the
+   * global RESEND_FROM_ADDRESS env var. Used by sendReviewRequest()
+   * to personalize the sender as "{barberName} at Modern Classic"
+   * — a deliverability win against Gmail's Promotions classifier,
+   * which treats a generic shop From-name as a bulk-marketing
+   * signal. Every other sender (sign-in code, booking confirmations,
+   * waitlist, etc.) leaves this undefined and gets the global From.
+   */
+  from?: string;
+  /**
    * Custom RFC 5322 headers. We use this for List-Unsubscribe /
    * List-Unsubscribe-Post (Gmail bulk-sender requirements + RFC 8058
    * one-click unsubscribe).
@@ -90,7 +112,7 @@ interface ResendResponse {
 async function sendEmail(input: SendEmailInput): Promise<{ id: string }> {
   const key = getApiKey();
   const body: Record<string, unknown> = {
-    from: getFromAddress(),
+    from: input.from ?? getFromAddress(),
     to: [input.to],
     subject: input.subject,
     html: input.html,
@@ -244,11 +266,23 @@ export async function sendReviewRequest(
   );
   const html = reviewRequestHtml(input);
   const text = reviewRequestText(input);
+  // Personal From-name override — "{barberName} at Modern Classic
+  // <bookings@designedtoelevate.co>" instead of the global shop
+  // display name. Reads as a 1:1 note from the barber, not a
+  // shop-wide marketing blast. Falls back to the global address
+  // when barberName is empty (defensive — the cron and test
+  // endpoint both populate it from Square TeamMember.displayName).
+  const trimmedBarber = (input.barberName ?? '').trim();
+  const baseAddress = parseAddressOnly(getFromAddress());
+  const personalFrom = trimmedBarber
+    ? `${trimmedBarber} at Modern Classic <${baseAddress}>`
+    : undefined;
   return sendEmail({
     to: input.to,
     subject: reviewRequestSubject({ customerName: input.customerName }),
     html,
     text,
+    from: personalFrom,
     headers: {
       'List-Unsubscribe': `<mailto:${getReplyTo()}?subject=unsubscribe>, <${input.unsubscribeUrl}>`,
       'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',

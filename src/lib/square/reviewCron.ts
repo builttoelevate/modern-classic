@@ -89,12 +89,14 @@ function logCron(payload: Record<string, unknown>): void {
 function formatAppointmentDate(startAtUtc: string): string {
   const d = new Date(startAtUtc);
   if (isNaN(d.getTime())) return startAtUtc;
+  // Day-of-week only ("Thursday") — the review cron's window is 2-5
+  // days back from now, so the customer reads "Thanks for coming in
+  // Thursday" as the natural, recent visit. Full dates like
+  // "Thursday, May 14, 2026" read as a mail-merge template and hurt
+  // the 1:1 deliverability angle.
   return new Intl.DateTimeFormat('en-US', {
     timeZone: 'America/New_York',
-    weekday: 'short',
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
+    weekday: 'long',
   }).format(d);
 }
 
