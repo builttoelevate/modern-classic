@@ -1,56 +1,44 @@
-// Review-request email — deliverability rewrite (May 2026).
+// Phase 7 — review-request email template.
 //
-// Why this looks the way it does:
+// Branded HTML + a plaintext fallback. Inline CSS only (no <style>, no
+// <link>) for maximum email-client compatibility (Gmail strips <style> in
+// some contexts; Outlook is its own special hell). Single CTA button per
+// the doc — never gate by sentiment, send everyone the same Google review
+// link and trust customers to self-select.
 //
-// The previous version was a branded HTML email — parchment background,
-// white card, gold uppercase CTA button, CAN-SPAM footer block. Gmail's
-// Promotions classifier read every one of those as marketing-bulk
-// signals and routed the email to the Promotions tab. The 6-digit
-// sign-in code email (same Resend account, same sender) lands in
-// Primary because it's minimal and looks transactional.
-//
-// This rewrite drops every visual marketing signal: no <table>
-// scaffolding, no card, no header wordmark, no styled CTA button,
-// no footer address block. The goal is a 1:1-looking note from the
-// barber who served the appointment — black text on white, system
-// fonts, inline text link, conversational copy.
-//
-// Kept (intentionally):
-//   - HTML-escape every interpolated value (XSS hygiene + email
-//     clients render entity-escaped reliably).
-//   - A tiny lowercase "unsubscribe" link at the very bottom. The
-//     accompanying List-Unsubscribe header is still set in
-//     sendReviewRequest() in resend.ts — Gmail's bulk-sender
-//     guidelines treat a *missing* header as a stronger negative
-//     signal than a present one for senders it's already learned to
-//     route as bulk. Belt-and-suspenders.
-//
-// The personal From-name ("{barberName} at Modern Classic <...>")
-// lives in resend.ts:sendReviewRequest(), not here — this template
-// owns the body only.
+// CAN-SPAM compliance lives in the footer: the shop's physical address +
+// phone, the explicit unsubscribe link, and the reason they're getting
+// the email. Resend additionally sets List-Unsubscribe via headers (see
+// resend.ts).
 
 export interface ReviewRequestProps {
   customerName: string;
   barberName: string;
-  /** Kept on the interface for API compatibility — the new template
-   *  doesn't surface the service name (it reads templated). The cron
-   *  still passes it; we just ignore it. */
   serviceName: string;
-  /** Already-formatted local-time date — should be a single
-   *  conversational token like "Thursday" (the cron's window is
-   *  2-5 days back, so day-of-week is unambiguous). Avoid full dates
-   *  like "Thursday, May 14, 2026" — reads as a templated mail-merge. */
+  /** Already-formatted local-time date string, e.g. "Friday, March 14". */
   appointmentDate: string;
   /** Click-tracking URL — wraps GOOGLE_REVIEW_URL via signClickToken. */
   googleReviewUrl: string;
   /** Per-customer signed unsubscribe URL. */
   unsubscribeUrl: string;
-  /** Shop address — kept on the interface for backwards compatibility
-   *  with the cron's call shape. Not rendered in the new body. */
+  /** Shop physical address — currently 819 Linden Avenue, Zanesville, OH 43701. */
   shopAddress: string;
-  /** Shop phone — same, not rendered. */
+  /** Shop phone for footer + reply-to fallback. */
   shopPhone: string;
 }
+
+const COLORS = {
+  bg: '#f5efe4', // warm parchment — easier to read in inboxes than full dark
+  card: '#ffffff',
+  border: '#e6dccc',
+  ink: '#1c1814',
+  inkSoft: '#3d362c',
+  muted: '#7a6f5f',
+  gold: '#a07d30',
+  goldLight: '#c9a35c',
+  cardOnDark: '#1c1814',
+  textOnGold: '#1c1814',
+};
 
 function escapeHtml(s: string): string {
   return s
@@ -74,36 +62,104 @@ export function reviewRequestSubject(props: Pick<ReviewRequestProps, 'customerNa
 
 export function reviewRequestHtml(props: ReviewRequestProps): string {
   const first = escapeHtml(firstName(props.customerName));
-  const barber = escapeHtml(props.barberName?.trim() || 'one of the team');
-  const when = escapeHtml(props.appointmentDate);
   const safeUrl = escapeHtml(props.googleReviewUrl);
   const unsub = escapeHtml(props.unsubscribeUrl);
+  const barber = escapeHtml(props.barberName);
+  const service = escapeHtml(props.serviceName);
+  const when = escapeHtml(props.appointmentDate);
+  const address = escapeHtml(props.shopAddress);
+  const phone = escapeHtml(props.shopPhone);
 
   return `<!doctype html>
 <html lang="en">
-  <body style="margin:0;padding:24px 16px;background:#ffffff;color:#222;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;font-size:16px;line-height:1.55;">
-    <p style="margin:0 0 16px;">Hey ${first} — ${barber} here.</p>
-    <p style="margin:0 0 16px;">Thanks for coming in ${when}. If you've got a sec, a quick Google review would mean a lot to the shop:</p>
-    <p style="margin:0 0 16px;"><a href="${safeUrl}" style="color:#1a73e8;">leave a quick review</a></p>
-    <p style="margin:0 0 16px;">If something didn't go right, just hit reply — I'd rather hear from you directly.</p>
-    <p style="margin:24px 0 0;">— ${barber}</p>
-    <p style="margin:48px 0 0;font-size:11px;color:#888;"><a href="${unsub}" style="color:#888;text-decoration:underline;">unsubscribe</a></p>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>How was your visit?</title>
+  </head>
+  <body style="margin:0;padding:0;background:${COLORS.bg};color:${COLORS.ink};font-family:'Helvetica Neue',Arial,sans-serif;">
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background:${COLORS.bg};padding:32px 16px;">
+      <tr>
+        <td align="center">
+          <table role="presentation" width="560" cellspacing="0" cellpadding="0" border="0" style="max-width:560px;background:${COLORS.card};border:1px solid ${COLORS.border};border-radius:6px;overflow:hidden;">
+            <tr>
+              <td style="padding:28px 32px 16px;text-align:center;border-bottom:1px solid ${COLORS.border};">
+                <div style="font-family:Georgia,'Times New Roman',serif;font-size:22px;letter-spacing:0.02em;color:${COLORS.ink};">
+                  Modern <span style="color:${COLORS.gold};">·</span> Classic
+                </div>
+                <div style="margin-top:6px;font-size:11px;letter-spacing:0.2em;text-transform:uppercase;color:${COLORS.muted};">
+                  Barbershop &amp; Shave Parlor
+                </div>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:28px 32px 4px;">
+                <p style="margin:0 0 16px;font-size:16px;line-height:1.6;color:${COLORS.ink};">Hello ${first},</p>
+                <p style="margin:0 0 16px;font-size:16px;line-height:1.6;color:${COLORS.inkSoft};">
+                  Thanks for stopping by Modern Classic on ${when} for your ${service} with ${barber}. Hope you walked out feeling sharp.
+                </p>
+                <p style="margin:0 0 24px;font-size:16px;line-height:1.6;color:${COLORS.inkSoft};">
+                  If you've got a minute, would you mind leaving us a quick Google review? It genuinely helps a small local shop like ours, and we'd really appreciate it.
+                </p>
+                <table role="presentation" cellspacing="0" cellpadding="0" border="0" style="margin:0 0 24px;">
+                  <tr>
+                    <td align="center" style="background:${COLORS.gold};border-radius:3px;">
+                      <a href="${safeUrl}" style="display:inline-block;padding:14px 28px;font-family:'Helvetica Neue',Arial,sans-serif;font-size:13px;font-weight:700;letter-spacing:0.18em;text-transform:uppercase;color:#ffffff;text-decoration:none;">
+                        Leave a Google Review
+                      </a>
+                    </td>
+                  </tr>
+                </table>
+                <p style="margin:0 0 16px;font-size:14px;line-height:1.6;color:${COLORS.muted};">
+                  If something didn't go right, just reply to this email — we'd rather hear from you directly than read about it later.
+                </p>
+                <p style="margin:0 0 4px;font-size:16px;line-height:1.6;color:${COLORS.ink};">
+                  — Michael, Rick &amp; Clayton
+                </p>
+                <p style="margin:0 0 24px;font-size:13px;line-height:1.55;color:${COLORS.muted};">
+                  Modern Classic Barbershop
+                </p>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:18px 32px 24px;border-top:1px solid ${COLORS.border};text-align:center;">
+                <p style="margin:0 0 8px;font-size:12px;line-height:1.6;color:${COLORS.muted};">
+                  ${address}<br />
+                  ${phone}
+                </p>
+                <p style="margin:0;font-size:11px;line-height:1.6;color:${COLORS.muted};">
+                  You're getting this one-time post-visit email because you booked an appointment with us.
+                  Don't want these? <a href="${unsub}" style="color:${COLORS.gold};text-decoration:underline;">Turn off review requests</a>.
+                </p>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
   </body>
 </html>`;
 }
 
 export function reviewRequestText(props: ReviewRequestProps): string {
   const first = firstName(props.customerName);
-  const barber = (props.barberName ?? '').trim() || 'one of the team';
-  return `Hey ${first} — ${barber} here.
+  return `Hello ${first},
 
-Thanks for coming in ${props.appointmentDate}. If you've got a sec, a quick Google review would mean a lot to the shop:
+Thanks for stopping by Modern Classic on ${props.appointmentDate} for your ${props.serviceName} with ${props.barberName}. Hope you walked out feeling sharp.
 
+If you've got a minute, would you mind leaving us a quick Google review? It genuinely helps a small local shop like ours, and we'd really appreciate it.
+
+Leave a Google Review:
 ${props.googleReviewUrl}
 
-If something didn't go right, just hit reply — I'd rather hear from you directly.
+If something didn't go right, just reply to this email — we'd rather hear from you directly than read about it later.
 
-— ${barber}
+— Michael, Rick & Clayton
+Modern Classic Barbershop
 
-unsubscribe: ${props.unsubscribeUrl}`;
+—
+${props.shopAddress}
+${props.shopPhone}
+
+You're getting this one-time post-visit email because you booked an appointment with us. Don't want these? Turn off review requests: ${props.unsubscribeUrl}`;
 }
