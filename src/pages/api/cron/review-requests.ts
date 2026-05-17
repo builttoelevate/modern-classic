@@ -7,9 +7,22 @@
 // asked for this booking. Idempotent — running it twice in a day must
 // never double-send.
 //
-// Auth: Vercel Cron sends `Authorization: Bearer <CRON_SECRET>`. We use
-// REVIEW_CRON_SECRET (separate from the rebuild cron's CRON_SECRET) so
-// the two can be rotated/disabled independently.
+// Auth: accepts EITHER bearer to support both invocation paths.
+//   - Vercel Cron (vercel.json schedule) automatically attaches
+//     `Authorization: Bearer ${CRON_SECRET}` to its requests — that's
+//     the only secret Vercel knows about, and the same one the
+//     /api/cron/rebuild endpoint relies on. So we accept CRON_SECRET
+//     here too. Without this, Vercel's daily fire was silently 401'd
+//     and emails only went out when an operator clicked "Run Now" in
+//     /admin/reviews. (That bug shipped May 2026; this dual-accept is
+//     the fix.)
+//   - GitHub Actions backup (.github/workflows/daily-review-requests.yml)
+//     fires 30 min after Vercel as belt-and-suspenders and uses
+//     REVIEW_CRON_SECRET so the two paths can be rotated/disabled
+//     independently if one leaks. The endpoint accepts that too.
+//
+// As long as ONE of the two env vars is set, the endpoint is
+// considered configured. Both env vars are compared in constant time.
 //
 // The actual work lives in src/lib/square/reviewCron.ts so the admin
 // "run now" diagnostic endpoint at /api/admin/reviews/run-now can call
@@ -35,25 +48,49 @@ function constantTimeEqual(a: string, b: string): boolean {
   return mismatch === 0;
 }
 
+function acceptedSecrets(): string[] {
+  // Order doesn't matter — we compare against each in constant time
+  // and accept if either matches. CRON_SECRET first because Vercel's
+  // daily fire is the primary path; REVIEW_CRON_SECRET is the GH
+  // Actions backup.
+  const candidates = [
+    import.meta.env.CRON_SECRET,
+    import.meta.env.REVIEW_CRON_SECRET,
+  ];
+  return candidates.filter(
+    (v): v is string => typeof v === 'string' && v.length > 0,
+  );
+}
+
 function isAuthorized(request: Request): boolean {
-  const expected = import.meta.env.REVIEW_CRON_SECRET;
-  if (typeof expected !== 'string' || !expected) return false;
+  const accepted = acceptedSecrets();
+  if (accepted.length === 0) return false;
   const header = request.headers.get('authorization') ?? '';
   if (!header.toLowerCase().startsWith('bearer ')) return false;
   const supplied = header.slice(7).trim();
-  return constantTimeEqual(supplied, expected);
+  // Walk the full list every time — short-circuiting on first match
+  // would leak which secret matched via timing. The list is at most
+  // two entries; cost is negligible.
+  let matched = false;
+  for (const expected of accepted) {
+    if (constantTimeEqual(supplied, expected)) matched = true;
+  }
+  return matched;
 }
 
 async function handle(request: Request): Promise<Response> {
-  const expected = import.meta.env.REVIEW_CRON_SECRET;
-  if (typeof expected !== 'string' || !expected) {
-    logCron({ phase: 'misconfigured', detail: 'REVIEW_CRON_SECRET not set' });
+  if (acceptedSecrets().length === 0) {
+    logCron({
+      phase: 'misconfigured',
+      detail: 'Neither CRON_SECRET nor REVIEW_CRON_SECRET is set',
+    });
     return Response.json(
       {
         ok: false,
         error: {
           code: 'CRON_NOT_CONFIGURED',
-          detail: 'REVIEW_CRON_SECRET is not set. Set it in Vercel env vars.',
+          detail:
+            'Neither CRON_SECRET nor REVIEW_CRON_SECRET is set. Vercel injects CRON_SECRET automatically; set one of them in the Vercel env vars.',
         },
       },
       { status: 503 },
@@ -64,7 +101,10 @@ async function handle(request: Request): Promise<Response> {
     return Response.json(
       {
         ok: false,
-        error: { code: 'UNAUTHORIZED', detail: 'Missing or invalid REVIEW_CRON_SECRET.' },
+        error: {
+          code: 'UNAUTHORIZED',
+          detail: 'Missing or invalid bearer (CRON_SECRET / REVIEW_CRON_SECRET).',
+        },
       },
       { status: 401 },
     );
