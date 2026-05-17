@@ -401,6 +401,7 @@ Astro.response.headers.append('Set-Cookie', refreshBarberSessionCookie(session))
           <h1>{displayName}'s chair</h1>
         </div>
         <nav class="bb-head__nav">
+          {isOwner && <a href={`${base}/admin`}>Admin</a>}
           <a href={`${base}/barber/account`}>Account</a>
           <button type="button" class="bb-link" id="signout-btn">Sign out</button>
         </nav>

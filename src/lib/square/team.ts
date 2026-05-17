@@ -12,6 +12,17 @@ const ROLE_BY_ID: Record<string, string> = {
   TMwUNkXCCC_i3vyZ: 'Master Barber',
 };
 
+/** Sync-derived set of `team_member_id`s mapped to 'Owner' in ROLE_BY_ID.
+ *  Single source of truth for "is this barber the shop owner?" — used by
+ *  src/lib/auth/barberPermissions.ts AND src/lib/admin/auth.ts. The admin
+ *  helper needs a sync check (Basic Auth is sync) so we can't lean on
+ *  the async getBarbers() lookup for that case. */
+export const OWNER_TEAM_MEMBER_IDS: ReadonlySet<string> = new Set(
+  Object.entries(ROLE_BY_ID)
+    .filter(([, role]) => role === 'Owner')
+    .map(([id]) => id),
+);
+
 function toTitleCase(input: string): string {
   return input
     .toLowerCase()

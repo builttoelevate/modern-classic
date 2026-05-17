@@ -18,7 +18,7 @@ describe('isBarberOwner', () => {
   it('returns true for the barber whose role is Owner', async () => {
     mockBarbers.mockResolvedValue([
       { id: '523GMGEC1FY0Z', role: 'Owner', displayName: 'Michael' },
-      { id: 'TMmaster1', role: 'Master Barber', displayName: 'Lance' },
+      { id: 'TMmaster1', role: 'Master Barber', displayName: 'Rick' },
     ]);
     expect(await isBarberOwner('523GMGEC1FY0Z')).toBe(true);
   });
@@ -26,7 +26,7 @@ describe('isBarberOwner', () => {
   it('returns false for a barber without the Owner role', async () => {
     mockBarbers.mockResolvedValue([
       { id: '523GMGEC1FY0Z', role: 'Owner', displayName: 'Michael' },
-      { id: 'TMmaster1', role: 'Master Barber', displayName: 'Lance' },
+      { id: 'TMmaster1', role: 'Master Barber', displayName: 'Rick' },
     ]);
     expect(await isBarberOwner('TMmaster1')).toBe(false);
   });
