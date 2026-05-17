@@ -90,12 +90,13 @@ export const POST: APIRoute = async ({ request }) => {
     signUnsubscribeToken(syntheticCustomerId),
   )}&scope=review`;
 
-  // Sample content. Day-of-week only ("Thursday") — mirrors the
-  // formatAppointmentDate() output the real cron uses, so the test
-  // email reads identically to what production sends.
+  // Sample content. Today's date for the appointment so the copy
+  // reads naturally as a recent visit.
   const today = new Intl.DateTimeFormat('en-US', {
     timeZone: 'America/New_York',
     weekday: 'long',
+    month: 'long',
+    day: 'numeric',
   }).format(new Date());
 
   try {
