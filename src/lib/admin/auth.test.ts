@@ -21,7 +21,7 @@ import {
 
 // Owner team_member_id from src/lib/square/team.ts — Michael.
 const OWNER_ID = '523GMGEC1FY0Z';
-// One of the Master Barber ids from the same file — Lance / Clayton.
+// One of the Master Barber ids from the same file — Rick / Clayton.
 const REGULAR_BARBER_ID = 'TMZ4GRNFpRhnzLbv';
 
 function reqWithHeaders(headers: Record<string, string>): Request {
@@ -76,7 +76,7 @@ describe('checkBasicAuth — owner barber session path', () => {
   it('returns 401 when the session belongs to a non-owner barber', () => {
     const token = signBarberSession({
       barberId: REGULAR_BARBER_ID,
-      username: 'lance',
+      username: 'rick',
     });
     const req = reqWithHeaders({ cookie: cookieHeader(token) });
     const result = checkBasicAuth(req);
@@ -107,12 +107,12 @@ describe('checkBasicAuth — owner barber session path', () => {
   });
 
   it('non-owner session does NOT bypass Basic Auth — falls through to it', () => {
-    // Lance has a session AND happens to also be sending the admin
+    // Rick has a session AND happens to also be sending the admin
     // password (unusual but possible). The owner check fails, falls
     // through to Basic Auth which succeeds.
     const token = signBarberSession({
       barberId: REGULAR_BARBER_ID,
-      username: 'lance',
+      username: 'rick',
     });
     const req = reqWithHeaders({
       cookie: cookieHeader(token),

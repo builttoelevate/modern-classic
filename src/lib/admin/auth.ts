@@ -9,7 +9,7 @@
 //      we accept the request without prompting for Basic Auth.
 //      This is the "Admin" link on the barber dashboard — Michael
 //      taps it from his phone and lands on /admin without retyping
-//      anything. Master Barbers (Lance, Clayton) are NOT in the
+//      anything. Master Barbers (Rick, Clayton) are NOT in the
 //      Owner set, so their sessions still get the Basic Auth prompt.
 //
 // Why owner sessions are at least as trustworthy as Basic Auth:
