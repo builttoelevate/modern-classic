@@ -7,6 +7,7 @@ import {
 import { generateDefaultPassword, hashPassword } from '../../../../lib/auth/passwordHash';
 import { resolveBarberContact } from '../../../../lib/barber/contactLookup';
 import { sendPasswordResetBarber } from '../../../../lib/email/resend';
+import { getPublicOrigin } from '../../../../lib/utils/origin';
 
 export const prerender = false;
 
@@ -88,7 +89,7 @@ export const POST: APIRoute = async ({ request }) => {
   try {
     const contact = await resolveBarberContact(teamMemberId);
     if (contact) {
-      const origin = new URL(request.url).origin;
+      const origin = getPublicOrigin(request);
       const send = await sendPasswordResetBarber({
         to: contact.email,
         barberDisplayName: contact.displayName,
