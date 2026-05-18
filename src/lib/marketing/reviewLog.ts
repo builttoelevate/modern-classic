@@ -123,6 +123,12 @@ export interface ReviewRequestRecord {
   clickedAt: string | null;
   clickCount: number;
   resendId?: string;
+  /** True when this record was created by /admin/reviews "Send test
+   *  email". Test rows show up in the Recent list with a [TEST] badge
+   *  so the admin can verify click tracking end-to-end, but are
+   *  EXCLUDED from the sent/clicked counts and CTR so the headline
+   *  stats reflect only real customer engagement. */
+  isTest?: boolean;
 }
 
 export interface RecordSentInput {
@@ -137,6 +143,7 @@ export interface RecordSentInput {
   appointmentDate?: string;
   sentAt: string;
   resendId?: string;
+  isTest?: boolean;
 }
 
 export async function recordReviewRequestSent(input: RecordSentInput): Promise<void> {
@@ -155,6 +162,7 @@ export async function recordReviewRequestSent(input: RecordSentInput): Promise<v
     clickedAt: null,
     clickCount: 0,
     resendId: input.resendId,
+    ...(input.isTest ? { isTest: true } : {}),
   };
   // 13-month TTL — long enough for stats, short enough to keep the store
   // bounded. Adjust if Phase 10 reporting needs a longer window.
@@ -253,8 +261,13 @@ export async function getReviewStats(opts: {
   // Sort newest first.
   valid.sort((a, b) => (b.sentAt ?? '').localeCompare(a.sentAt ?? ''));
 
-  const sent = valid.length;
-  const clicked = valid.filter((r) => r.clickedAt).length;
+  // Counts EXCLUDE test sends (admin "Send test email" path) so the
+  // headline CTR reflects only real customer engagement. The Recent
+  // list still includes test rows so the admin can verify click
+  // tracking by sending themselves a test and watching the row flip.
+  const real = valid.filter((r) => !r.isTest);
+  const sent = real.length;
+  const clicked = real.filter((r) => r.clickedAt).length;
   const clickRate = sent === 0 ? 0 : clicked / sent;
   const recent = valid.slice(0, opts.recentLimit ?? 50);
   return { daysBack: opts.daysBack, sent, clicked, clickRate, recent };
