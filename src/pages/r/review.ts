@@ -33,26 +33,50 @@ function logReview(payload: Record<string, unknown>): void {
   console.log(`[REVIEW] ${JSON.stringify({ ts: new Date().toISOString(), ...payload })}`);
 }
 
-export const GET: APIRoute = async ({ url }) => {
+export const GET: APIRoute = async ({ url, request }) => {
   const token = url.searchParams.get('t') ?? '';
   let destination = pickFallback();
   let reviewRequestId: string | null = null;
+  let tokenState: 'absent' | 'invalid' | 'valid' = 'absent';
 
   if (token) {
     const verified = verifyClickToken(token);
     if (verified) {
       reviewRequestId = verified.reviewRequestId;
+      tokenState = 'valid';
       // Use the destination from the signed token — it's HMAC-bound, so
       // we can trust it. Falls back to env GOOGLE_REVIEW_URL otherwise.
       if (verified.destination.startsWith('http')) {
         destination = verified.destination;
       }
+    } else {
+      tokenState = 'invalid';
     }
   }
+
+  // Log every hit so we can see clicks live in Vercel logs even when
+  // the token is missing or invalid — that's the silent-failure mode
+  // we'd otherwise be blind to (Resend's wrapper stripping ?t=, an
+  // email client pre-fetching the link, etc.). userAgent is included
+  // so a Gmail safe-browsing pre-fetch is distinguishable from a real
+  // tap.
+  logReview({
+    phase: 'click-hit',
+    tokenState,
+    reviewRequestId,
+    userAgent: request.headers.get('user-agent') ?? '',
+    referer: request.headers.get('referer') ?? '',
+  });
 
   if (reviewRequestId) {
     try {
       const result = await recordReviewRequestClicked(reviewRequestId);
+      logReview({
+        phase: 'click-recorded',
+        reviewRequestId,
+        wasFirstClick: result?.wasFirstClick ?? false,
+        recordFound: result !== null,
+      });
       // First-click only: notify the assigned barber so they know a
       // review is likely incoming. Skipped silently if the record was
       // created before teamMemberId tracking was added, or the barber
