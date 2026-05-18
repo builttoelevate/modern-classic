@@ -10,6 +10,17 @@
 // phone, the explicit unsubscribe link, and the reason they're getting
 // the email. Resend additionally sets List-Unsubscribe via headers (see
 // resend.ts).
+//
+// Note on click tracking: the CTA <a> carries
+// data-resend-click-tracking="false" so Resend's domain-level click
+// wrapper leaves the href alone. We do our OWN click tracking via the
+// /r/review redirect (signed token → record → 302 to Google). When the
+// Resend wrapper is left on, it rewrites the href to
+// click.email.resend.com/..., and on at least some mail clients the
+// onward redirect drops our ?t=<token> query string — leaving /r/review
+// hit with no token, which silently 302s to the fallback Google URL
+// without recording the click. Opting OUT of the wrapper per-link
+// preserves our token end-to-end.
 
 export interface ReviewRequestProps {
   customerName: string;
@@ -106,7 +117,7 @@ export function reviewRequestHtml(props: ReviewRequestProps): string {
                 <table role="presentation" cellspacing="0" cellpadding="0" border="0" style="margin:0 0 24px;">
                   <tr>
                     <td align="center" style="background:${COLORS.gold};border-radius:3px;">
-                      <a href="${safeUrl}" style="display:inline-block;padding:14px 28px;font-family:'Helvetica Neue',Arial,sans-serif;font-size:13px;font-weight:700;letter-spacing:0.18em;text-transform:uppercase;color:#ffffff;text-decoration:none;">
+                      <a href="${safeUrl}" data-resend-click-tracking="false" style="display:inline-block;padding:14px 28px;font-family:'Helvetica Neue',Arial,sans-serif;font-size:13px;font-weight:700;letter-spacing:0.18em;text-transform:uppercase;color:#ffffff;text-decoration:none;">
                         Leave a Google Review
                       </a>
                     </td>
