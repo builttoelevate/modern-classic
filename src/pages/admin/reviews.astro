@@ -523,6 +523,15 @@ const recent = last30?.recent ?? [];
                 required
               />
             </label>
+            <label class="test-form__field">
+              <span>Customer first name <em style="color: var(--dim); font-style: normal;">(optional)</em></span>
+              <input
+                type="text"
+                id="test-name"
+                placeholder="Bill"
+                autocomplete="off"
+              />
+            </label>
             <button type="submit" class="btn btn--ghost" id="test-send-btn">
               Send test email
             </button>
@@ -689,6 +698,7 @@ const recent = last30?.recent ?? [];
       (function () {
         const form = document.getElementById('test-form');
         const input = document.getElementById('test-email');
+        const nameInput = document.getElementById('test-name');
         const btn = document.getElementById('test-send-btn');
         const status = document.getElementById('test-status');
         if (!form || !input || !btn || !status) return;
@@ -702,6 +712,7 @@ const recent = last30?.recent ?? [];
         form.addEventListener('submit', async (e) => {
           e.preventDefault();
           const to = (input.value || '').trim();
+          const customerName = nameInput ? (nameInput.value || '').trim() : '';
           if (!to) {
             showStatus('Enter an email address.', 'error');
             return;
@@ -715,7 +726,7 @@ const recent = last30?.recent ?? [];
               method: 'POST',
               credentials: 'same-origin',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ to }),
+              body: JSON.stringify({ to, customerName }),
             });
             const data = await res.json();
             if (!res.ok || !data.ok) {
