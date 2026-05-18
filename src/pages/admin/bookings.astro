@@ -140,6 +140,7 @@ const sortedBookings = [...bookings].sort((a, b) => (b.start_at ?? '').localeCom
       tr:hover td { background: var(--surface-2); }
       .topnav {
         display: flex;
+        flex-wrap: wrap;
         gap: 1.5rem;
         align-items: center;
         padding-bottom: 18px;
