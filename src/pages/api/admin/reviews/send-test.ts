@@ -49,6 +49,10 @@ export const POST: APIRoute = async ({ request }) => {
   if (!/^\S+@\S+\.\S+$/.test(to)) {
     return fail(400, 'BAD_REQUEST', 'Recipient email looks malformed.');
   }
+  // Optional preview name. Blank → exercises the no-first-name path
+  // in the template (greeting "Hey,", subject "How was your visit?").
+  // Non-blank → "Hey {name}," / "How was your visit, {name}?".
+  const customerName = typeof b.customerName === 'string' ? b.customerName.trim() : '';
 
   // Env checks — match what the cron requires so this surfaces the
   // same misconfiguration in the same place.
@@ -102,7 +106,7 @@ export const POST: APIRoute = async ({ request }) => {
   try {
     const sendResult = await sendReviewRequest({
       to,
-      customerName: 'friend',
+      customerName,
       barberName: 'Michael',
       serviceName: 'Haircut',
       appointmentDate: today,
