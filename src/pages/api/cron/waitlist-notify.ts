@@ -36,6 +36,7 @@ import { resolveBarberContact } from '../../../lib/barber/contactLookup';
 import { formatRelativeSlot } from '../../../lib/availability/timing';
 import { redactEmail } from '../../../lib/booking/log';
 import { SquareApiError } from '../../../lib/square/client';
+import { getPublicOrigin } from '../../../lib/utils/origin';
 import type { AvailabilitySlot } from '../../../lib/square/types';
 
 export const prerender = false;
@@ -109,7 +110,11 @@ async function handle(request: Request): Promise<Response> {
   const url = new URL(request.url);
   const dryRun = url.searchParams.get('dryRun') === '1';
   const now = new Date();
-  const origin = url.origin;
+  // url.origin on Vercel serverless parses to http://localhost — use
+  // the shared helper that respects x-forwarded-* headers + SITE_URL
+  // + a hard-coded production fallback. Same pattern the review-
+  // request cron uses.
+  const origin = getPublicOrigin(request);
 
   const stats: CronOk = {
     ok: true,

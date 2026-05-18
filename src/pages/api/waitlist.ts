@@ -7,6 +7,7 @@ import {
 import { redactEmail } from '../../lib/booking/log';
 import { recordWaitlistEntry } from '../../lib/marketing/waitlistLog';
 import { resolveBarberContacts } from '../../lib/barber/contactLookup';
+import { getPublicOrigin } from '../../lib/utils/origin';
 
 export const prerender = false;
 
@@ -427,7 +428,7 @@ export const POST: APIRoute = async ({ request, clientAddress }) => {
         : [];
     if (requestedIds.length > 0) {
       try {
-        const baseUrl = new URL(request.url).origin;
+        const baseUrl = getPublicOrigin(request);
         const dashboardUrl = `${baseUrl}/barber/dashboard?tab=waitlist`;
         const preferenceLabel = buildPreferenceLabel(daysOfWeek, timesOfDay);
         const contacts = await resolveBarberContacts(requestedIds);

@@ -16,6 +16,7 @@ import {
 import { sendWaitlistOpening } from '../../../../lib/email/resend';
 import { formatRelativeSlot } from '../../../../lib/availability/timing';
 import { redactEmail } from '../../../../lib/booking/log';
+import { getPublicOrigin } from '../../../../lib/utils/origin';
 
 export const prerender = false;
 
@@ -104,13 +105,13 @@ export const POST: APIRoute = async ({ request }) => {
   // Prefer the values from the request body (the slot the admin clicked
   // may differ from entry defaults — e.g. a specific barber when the
   // entry was "any"), fall back to the entry's stored values.
-  const url = new URL(request.url);
   const params = new URLSearchParams();
   const svid = serviceVariationId ?? entry.serviceVariationId ?? '';
   const tmid = teamMemberId ?? entry.teamMemberId ?? '';
   if (svid) params.set('service', svid);
   if (tmid) params.set('barber', tmid);
-  const bookUrl = `${url.origin}/book${params.toString() ? `?${params.toString()}` : ''}`;
+  const origin = getPublicOrigin(request);
+  const bookUrl = `${origin}/book${params.toString() ? `?${params.toString()}` : ''}`;
 
   const whenLabel = formatRelativeSlot(startAtUtc);
 
