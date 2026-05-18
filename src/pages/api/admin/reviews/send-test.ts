@@ -1,16 +1,16 @@
 // POST /api/admin/reviews/send-test — send a single review-request
 // email to an arbitrary inbox so the admin can preview what the
-// real email looks like, without involving any customer record,
-// booking, or dedupe state.
+// real email looks like AND verify click tracking end-to-end.
 //
-// Body: { to: string }   (recipient email; admin enters their own
-//                         address to preview, or a teammate's)
+// Body: { to: string, customerName?: string }
 //
-// Critical: this does NOT call recordReviewRequestSent (so it
-// doesn't pollute the per-booking dedupe store) and does NOT
-// touch any Square customer attribute. It's a pure "render the
-// template + send via Resend" preview. No future cron run is
-// affected by this test.
+// Writes a `mc:review:sent:<test-uuid>` Redis record tagged
+// `isTest: true` so the row shows up in the Recent list (admin can
+// click the test email's CTA and watch the row flip to Clicked).
+// The dashboard's headline counts EXCLUDE isTest rows so CTR stays
+// accurate. Synthetic bookingId + customerId mean the test never
+// touches the cron's per-booking dedupe or per-customer cooldown,
+// AND never touches any Square customer attribute.
 
 import type { APIRoute } from 'astro';
 import { checkBasicAuth } from '../../../../lib/admin/auth';
@@ -18,6 +18,8 @@ import { sendReviewRequest } from '../../../../lib/email/resend';
 import { signClickToken } from '../../../../lib/marketing/clickToken';
 import { signUnsubscribeToken } from '../../../../lib/marketing/unsubscribeToken';
 import { getPublicOrigin } from '../../../../lib/utils/origin';
+import { recordReviewRequestSent } from '../../../../lib/marketing/reviewLog';
+import { redactEmail } from '../../../../lib/booking/log';
 
 export const prerender = false;
 
@@ -73,18 +75,14 @@ export const POST: APIRoute = async ({ request }) => {
     );
   }
 
-  // Synthetic IDs — used for the click/unsubscribe token signatures
-  // so the links in the email validate. The reviewRequestId is a
-  // throwaway uuid that isn't recorded anywhere, so clicking the
-  // Google link from the test email won't show up in the admin
-  // recent-requests list as a "clicked" event (kSent record was
-  // never written).
+  // Synthetic IDs — `test-` prefix on bookingId and customerId so
+  // they can never collide with real Square IDs and so the cron's
+  // per-booking dedupe + per-customer cooldown checks never read
+  // anything that affects real customers. reviewRequestId is a fresh
+  // uuid (no prefix needed — it's only ever looked up by token).
   const reviewRequestId = crypto.randomUUID();
-  // Synthetic customerId for the unsubscribe token. If the admin
-  // clicks the unsubscribe link in the test email, it would
-  // attempt to flip a "review unsubscribed" flag on a customer
-  // that doesn't exist — harmless no-op.
   const syntheticCustomerId = 'test-' + crypto.randomUUID();
+  const syntheticBookingId = 'test-' + crypto.randomUUID();
 
   const origin = getPublicOrigin(request);
   const clickUrl = `${origin}/r/review?t=${encodeURIComponent(
@@ -115,10 +113,37 @@ export const POST: APIRoute = async ({ request }) => {
       shopAddress: SHOP_ADDRESS,
       shopPhone: SHOP_PHONE,
     });
+    // Write the kSent record so a click on the test email's CTA
+    // flips the row to Clicked in /admin/reviews. Failure here is
+    // non-fatal — the email already shipped, the admin can still
+    // verify by long-press / inbox; we just lose the dashboard
+    // round-trip verification.
+    try {
+      await recordReviewRequestSent({
+        reviewRequestId,
+        customerId: syntheticCustomerId,
+        bookingId: syntheticBookingId,
+        customerEmailRedacted: redactEmail(to),
+        customerName,
+        serviceName: 'Haircut',
+        barberName: 'Michael',
+        appointmentDate: today,
+        sentAt: new Date().toISOString(),
+        resendId: sendResult.id,
+        isTest: true,
+      });
+    } catch (logErr) {
+      logAdmin({
+        phase: 'review-test-record-failed',
+        to,
+        detail: logErr instanceof Error ? logErr.message : String(logErr),
+      });
+    }
     logAdmin({
       phase: 'review-test-email-sent',
       to,
       resendId: sendResult.id,
+      reviewRequestId,
     });
     return Response.json({
       ok: true,

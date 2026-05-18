@@ -208,6 +208,11 @@ const recent = last30?.recent ?? [];
       }
       .pill.clicked { background: rgba(122, 184, 110, 0.15); color: #a4d091; }
       .pill.unclicked { background: rgba(128, 119, 106, 0.15); color: var(--dim); }
+      .pill.test {
+        background: rgba(201, 163, 92, 0.15);
+        color: var(--gold);
+        margin-right: 6px;
+      }
       .meta { color: var(--dim); font-family: ui-monospace, Menlo, monospace; font-size: 0.8rem; }
 
       /* Diagnostics panel */
@@ -582,7 +587,10 @@ const recent = last30?.recent ?? [];
                 {recent.map((r) => (
                   <tr>
                     <td>{fmtDate(r.sentAt)}</td>
-                    <td class="meta">{r.customerEmailRedacted || '—'}</td>
+                    <td class="meta">
+                      {r.isTest && <span class="pill test">TEST</span>}
+                      {r.customerEmailRedacted || '—'}
+                    </td>
                     <td>{r.serviceName || '—'}</td>
                     <td>{r.barberName || '—'}</td>
                     <td>
