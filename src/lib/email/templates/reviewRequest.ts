@@ -49,19 +49,21 @@ function escapeHtml(s: string): string {
     .replace(/'/g, '&#39;');
 }
 
-function firstName(full: string): string {
+function firstName(full: string, fallback = 'friend'): string {
   const trimmed = (full ?? '').trim();
-  if (!trimmed) return 'friend';
+  if (!trimmed) return fallback;
   const space = trimmed.indexOf(' ');
   return space === -1 ? trimmed : trimmed.slice(0, space);
 }
 
 export function reviewRequestSubject(props: Pick<ReviewRequestProps, 'customerName'>): string {
-  return `How was your visit, ${firstName(props.customerName)}?`;
+  const first = firstName(props.customerName, '');
+  return first ? `How was your visit, ${first}?` : 'How was your visit?';
 }
 
 export function reviewRequestHtml(props: ReviewRequestProps): string {
-  const first = escapeHtml(firstName(props.customerName));
+  const firstRaw = firstName(props.customerName, '');
+  const greeting = firstRaw ? `Hey ${escapeHtml(firstRaw)},` : 'Hey,';
   const safeUrl = escapeHtml(props.googleReviewUrl);
   const unsub = escapeHtml(props.unsubscribeUrl);
   const barber = escapeHtml(props.barberName);
@@ -94,7 +96,7 @@ export function reviewRequestHtml(props: ReviewRequestProps): string {
             </tr>
             <tr>
               <td style="padding:28px 32px 4px;">
-                <p style="margin:0 0 16px;font-size:16px;line-height:1.6;color:${COLORS.ink};">Hello ${first},</p>
+                <p style="margin:0 0 16px;font-size:16px;line-height:1.6;color:${COLORS.ink};">${greeting}</p>
                 <p style="margin:0 0 16px;font-size:16px;line-height:1.6;color:${COLORS.inkSoft};">
                   Thanks for stopping by Modern Classic on ${when} for your ${service} with ${barber}. Hope you walked out feeling sharp.
                 </p>
@@ -142,8 +144,9 @@ export function reviewRequestHtml(props: ReviewRequestProps): string {
 }
 
 export function reviewRequestText(props: ReviewRequestProps): string {
-  const first = firstName(props.customerName);
-  return `Hello ${first},
+  const first = firstName(props.customerName, '');
+  const greeting = first ? `Hey ${first},` : 'Hey,';
+  return `${greeting}
 
 Thanks for stopping by Modern Classic on ${props.appointmentDate} for your ${props.serviceName} with ${props.barberName}. Hope you walked out feeling sharp.
 
