@@ -22,6 +22,7 @@ import {
   recordReviewCronRun,
   recordReviewRequestSent,
   type LastCronRunSummary,
+  getLastClickTimeForCustomer,
 } from '../marketing/reviewLog';
 import { signClickToken } from '../marketing/clickToken';
 import { signUnsubscribeToken } from '../marketing/unsubscribeToken';
@@ -32,7 +33,22 @@ import type { Booking } from './types';
 
 const SHOP_ADDRESS = '819 Linden Avenue, Zanesville, OH 43701';
 const SHOP_PHONE = '740-297-4462';
-const REVIEW_REQUEST_COOLDOWN_DAYS = 180;
+
+// Two-tier cooldown. Customers who CLICKED a previous review email
+// are presumed to have left (or chosen not to leave) a review — we
+// leave them alone for a long stretch. Customers who never clicked
+// get nudged again ~every 2 months: maybe the first email got
+// buried, maybe they meant to and forgot. Defaults are tunable via
+// env without code changes once we see real CTR data.
+function parseEnvDays(name: string, fallback: number): number {
+  const raw = import.meta.env[name];
+  if (typeof raw !== 'string') return fallback;
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 && n < 3650 ? n : fallback;
+}
+const REVIEW_COOLDOWN_CLICKED_DAYS = parseEnvDays('REVIEW_COOLDOWN_CLICKED_DAYS', 365);
+const REVIEW_COOLDOWN_UNCLICKED_DAYS = parseEnvDays('REVIEW_COOLDOWN_UNCLICKED_DAYS', 60);
+
 const WINDOW_MIN_DAYS = 2;
 const WINDOW_MAX_DAYS = 5;
 
@@ -254,7 +270,8 @@ export async function runReviewRequestCron(
     }
   }
 
-  const rateLimitCutoffMs = now - REVIEW_REQUEST_COOLDOWN_DAYS * ms;
+  const clickedCutoffMs = now - REVIEW_COOLDOWN_CLICKED_DAYS * ms;
+  const unclickedCutoffMs = now - REVIEW_COOLDOWN_UNCLICKED_DAYS * ms;
 
   for (const booking of bookings) {
     stats.processed++;
@@ -290,9 +307,19 @@ export async function runReviewRequestCron(
         continue;
       }
 
-      const lastFromAttr = marketing.lastReviewRequestSentAt;
-      const lastTs = lastFromAttr ? new Date(lastFromAttr).getTime() : 0;
-      if (lastTs > rateLimitCutoffMs) {
+      const lastSentFromAttr = marketing.lastReviewRequestSentAt;
+      const lastSentTs = lastSentFromAttr ? new Date(lastSentFromAttr).getTime() : 0;
+      // If the customer clicked a previous review email, the longer
+      // (365-day default) cooldown applies. If they never clicked
+      // — or KV is briefly unavailable and we can't tell — the
+      // shorter (60-day default) cooldown applies so we get another
+      // chance to nudge them. Treat KV outage as "no recorded click"
+      // so degraded mode errs on the side of more nudges, not fewer.
+      const lastClickedAtIso = await getLastClickTimeForCustomer(customer.id).catch(() => null);
+      const lastClickedTs = lastClickedAtIso ? new Date(lastClickedAtIso).getTime() : 0;
+      const inClickedCooldown = lastClickedTs > 0 && lastClickedTs > clickedCutoffMs;
+      const inUnclickedCooldown = lastSentTs > 0 && lastSentTs > unclickedCutoffMs;
+      if (inClickedCooldown || inUnclickedCooldown) {
         stats.skipped.recentRequest++;
         continue;
       }
