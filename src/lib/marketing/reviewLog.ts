@@ -56,6 +56,17 @@ function kByBooking(bookingId: string): string {
 function kByCustomerLatest(customerId: string): string {
   return `${KEY_PREFIX}by-customer:${customerId}:latest`;
 }
+/**
+ * Stores ISO timestamp of the most recent CLICK for a customer
+ * (across all their past review requests). Written by
+ * recordReviewRequestClicked alongside the per-record kSent update.
+ * Read by the review-request cron's cooldown gate to decide
+ * whether the customer is in the "clicked recently — leave alone"
+ * vs "never engaged — nudge again" bucket.
+ */
+function kByCustomerLastClicked(customerId: string): string {
+  return `${KEY_PREFIX}by-customer:${customerId}:last-clicked`;
+}
 function kIndex(): string {
   return `${KEY_PREFIX}index`;
 }
@@ -224,8 +235,32 @@ export async function recordReviewRequestClicked(
     clickedAt: current.clickedAt ?? new Date().toISOString(),
     clickCount: (current.clickCount ?? 0) + 1,
   };
-  await redis.set(key, updated, { keepTtl: true });
+  // 13-month TTL on the per-customer last-clicked key matches the
+  // kSent TTL. Test rows update the same key — that's fine; test
+  // sends use synthetic 'test-' prefixed customerIds that never
+  // collide with real Square customer IDs, so the cron never reads
+  // this key for any real customer affected by test activity.
+  const ttl = 60 * 60 * 24 * 400;
+  await Promise.all([
+    redis.set(key, updated, { keepTtl: true }),
+    redis.set(kByCustomerLastClicked(current.customerId), updated.clickedAt, { ex: ttl }),
+  ]);
   return { record: updated, wasFirstClick };
+}
+
+/**
+ * Returns ISO timestamp of the customer's most recent review-link
+ * click, or null if they've never clicked one (or KV is briefly
+ * unavailable — caller treats null as "never clicked"). Used by the
+ * review-request cron to apply a longer cooldown to customers who
+ * already engaged with a past email.
+ */
+export async function getLastClickTimeForCustomer(
+  customerId: string,
+): Promise<string | null> {
+  const redis = getRedis();
+  const ts = await redis.get<string>(kByCustomerLastClicked(customerId));
+  return typeof ts === 'string' && ts.length > 0 ? ts : null;
 }
 
 export async function getReviewStats(opts: {
