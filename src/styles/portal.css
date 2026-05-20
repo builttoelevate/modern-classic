@@ -261,6 +261,19 @@
   font-style: italic;
 }
 
+/* Direct-line "Text {barber}" callout. Lives between the details list
+   and the action buttons. Subtle gold accent to read as "useful info"
+   not "action required". */
+.mb-card__contact {
+  margin: 0 0 1rem;
+  padding: 0.6rem 0.8rem;
+  border-left: 2px solid var(--color-gold);
+  background: rgba(201, 163, 92, 0.06);
+  font-size: 0.9rem;
+  color: var(--color-text);
+  border-radius: 4px;
+}
+
 .mb-card__actions {
   display: flex;
   flex-wrap: wrap;
