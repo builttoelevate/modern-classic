@@ -11,6 +11,17 @@ interface Props {
   onReschedule: (booking: BookingDetail) => void;
   onBookAgain: (booking: BookingDetail) => void;
   busy?: boolean;
+  /** Assigned barber's customer-facing SMS phone (E.164), or null
+   *  when the barber hasn't opted in via /barber/dashboard Settings.
+   *  When present, the within-24h block shows "Text {barber}: {number}"
+   *  in place of the email fallback so the customer can reach the
+   *  exact person they booked with. */
+  barberPhoneE164?: string | null;
+}
+
+function formatPhoneForDisplay(e164: string): string {
+  const m = /^\+1(\d{3})(\d{3})(\d{4})$/.exec(e164);
+  return m ? `${m[1]}-${m[2]}-${m[3]}` : e164;
 }
 
 const TWENTY_FOUR_HOURS_MS = 24 * 60 * 60 * 1000;
@@ -20,7 +31,15 @@ function formatPrice(cents: number | undefined): string {
   return `$${(cents / 100).toFixed(2)}`;
 }
 
-export function BookingCard({ booking, variant, onCancel, onReschedule, onBookAgain, busy }: Props) {
+export function BookingCard({
+  booking,
+  variant,
+  onCancel,
+  onReschedule,
+  onBookAgain,
+  busy,
+  barberPhoneE164 = null,
+}: Props) {
   const [confirming, setConfirming] = useState(false);
   const [tooltipOpen, setTooltipOpen] = useState(false);
 
@@ -33,9 +52,18 @@ export function BookingCard({ booking, variant, onCancel, onReschedule, onBookAg
   //      message — we have nothing to charge them, so the flow stays
   //      manual.
   const within24hChargeable = within24h && booking.hasCardOnFile === true;
+  // Within 24h without a card on file: the customer can't self-cancel,
+  // so we surface the most direct contact path we have. Preferred is
+  // an sms: link to the assigned barber (when they've opted in via
+  // /barber/dashboard Settings); fallback is the shop email. Either
+  // way it's a plain string for now since the locked-reason renders
+  // as text content — the BookingCard JSX block could promote this
+  // to a real link in a future iteration.
   const lockedReason =
     within24h && !within24hChargeable
-      ? 'Within 24 hours? Email modernclassicbarbershop@protonmail.com to cancel or reschedule.'
+      ? barberPhoneE164
+        ? `Within 24 hours? Text ${booking.barberName} directly: ${formatPhoneForDisplay(barberPhoneE164)}.`
+        : 'Within 24 hours? Email modernclassicbarbershop@protonmail.com to cancel or reschedule.'
       : null;
 
   const isCancelled =

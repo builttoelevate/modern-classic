@@ -51,6 +51,14 @@ export interface BarberAccountRecord {
    *  and if that's also missing we skip the barber notification silently.
    *  Lowercased + trimmed on write. */
   email?: string;
+  /** Customer-facing SMS-friendly number. The barber sets this from
+   *  their /barber/dashboard Settings tab. When present, customers see
+   *  "Text {barberName}: {formatted}" with an sms: deep link on the
+   *  booking confirmation + their /my-bookings cards. When absent,
+   *  customers fall back to the self-service "manage in My Bookings"
+   *  copy. Stored as E.164 ("+17405551234"), rendered to the customer
+   *  formatted (e.g. "740-555-1234"). */
+  phoneE164?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -117,6 +125,29 @@ export function normalizeEmail(raw: string | undefined | null): string | null {
   return trimmed;
 }
 
+/** Normalizes a US phone number to E.164. Strips every non-digit and
+ *  expects exactly 10 digits (or 11 with a leading 1). Returns
+ *  "+1XXXXXXXXXX" on success, null on a malformed input. Used both
+ *  for storage normalization and for input validation in the
+ *  barber-profile endpoint. */
+export function normalizeUsPhone(raw: string | undefined | null): string | null {
+  if (typeof raw !== 'string') return null;
+  const digits = raw.replace(/\D/g, '');
+  if (digits.length === 11 && digits.startsWith('1')) return `+${digits}`;
+  if (digits.length === 10) return `+1${digits}`;
+  return null;
+}
+
+/** Renders an E.164 US number for human display: "+17405551234" →
+ *  "740-555-1234". Falls through unchanged on anything that doesn't
+ *  match the +1XXXXXXXXXX shape so legacy values don't render oddly. */
+export function formatUsPhone(e164: string | undefined | null): string {
+  if (typeof e164 !== 'string') return '';
+  const m = /^\+1(\d{3})(\d{3})(\d{4})$/.exec(e164);
+  if (!m) return e164;
+  return `${m[1]}-${m[2]}-${m[3]}`;
+}
+
 /** Creates a new account or replaces an existing one for the same
  *  team_member_id. If the username changed, the old reverse-lookup key
  *  is deleted to avoid orphan pointers. If another barber already owns
@@ -159,6 +190,11 @@ export async function upsertAccount(input: UpsertAccountInput): Promise<BarberAc
     passwordHash: input.passwordHash,
     mustChangePassword: input.mustChangePassword,
     ...(email ? { email } : {}),
+    // phoneE164 isn't editable via this admin-provisioning path —
+    // it's barber-self-service via /api/barber/profile. Preserve any
+    // existing value across an admin re-provision so the barber
+    // doesn't get their phone wiped when Michael resets their password.
+    ...(existing?.phoneE164 ? { phoneE164: existing.phoneE164 } : {}),
     createdAt: existing?.createdAt ?? now,
     updatedAt: now,
   };
@@ -221,6 +257,39 @@ export async function updateAccountEmail(
     updatedAt: new Date().toISOString(),
   };
   if (!nextEmail) delete updated.email;
+  await r.set(kAccount(teamMemberId), updated);
+  return updated;
+}
+
+/** Updates only the customer-facing SMS phone, leaving username,
+ *  password, mustChangePassword, and email intact. Pass an empty
+ *  string to clear the phone (the customer-facing surfaces will
+ *  revert to the self-service fallback). Throws on a malformed
+ *  number. */
+export async function updateAccountPhone(
+  teamMemberId: string,
+  rawPhone: string,
+): Promise<BarberAccountRecord | null> {
+  const r = getRedis();
+  const existing = await getAccount(teamMemberId);
+  if (!existing) return null;
+  const trimmed = rawPhone.trim();
+  let nextPhone: string | undefined;
+  if (trimmed === '') {
+    nextPhone = undefined;
+  } else {
+    const normalized = normalizeUsPhone(trimmed);
+    if (normalized === null) {
+      throw new Error('phone is not a valid 10-digit US number');
+    }
+    nextPhone = normalized;
+  }
+  const updated: BarberAccountRecord = {
+    ...existing,
+    ...(nextPhone ? { phoneE164: nextPhone } : {}),
+    updatedAt: new Date().toISOString(),
+  };
+  if (!nextPhone) delete updated.phoneE164;
   await r.set(kAccount(teamMemberId), updated);
   return updated;
 }
