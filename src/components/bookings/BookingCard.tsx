@@ -127,6 +127,20 @@ export function BookingCard({
         )}
       </dl>
 
+      {/* Direct line to the assigned barber. Visible on every upcoming
+          booking (not just within-24h) when the barber has opted in via
+          /barber/dashboard Settings. Falls back silently when not set.
+          Hidden on past + cancelled bookings — no point texting after
+          the fact. */}
+      {variant === 'upcoming' && !isCancelled && barberPhoneE164 && (
+        <p className="mb-card__contact">
+          Need something? Text {booking.barberName}:{' '}
+          <a className="link-gold" href={`sms:${barberPhoneE164}`}>
+            {formatPhoneForDisplay(barberPhoneE164)}
+          </a>
+        </p>
+      )}
+
       {variant === 'past' && (
         <div className="mb-card__actions">
           <button
