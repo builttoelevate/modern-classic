@@ -675,63 +675,6 @@
   background: rgba(220, 80, 80, 0.15);
   color: rgb(255, 160, 160);
 }
-
-/* ---------- Settings tab (barber self-service profile) ---------- */
-.bb-settings { display: grid; gap: 18px; }
-.bb-settings__form {
-  border: 1px solid var(--bb-border);
-  border-radius: var(--bb-radius);
-  background: rgba(0, 0, 0, 0.2);
-  padding: 14px 16px;
-  display: grid;
-  gap: 10px;
-  max-width: 480px;
-}
-.bb-settings__head {
-  margin: 0;
-  font-family: var(--font-display, serif);
-  font-size: 1rem;
-  font-weight: 500;
-  color: var(--bb-text);
-}
-.bb-settings__lede {
-  margin: 0;
-  font-size: 0.85rem;
-  line-height: 1.5;
-  color: var(--bb-text-dim);
-}
-.bb-settings__field {
-  display: grid;
-  gap: 4px;
-  font-size: 0.85rem;
-  color: var(--bb-text-dim);
-}
-.bb-settings__field input[type='tel'] {
-  padding: 8px 10px;
-  border: 1px solid var(--bb-border);
-  border-radius: 6px;
-  background: rgba(0, 0, 0, 0.25);
-  color: var(--bb-text);
-  font: inherit;
-}
-.bb-settings__actions {
-  display: flex;
-  justify-content: flex-end;
-}
-.bb-settings__status {
-  margin: 0;
-  padding: 6px 10px;
-  border-radius: 6px;
-  font-size: 0.85rem;
-}
-.bb-settings__status--ok {
-  background: rgba(60, 180, 100, 0.15);
-  color: rgb(130, 220, 160);
-}
-.bb-settings__status--error {
-  background: rgba(220, 80, 80, 0.15);
-  color: rgb(255, 160, 160);
-}
 .bb-timeoff__list { display: grid; gap: 8px; }
 .bb-timeoff__row-card { padding: 12px 14px; }
 .bb-timeoff__note {

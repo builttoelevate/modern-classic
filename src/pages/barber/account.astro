@@ -2,7 +2,7 @@
 export const prerender = false;
 
 import { getBarberSession } from '../../lib/auth/barberMiddleware';
-import { getAccount } from '../../lib/barber/accountStore';
+import { formatUsPhone, getAccount } from '../../lib/barber/accountStore';
 import '../../styles/barber.css';
 
 const base = import.meta.env.BASE_URL.replace(/\/$/, '');
@@ -71,6 +71,33 @@ const account = await getAccount(session.barberId);
       </section>
 
       <section>
+        <h2>Customer text number</h2>
+        <p class="bb-auth__lede" style="text-align: left;">
+          When set, customers who book with you see "Text {session.username}:
+          your number" on their booking confirmation and on their My Bookings
+          cards, as a tap-to-text link. Leave blank to hide it — customers
+          see a self-service prompt instead. Only shown on bookings you're
+          assigned to.
+        </p>
+        <form class="bb-form" id="phone-form" novalidate>
+          <label class="bb-field">
+            <span class="bb-field__label">Number (10-digit US, blank to clear)</span>
+            <input
+              type="tel"
+              name="phoneE164"
+              value={account?.phoneE164 ? formatUsPhone(account.phoneE164) : ''}
+              autocomplete="tel"
+              placeholder="(740) 555-1234"
+              maxlength="20"
+            />
+          </label>
+          <p class="bb-form__error" id="phone-error" hidden></p>
+          <p class="bb-form__ok" id="phone-ok" hidden>Number saved.</p>
+          <button type="submit" class="bb-btn" id="phone-submit">Save number</button>
+        </form>
+      </section>
+
+      <section>
         <h2>Change password</h2>
         <form class="bb-form" id="cp-form" novalidate>
           <label class="bb-field">
@@ -103,6 +130,50 @@ const account = await getAccount(session.barberId);
         const emailError = document.getElementById('email-error');
         const emailOk = document.getElementById('email-ok');
         const emailSubmit = document.getElementById('email-submit');
+        const phoneForm = document.getElementById('phone-form');
+        const phoneError = document.getElementById('phone-error');
+        const phoneOk = document.getElementById('phone-ok');
+        const phoneSubmit = document.getElementById('phone-submit');
+        if (phoneForm) {
+          phoneForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            phoneError.hidden = true;
+            phoneOk.hidden = true;
+            const data = new FormData(phoneForm);
+            const phoneE164 = String(data.get('phoneE164') ?? '');
+            phoneSubmit.disabled = true;
+            const original = phoneSubmit.textContent;
+            phoneSubmit.textContent = 'Saving…';
+            try {
+              const res = await fetch('/api/barber/profile', {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ phoneE164 }),
+              });
+              const body = await res.json();
+              if (!body.ok) {
+                phoneError.textContent =
+                  body?.error?.detail || 'Could not save number.';
+                phoneError.hidden = false;
+                phoneSubmit.disabled = false;
+                phoneSubmit.textContent = original;
+                return;
+              }
+              phoneOk.textContent = body.phoneE164
+                ? 'Number saved. Customers will now see this on their bookings with you.'
+                : 'Cleared. Customers will see the self-service prompt.';
+              phoneOk.hidden = false;
+              phoneSubmit.disabled = false;
+              phoneSubmit.textContent = original;
+            } catch (_err) {
+              phoneError.textContent = 'Network error. Try again.';
+              phoneError.hidden = false;
+              phoneSubmit.disabled = false;
+              phoneSubmit.textContent = original;
+            }
+          });
+        }
         if (emailForm) {
           emailForm.addEventListener('submit', async (e) => {
             e.preventDefault();
