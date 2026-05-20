@@ -8,6 +8,12 @@ interface Props {
   variation: ServiceVariation;
   barber: Barber | null;
   anyBarber: boolean;
+  /** When the assigned barber has set a customer-facing SMS phone on
+   *  /barber/dashboard Settings, this is their E.164 number. Renders as
+   *  a "Text {barberName}: {formatted}" sms link in the cancellation
+   *  policy block. null = barber opted out (or "any barber") — block
+   *  falls back to the self-service "manage in My Bookings" prompt. */
+  barberPhoneE164?: string | null;
   slot: AvailabilitySlot;
   customer: CustomerInfo;
   status: WizardStatus;
@@ -57,11 +63,17 @@ function formatLocal(utc: string): string {
   return dtf.format(date);
 }
 
+function formatPhoneForDisplay(e164: string): string {
+  const m = /^\+1(\d{3})(\d{3})(\d{4})$/.exec(e164);
+  return m ? `${m[1]}-${m[2]}-${m[3]}` : e164;
+}
+
 export function Step5Confirm({
   service,
   variation,
   barber,
   anyBarber,
+  barberPhoneE164 = null,
   slot,
   customer,
   status,
@@ -428,7 +440,15 @@ export function Step5Confirm({
           You will <strong>not</strong> be charged today. If you no-show or cancel within
           24 hours of your appointment, your card will be charged the full service price.
           To cancel or reschedule earlier, use{' '}
-          <a className="link-gold" href="/my-bookings">My Bookings</a>.
+          <a className="link-gold" href="/my-bookings">My Bookings</a>
+          {barberPhoneE164 && barber && (
+            <>
+              {' '}or text {barber.displayName}:{' '}
+              <a className="link-gold" href={`sms:${barberPhoneE164}`}>
+                {formatPhoneForDisplay(barberPhoneE164)}
+              </a>
+            </>
+          )}.
           <div className="bw-policy__cta">
             <a className="link-gold" href="/cancellation-policy" target="_blank" rel="noopener">
               Read the full cancellation policy →
@@ -439,7 +459,15 @@ export function Step5Confirm({
         <div className="bw-policy">
           <strong>Cancellation policy.</strong> We ask for 24-hour notice for cancellations or
           reschedules. No-shows may be charged the full service price. To change this booking,
-          use <a className="link-gold" href="/my-bookings">My Bookings</a>.
+          use <a className="link-gold" href="/my-bookings">My Bookings</a>
+          {barberPhoneE164 && barber && (
+            <>
+              {' '}or text {barber.displayName}:{' '}
+              <a className="link-gold" href={`sms:${barberPhoneE164}`}>
+                {formatPhoneForDisplay(barberPhoneE164)}
+              </a>
+            </>
+          )}.
           <div className="bw-policy__cta">
             <a className="link-gold" href="/cancellation-policy" target="_blank" rel="noopener">
               Read the full cancellation policy →

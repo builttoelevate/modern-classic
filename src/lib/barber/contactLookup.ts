@@ -43,6 +43,41 @@ export async function resolveBarberContact(
   };
 }
 
+/** Customer-facing variant. Returns the barber's display name + their
+ *  customer-facing SMS phone (or null when the barber hasn't set one
+ *  on /barber/dashboard Settings). Deliberately does NOT return the
+ *  email — customers shouldn't see the barber's internal-notification
+ *  inbox. Caller renders the phone as a tappable sms: link on the
+ *  Step 5 confirmation + /my-bookings cards; null phone means "fall
+ *  back to the self-service prompt". */
+export interface BarberCustomerContact {
+  displayName: string;
+  /** E.164, e.g. "+17405551234". null = barber hasn't opted in. */
+  phoneE164: string | null;
+}
+
+export async function resolveBarberCustomerContacts(
+  teamMemberIds: string[],
+): Promise<Map<string, BarberCustomerContact>> {
+  const ids = Array.from(new Set(teamMemberIds.filter((id) => !!id)));
+  if (ids.length === 0) return new Map();
+  const [accounts, roster] = await Promise.all([
+    Promise.all(ids.map((id) => getAccount(id).catch(() => null))),
+    getBarbers().catch(() => []),
+  ]);
+  const rosterById = new Map(roster.map((b) => [b.id, b] as const));
+  const out = new Map<string, BarberCustomerContact>();
+  ids.forEach((id, i) => {
+    const account = accounts[i];
+    const squareEntry = rosterById.get(id);
+    out.set(id, {
+      displayName: squareEntry?.displayName || account?.username || 'your barber',
+      phoneE164: account?.phoneE164 ?? null,
+    });
+  });
+  return out;
+}
+
 /** Batch variant. Resolves N team_member_ids in parallel using a
  *  single getBarbers() call so we don't hammer the Square API. Returns
  *  a map keyed by team_member_id; missing keys = no resolvable inbox. */

@@ -12,6 +12,7 @@ import { getSession, refreshSessionCookie } from '../lib/auth/middleware';
 import { isAuthConfigured } from '../lib/auth/session';
 import { adoptMissingGroupSiblings } from '../lib/customer/groupSelfHeal';
 import { getBarbers } from '../lib/square/team';
+import { resolveBarberCustomerContacts } from '../lib/barber/contactLookup';
 import { listLinkedPeople } from '../lib/customer/profileLinks';
 import { getMergedBookingsForSession } from '../lib/customer/familyBookings';
 import { pickFeaturedProduct, type FeaturedProduct } from '../lib/recommendations/featuredProduct';
@@ -46,6 +47,7 @@ if (!session) {
 
 let bookings: CustomerBookings = { upcoming: [], past: [] };
 let activeBarberIds = new Set<string>();
+let barberPhones: Record<string, string> = {};
 let loadError: string | null = null;
 
 // One-shot debug overlay. Triggered with ?debug=1 in the URL.
@@ -100,6 +102,30 @@ try {
   ]);
   bookings = merged.bookings;
   activeBarberIds = new Set(bs.map((m) => m.id));
+
+  // Hydrate the per-barber customer-facing phone map for the barbers
+  // referenced by this customer's bookings. Customers see the assigned
+  // barber's text number on each card when the barber has opted in
+  // via /barber/dashboard Settings. KV outage is non-fatal — the map
+  // stays empty and the card falls back to the email prompt.
+  try {
+    const referencedBarberIds = Array.from(
+      new Set(
+        [...bookings.upcoming, ...bookings.past]
+          .map((b) => b.barberId)
+          .filter((id) => !!id),
+      ),
+    );
+    if (referencedBarberIds.length > 0) {
+      const phoneMap = await resolveBarberCustomerContacts(referencedBarberIds);
+      for (const [teamMemberId, contact] of phoneMap.entries()) {
+        if (contact.phoneE164) barberPhones[teamMemberId] = contact.phoneE164;
+      }
+    }
+  } catch (phoneErr) {
+    // eslint-disable-next-line no-console
+    console.warn('[my-bookings] barber phones lookup failed (non-fatal):', phoneErr);
+  }
 
   if (debugInfo) {
     debugInfo.family = merged.family
@@ -295,7 +321,12 @@ Astro.response.headers.append('Set-Cookie', refreshSessionCookie(session));
           />
         )}
         {isTrueNewCustomer && <NewCustomerCard client:load basePath={base} />}
-        <MyBookingsList client:load initial={bookings} basePath={base} />
+        <MyBookingsList
+          client:load
+          initial={bookings}
+          basePath={base}
+          barberPhones={barberPhones}
+        />
       </>
     )}
 

@@ -8,6 +8,7 @@ import BookingWizard from '../components/booking/BookingWizard.tsx';
 import type { RescheduleContext, SignedInCustomer, WizardPreselectProps, BookingForOption } from '../components/booking/BookingWizard.tsx';
 import { getServices } from '../lib/square/catalog';
 import { getBarbers } from '../lib/square/team';
+import { resolveBarberCustomerContacts } from '../lib/barber/contactLookup';
 import { getLocation } from '../lib/square/locations';
 import { getBooking } from '../lib/square/bookings';
 import { findCustomerByEmail } from '../lib/square/customers';
@@ -39,11 +40,27 @@ let rescheduleError: string | null = null;
 let signedInCustomer: SignedInCustomer | undefined;
 let bookingForOptions: BookingForOption[] | undefined;
 
+let barberPhones: Record<string, string> = {};
+
 try {
   const [s, b, l] = await Promise.all([getServices(), getBarbers(), getLocation()]);
   services = s;
   barbers = b;
   location = l;
+  // Hydrate the per-barber customer-facing phone map once at page load
+  // so Step 5 can render a "Text {barber}: {number}" sms link instead
+  // of the generic "manage in My Bookings" prompt. KV outage here is
+  // non-fatal — the map stays empty and the wizard falls back to the
+  // self-service copy.
+  try {
+    const phoneMap = await resolveBarberCustomerContacts(b.map((x) => x.id));
+    for (const [teamMemberId, contact] of phoneMap.entries()) {
+      if (contact.phoneE164) barberPhones[teamMemberId] = contact.phoneE164;
+    }
+  } catch (phoneErr) {
+    // eslint-disable-next-line no-console
+    console.warn('[book] barber phones lookup failed (non-fatal):', phoneErr);
+  }
 } catch (err) {
   loadError = err instanceof Error ? err.message : String(err);
   // eslint-disable-next-line no-console
@@ -218,6 +235,7 @@ if (rescheduleId && !loadError) {
           preselect={preselect}
           signedInCustomer={signedInCustomer}
           bookingForOptions={bookingForOptions}
+          barberPhones={barberPhones}
         />
         {/* Entry point to the group flow. Styled as a bw-card so it
             sits visually next to the service list at the bottom of

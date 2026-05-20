@@ -64,6 +64,13 @@ interface Props {
   signedInCustomer?: SignedInCustomer;
   /** Self + linked people list. Selector hides if length <= 1. */
   bookingForOptions?: BookingForOption[];
+  /** Map of team_member_id → barber's customer-facing SMS phone (E.164).
+   *  Built server-side from BarberAccountRecord.phoneE164. Only contains
+   *  entries for barbers who've opted in by setting their phone on
+   *  /barber/dashboard Settings. Used on Step 5 to render a "Text {barber}:
+   *  {number}" sms link in place of the generic "manage in My Bookings"
+   *  prompt. */
+  barberPhones?: Record<string, string>;
 }
 
 const STEP_LABELS = ['Service', 'Barber', 'Time', 'Details', 'Confirm'];
@@ -227,6 +234,7 @@ export default function BookingWizard({
   preselect,
   signedInCustomer,
   bookingForOptions,
+  barberPhones,
 }: Props) {
   // "Booking for" selector — currently selected customerId. Defaults to
   // self (the first option). When the parent picks a linked person, we
@@ -1059,6 +1067,11 @@ export default function BookingWizard({
           variation={state.selectedVariation}
           barber={state.selectedBarber}
           anyBarber={state.anyBarber}
+          barberPhoneE164={
+            state.anyBarber || !state.selectedBarber
+              ? null
+              : (barberPhones?.[state.selectedBarber.id] ?? null)
+          }
           slot={state.selectedSlot}
           customer={state.customer}
           status={state.status}

@@ -7,6 +7,12 @@ import { BookingCard } from './BookingCard';
 interface Props {
   initial: CustomerBookings;
   basePath: string;
+  /** Map of team_member_id → assigned barber's customer-facing SMS
+   *  phone (E.164). When the customer's assigned barber has opted in
+   *  (Settings tab on /barber/dashboard), the booking card renders a
+   *  "Text {barber}: {number}" sms link in place of the within-24h
+   *  email fallback. */
+  barberPhones?: Record<string, string>;
 }
 
 interface BookingsApiResponse {
@@ -29,7 +35,7 @@ interface CancelApiResponse {
 
 type Tab = 'upcoming' | 'past';
 
-export default function MyBookingsList({ initial, basePath }: Props) {
+export default function MyBookingsList({ initial, basePath, barberPhones }: Props) {
   const [bookings, setBookings] = useState<CustomerBookings>(initial);
   const [activeTab, setActiveTab] = useState<Tab>('upcoming');
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -104,7 +110,12 @@ export default function MyBookingsList({ initial, basePath }: Props) {
         // silently swallow the click.
         setToast('Within 24 hours — confirm the charge to cancel.');
       } else if (data.error?.code === 'TOO_LATE_TO_CANCEL') {
-        setToast('Within 24 hours — please email modernclassicbarbershop@protonmail.com.');
+        const phone = barberPhones?.[booking.barberId];
+        setToast(
+          phone
+            ? `Within 24 hours — please text ${booking.barberName} directly to cancel.`
+            : 'Within 24 hours — please email modernclassicbarbershop@protonmail.com.',
+        );
         await refresh();
       } else {
         setToast(data.error?.detail || 'Could not cancel. Please try again.');
@@ -195,6 +206,7 @@ export default function MyBookingsList({ initial, basePath }: Props) {
                   onReschedule={handleReschedule}
                   onBookAgain={handleBookAgain}
                   busy={busyId === m.id}
+                  barberPhoneE164={barberPhones?.[m.barberId] ?? null}
                 />
               ))}
             </BookingGroup>,
@@ -214,6 +226,7 @@ export default function MyBookingsList({ initial, basePath }: Props) {
           onReschedule={handleReschedule}
           onBookAgain={handleBookAgain}
           busy={busyId === b.id}
+          barberPhoneE164={barberPhones?.[b.barberId] ?? null}
         />,
       );
     }

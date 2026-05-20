@@ -3,7 +3,7 @@ export const prerender = false;
 
 import { getBarberSession, refreshBarberSessionCookie } from '../../lib/auth/barberMiddleware';
 import { isBarberOwner } from '../../lib/auth/barberPermissions';
-import { getAccount } from '../../lib/barber/accountStore';
+import { formatUsPhone, getAccount } from '../../lib/barber/accountStore';
 import {
   listBlocks as listBarberBlocks,
   type OneOffBlock,
@@ -69,14 +69,16 @@ const TERMINAL = new Set<Booking['status']>([
 // daily-driver use case; waitlist is the secondary "who's waiting"
 // tab. URL param so back/forward navigation works and so a barber can
 // bookmark the waitlist tab directly if they want.
-type Tab = 'appointments' | 'waitlist' | 'time-off';
+type Tab = 'appointments' | 'waitlist' | 'time-off' | 'settings';
 const tabParam = Astro.url.searchParams.get('tab');
 const activeTab: Tab =
   tabParam === 'waitlist'
     ? 'waitlist'
     : tabParam === 'time-off'
       ? 'time-off'
-      : 'appointments';
+      : tabParam === 'settings'
+        ? 'settings'
+        : 'appointments';
 
 function shopDateKey(date: Date = new Date()): string {
   return new Intl.DateTimeFormat('en-CA', {
@@ -494,6 +496,14 @@ Astro.response.headers.append('Set-Cookie', refreshBarberSessionCookie(session))
             </span>
           )}
         </a>
+        <a
+          class={`bb-tab ${activeTab === 'settings' ? 'is-active' : ''}`}
+          role="tab"
+          aria-selected={activeTab === 'settings'}
+          href={`${base}/barber/dashboard?date=${filterDateKey}&tab=settings`}
+        >
+          Settings
+        </a>
       </nav>
 
       {activeTab === 'appointments' && (
@@ -910,6 +920,41 @@ Astro.response.headers.append('Set-Cookie', refreshBarberSessionCookie(session))
             </ul>
           )}
         </div>
+      </section>
+      )}
+
+      {activeTab === 'settings' && (
+      <section class="bb-settings">
+        <h2>
+          Settings
+          <span class="bb-sub">your profile + customer-facing contact</span>
+        </h2>
+
+        <form class="bb-settings__form" id="bb-settings-phone">
+          <h3 class="bb-settings__head">Customer text number</h3>
+          <p class="bb-settings__lede">
+            When set, customers will see "Text {account.username}: your number"
+            with a tappable text-message link on their booking confirmation
+            and on their My Bookings cards. Leave blank to hide it — customers
+            see a self-service prompt instead. Used only for bookings you're
+            assigned to.
+          </p>
+          <label class="bb-settings__field">
+            <span>Number (10-digit US, leave blank to clear)</span>
+            <input
+              type="tel"
+              name="phoneE164"
+              autocomplete="tel"
+              placeholder="(740) 555-1234"
+              value={account.phoneE164 ? formatUsPhone(account.phoneE164) : ''}
+              maxlength="20"
+            />
+          </label>
+          <div class="bb-settings__actions">
+            <button type="submit" class="bb-btn bb-btn--sm">Save</button>
+          </div>
+          <p class="bb-settings__status" data-status hidden></p>
+        </form>
       </section>
       )}
     </div>
@@ -1942,6 +1987,54 @@ Astro.response.headers.append('Set-Cookie', refreshBarberSessionCookie(session))
             });
           });
         }
+      })();
+
+      // Settings tab — save customer-facing text number.
+      (function () {
+        const form = document.getElementById('bb-settings-phone');
+        if (!form) return;
+        const input = form.querySelector('input[name="phoneE164"]');
+        const status = form.querySelector('[data-status]');
+        if (!input || !status) return;
+
+        function showStatus(msg, kind) {
+          status.textContent = msg || '';
+          status.className = 'bb-settings__status' + (kind ? ' bb-settings__status--' + kind : '');
+          status.hidden = !msg;
+        }
+
+        form.addEventListener('submit', async (e) => {
+          e.preventDefault();
+          const raw = (input.value || '').trim();
+          const btn = form.querySelector('button[type="submit"]');
+          if (btn) btn.disabled = true;
+          showStatus('Saving…');
+          try {
+            const res = await fetch('/api/barber/profile', {
+              method: 'POST',
+              credentials: 'same-origin',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ phoneE164: raw }),
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok || !data.ok) {
+              showStatus(
+                (data && data.error && data.error.detail) || 'Save failed.',
+                'error',
+              );
+              if (btn) btn.disabled = false;
+              return;
+            }
+            showStatus(
+              data.phoneE164 ? 'Saved. Customers will now see this number on their bookings with you.' : 'Cleared. Customers will see the self-service prompt.',
+              'ok',
+            );
+            if (btn) btn.disabled = false;
+          } catch {
+            showStatus('Network error. Try again.', 'error');
+            if (btn) btn.disabled = false;
+          }
+        });
       })();
     </script>
   </body>
