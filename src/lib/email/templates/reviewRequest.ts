@@ -81,7 +81,6 @@ export function reviewRequestHtml(props: ReviewRequestProps): string {
   const service = escapeHtml(props.serviceName);
   const when = escapeHtml(props.appointmentDate);
   const address = escapeHtml(props.shopAddress);
-  const phone = escapeHtml(props.shopPhone);
 
   return `<!doctype html>
 <html lang="en">
@@ -137,8 +136,7 @@ export function reviewRequestHtml(props: ReviewRequestProps): string {
             <tr>
               <td style="padding:18px 32px 24px;border-top:1px solid ${COLORS.border};text-align:center;">
                 <p style="margin:0 0 8px;font-size:12px;line-height:1.6;color:${COLORS.muted};">
-                  ${address}<br />
-                  ${phone}
+                  ${address}
                 </p>
                 <p style="margin:0;font-size:11px;line-height:1.6;color:${COLORS.muted};">
                   You're getting this one-time post-visit email because you booked an appointment with us.
@@ -173,7 +171,6 @@ Modern Classic Barbershop
 
 —
 ${props.shopAddress}
-${props.shopPhone}
 
 You're getting this one-time post-visit email because you booked an appointment with us. Don't want these? Turn off review requests: ${props.unsubscribeUrl}`;
 }

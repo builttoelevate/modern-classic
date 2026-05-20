@@ -227,7 +227,7 @@ export function Step5Confirm({
                   <p className="bw-success-partial">
                     {succeeded} of {total} visits confirmed. {missing}{' '}
                     {missing === 1 ? "couldn't be booked" : "couldn't be booked"} —
-                    visit /my-bookings or call the shop to fill those in.
+                    visit My Bookings or email modernclassicbarbershop@protonmail.com to fill those in.
                   </p>
                 );
               })()}
@@ -253,9 +253,9 @@ export function Step5Confirm({
             </a>
             <a
               className="bw-btn bw-btn--ghost"
-              href="tel:+17402974462"
+              href="mailto:modernclassicbarbershop@protonmail.com"
             >
-              Save shop number
+              Email the shop
             </a>
             <a className="bw-btn bw-btn--ghost" href="/my-bookings">
               View My Bookings
@@ -427,8 +427,8 @@ export function Step5Confirm({
           <strong>First-time visitor cancellation policy.</strong> Your card is held only.
           You will <strong>not</strong> be charged today. If you no-show or cancel within
           24 hours of your appointment, your card will be charged the full service price.
-          To cancel earlier, use <a className="link-gold" href="/my-bookings">My Bookings</a>{' '}
-          or call us at <a className="link-gold" href="tel:+17402974462">740-297-4462</a>.
+          To cancel or reschedule earlier, use{' '}
+          <a className="link-gold" href="/my-bookings">My Bookings</a>.
           <div className="bw-policy__cta">
             <a className="link-gold" href="/cancellation-policy" target="_blank" rel="noopener">
               Read the full cancellation policy →
@@ -439,7 +439,7 @@ export function Step5Confirm({
         <div className="bw-policy">
           <strong>Cancellation policy.</strong> We ask for 24-hour notice for cancellations or
           reschedules. No-shows may be charged the full service price. To change this booking,
-          call us at <a className="link-gold" href="tel:+17402974462">740-297-4462</a>.
+          use <a className="link-gold" href="/my-bookings">My Bookings</a>.
           <div className="bw-policy__cta">
             <a className="link-gold" href="/cancellation-policy" target="_blank" rel="noopener">
               Read the full cancellation policy →

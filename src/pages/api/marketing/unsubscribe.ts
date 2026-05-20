@@ -79,7 +79,7 @@ function pageShell(opts: { title: string; body: string }): string {
       ${opts.body}
       <footer>
         Modern Classic Barbershop &amp; Shave Parlor<br />
-        819 Linden Avenue · Zanesville, OH 43701 · 740-297-4462
+        819 Linden Avenue · Zanesville, OH 43701
       </footer>
     </main>
   </body>

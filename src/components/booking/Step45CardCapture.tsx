@@ -170,7 +170,7 @@ export function Step45CardCapture({
     if (!env.appId || !env.locationId) {
       setSdkState('error');
       setSdkError(
-        'Card capture is not configured. Please call the shop at 740-297-4462 and we\'ll book you in by phone.',
+        "Card capture is not configured. Please email modernclassicbarbershop@protonmail.com and we'll help you book.",
       );
       return;
     }

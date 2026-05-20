@@ -652,7 +652,7 @@ export default function BookingWizard({
         status: {
           kind: 'error',
           message:
-            "We're not sure if your booking went through. Please check your email or call us at 740-297-4462 before retrying.",
+            "We're not sure if your booking went through. Please check your email or contact us at modernclassicbarbershop@protonmail.com before retrying.",
         },
       });
       return;
@@ -1145,14 +1145,14 @@ function formatLocalEt(utc: string): string {
 
 function friendlyError(code: string, detail: string): string {
   if (code === 'AUTHENTICATION_ERROR' || code === 'UNAUTHORIZED') {
-    return 'Booking system temporarily unavailable. Please call the shop at 740-297-4462.';
+    return 'Booking system temporarily unavailable. Please email modernclassicbarbershop@protonmail.com so we can help.';
   }
   if (code === 'INVALID_TIME' || code === 'BAD_REQUEST') {
     if (/took|taken/i.test(detail)) return 'That slot was just taken. Please pick another.';
     return detail || 'Could not complete your booking. Please try again.';
   }
   if (code === 'NETWORK_ERROR') {
-    return "We're not sure if your booking went through. Please check your email or call us at 740-297-4462.";
+    return "We're not sure if your booking went through. Please check your email or contact us at modernclassicbarbershop@protonmail.com.";
   }
   if (detail) return `${detail} (${code})`;
   return 'Something went wrong. Please try again.';

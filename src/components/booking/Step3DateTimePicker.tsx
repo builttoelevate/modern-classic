@@ -505,7 +505,10 @@ export function Step3DateTimePicker({
               </button>
             </div>
             <span className="bw-empty__or">
-              or call <a className="link-gold" href="tel:+17402974462">740-297-4462</a>
+              or email{' '}
+              <a className="link-gold" href="mailto:modernclassicbarbershop@protonmail.com">
+                modernclassicbarbershop@protonmail.com
+              </a>
             </span>
           </div>
         )}

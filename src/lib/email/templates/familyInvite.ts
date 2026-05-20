@@ -44,7 +44,6 @@ export function familyInviteHtml(props: FamilyInviteProps): string {
   const acceptUrl = escapeHtml(props.acceptUrl);
   const expires = escapeHtml(props.expiresLabel);
   const address = escapeHtml(props.shopAddress);
-  const phone = escapeHtml(props.shopPhone);
 
   return `<!doctype html>
 <html lang="en">
@@ -103,7 +102,7 @@ export function familyInviteHtml(props: FamilyInviteProps): string {
                 </p>
                 <p style="margin:0;font-size:12px;line-height:1.6;color:${COLORS.muted};">
                   Modern Classic Barbershop &amp; Shave Parlor<br />
-                  ${address} · ${phone}
+                  ${address}
                 </p>
               </td>
             </tr>
@@ -129,6 +128,5 @@ Didn't expect this? You can ignore it — nothing happens unless you tap Accept.
 
 —
 Modern Classic Barbershop & Shave Parlor
-${props.shopAddress}
-${props.shopPhone}`;
+${props.shopAddress}`;
 }

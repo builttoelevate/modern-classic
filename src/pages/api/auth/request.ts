@@ -160,7 +160,7 @@ export const POST: APIRoute = async ({ request }) => {
           error: {
             code: 'NO_EMAIL_ON_FILE',
             detail:
-              "We found your account but there's no email on file — sign-in links go by email. Please call the shop at 740-297-4462 and we'll add one in a minute.",
+              "We found your account but there's no email on file — sign-in links go by email. Please email modernclassicbarbershop@protonmail.com and we'll add one.",
           },
         },
         { status: 409 },

@@ -68,7 +68,6 @@ export function waitlistConfirmationHtml(props: WaitlistConfirmationProps): stri
     ? escapeHtml(props.timePreferenceLabel)
     : '';
   const address = escapeHtml(props.shopAddress);
-  const phone = escapeHtml(props.shopPhone);
 
   return `<!doctype html>
 <html lang="en">
@@ -118,7 +117,7 @@ export function waitlistConfirmationHtml(props: WaitlistConfirmationProps): stri
                   Openings are first-come, first-served — when your alert lands, the faster you book, the better the odds.
                 </p>
                 <p style="margin:0;font-size:13px;line-height:1.55;color:${COLORS.muted};">
-                  Need to change your request or have a question? Just reply to this email or call the shop at ${phone}.
+                  Need to change your request or have a question? Just reply to this email.
                 </p>
               </td>
             </tr>
@@ -129,7 +128,7 @@ export function waitlistConfirmationHtml(props: WaitlistConfirmationProps): stri
                 </p>
                 <p style="margin:0;font-size:12px;line-height:1.6;color:${COLORS.muted};">
                   Modern Classic Barbershop &amp; Shave Parlor<br />
-                  ${address} · ${phone}
+                  ${address}
                 </p>
               </td>
             </tr>
@@ -161,14 +160,13 @@ export function waitlistConfirmationText(props: WaitlistConfirmationProps): stri
     '',
     'Openings are first-come, first-served — when your alert lands, the faster you book, the better the odds.',
     '',
-    `Need to change your request or have a question? Just reply to this email or call the shop at ${props.shopPhone}.`,
+    `Need to change your request or have a question? Just reply to this email.`,
     '',
     "You're getting this because you joined the waitlist on mdrnclassic.com.",
     '',
     '—',
     'Modern Classic Barbershop & Shave Parlor',
     props.shopAddress,
-    props.shopPhone,
   );
   return lines.join('\n');
 }

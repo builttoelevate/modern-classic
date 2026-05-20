@@ -89,8 +89,10 @@ if (session && !loadError) {
       </header>
       {loadError && (
         <p class="bw-page__error">
-          Couldn't load services right now. Try again in a moment, or call{' '}
-          <a class="link-gold" href="tel:+17402974462">740-297-4462</a>.
+          Couldn't load services right now. Try again in a moment, or email{' '}
+          <a class="link-gold" href="mailto:modernclassicbarbershop@protonmail.com">
+            modernclassicbarbershop@protonmail.com
+          </a>.
         </p>
       )}
       {/* Defensive: a group booking needs at least 2 barbers on the
@@ -102,8 +104,10 @@ if (session && !loadError) {
       {!loadError && barbers.length < 2 && (
         <p class="bw-page__error">
           Group booking is unavailable right now — the shop's barber
-          roster came back short. Try again in a moment, or call{' '}
-          <a class="link-gold" href="tel:+17402974462">740-297-4462</a>.
+          roster came back short. Try again in a moment, or email{' '}
+          <a class="link-gold" href="mailto:modernclassicbarbershop@protonmail.com">
+            modernclassicbarbershop@protonmail.com
+          </a>.
         </p>
       )}
       {!loadError && barbers.length >= 2 && (

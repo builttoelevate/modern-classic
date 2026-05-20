@@ -54,7 +54,6 @@ export function familyInviteAcceptedHtml(props: FamilyInviteAcceptedProps): stri
   const accepted = escapeHtml(props.acceptedByName);
   const myBookings = escapeHtml(props.myBookingsUrl);
   const address = escapeHtml(props.shopAddress);
-  const phone = escapeHtml(props.shopPhone);
   const memberCountCopy =
     props.totalMembers > 2
       ? `${props.totalMembers} members`
@@ -108,7 +107,7 @@ export function familyInviteAcceptedHtml(props: FamilyInviteAcceptedProps): stri
               <td style="padding:18px 36px 26px;border-top:1px solid ${COLORS.border};text-align:center;">
                 <p style="margin:0;font-size:12px;line-height:1.6;color:${COLORS.muted};">
                   Modern Classic Barbershop &amp; Shave Parlor<br />
-                  ${address} · ${phone}
+                  ${address}
                 </p>
               </td>
             </tr>
@@ -136,6 +135,5 @@ Either of you can leave the family from your profile at any time. Leaving doesn'
 
 —
 Modern Classic Barbershop & Shave Parlor
-${props.shopAddress}
-${props.shopPhone}`;
+${props.shopAddress}`;
 }

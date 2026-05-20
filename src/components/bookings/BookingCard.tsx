@@ -35,7 +35,7 @@ export function BookingCard({ booking, variant, onCancel, onReschedule, onBookAg
   const within24hChargeable = within24h && booking.hasCardOnFile === true;
   const lockedReason =
     within24h && !within24hChargeable
-      ? 'Within 24 hours? Call the shop at 740-297-4462 to cancel or reschedule.'
+      ? 'Within 24 hours? Email modernclassicbarbershop@protonmail.com to cancel or reschedule.'
       : null;
 
   const isCancelled =
