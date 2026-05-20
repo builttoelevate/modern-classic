@@ -36,6 +36,23 @@ export interface WizardCustomerPayload {
    * consent. Unsubscribe is its own flow.
    */
   marketingConsent?: boolean;
+  /**
+   * When the customer flipped Step 4's "Who is this appointment for?"
+   * radio to "Someone else", the kid's first name lives here. When
+   * present:
+   *   1. The contact fields above belong to the ADULT — those create
+   *      the parent customer record (with email for magic-link sign-in).
+   *   2. The server creates (or matches via listLinkedPeople dedupe by
+   *      normalized first name) a kid customer record under the adult
+   *      with no email + the adult's phone.
+   *   3. The booking is created against the kid's customer_id.
+   *
+   * Ignored when existingCustomerId is set (rebook / reschedule paths
+   * keep the existing customer relationship).
+   */
+  bookingFor?: {
+    givenName: string;
+  };
 }
 
 export interface CreateBookingRequest {

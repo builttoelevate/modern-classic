@@ -14,7 +14,11 @@ export type BookingPhase =
   | 'validation-failed'
   | 'square-error'
   | 'unexpected-error'
-  | 'marketing-consent';
+  | 'marketing-consent'
+  | 'booking-for-kid-reused-link'
+  | 'booking-for-kid-created'
+  | 'booking-for-kid-create-failed'
+  | 'booking-for-kid-link-write-failed';
 
 interface LogPayload {
   phase: BookingPhase;
@@ -30,6 +34,13 @@ interface LogPayload {
   attemptId?: string;
   marketingConsent?: boolean;
   marketingDecision?: string;
+  /** "Someone else" gate — adult who initiated the booking and the
+   *  kid record the booking ends up under. */
+  adultCustomerId?: string;
+  kidCustomerId?: string;
+  kidGivenName?: string;
+  /** Free-form error/info detail used by booking-for-kid-* phases. */
+  detail?: string;
 }
 
 export function redactEmail(email: string | undefined): string {

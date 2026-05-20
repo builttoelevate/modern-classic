@@ -7,6 +7,7 @@ import { Step4CustomerInfo } from './Step4CustomerInfo';
 import { Step5Confirm } from './Step5Confirm';
 import { Step45CardCapture } from './Step45CardCapture';
 import { buildSeriesNote, newSeriesId } from '../../lib/booking/series';
+import { isKidsService } from '../../lib/booking/serviceIntent';
 import {
   initialState as defaultInitialState,
   reducer,
@@ -609,6 +610,21 @@ export default function BookingWizard({
           note: firstNote,
           updateContact: overrideCustomerId ? false : state.customer.updateContact,
           marketingConsent: overrideCustomerId ? false : state.customer.marketingConsent,
+          // Only emit bookingFor when:
+          //   1. The user picked "Someone else" on Step 4 (bookingFor is set)
+          //   2. AND the kid first name is non-empty
+          //   3. AND we're NOT in an overrideCustomerId path (rebook /
+          //      reschedule of an existing booking — those keep the
+          //      existing customer relationship intact)
+          ...(state.customer.bookingFor &&
+          state.customer.bookingFor.givenName.trim() &&
+          !overrideCustomerId
+            ? {
+                bookingFor: {
+                  givenName: state.customer.bookingFor.givenName.trim(),
+                },
+              }
+            : {}),
         },
         existingCustomerId: overrideCustomerId,
         cardOnFile: cardOnFilePayload,
@@ -1005,6 +1021,7 @@ export default function BookingWizard({
           customer={state.customer}
           onChange={(patch) => dispatch({ type: 'UPDATE_CUSTOMER', patch })}
           onNext={() => dispatch({ type: 'NEXT' })}
+          defaultForSomeoneElse={isKidsService(state.selectedService)}
         />
       )}
 
