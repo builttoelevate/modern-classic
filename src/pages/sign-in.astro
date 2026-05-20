@@ -58,6 +58,9 @@ if (session) {
           We sent a 6-digit code to <strong data-sent-to></strong>.
           Type it below — it expires in 15 minutes.
         </p>
+        <p class="verify-hint">
+          Don't see it? Check your spam or junk folder.
+        </p>
         <label for="code">Your sign-in code</label>
         <input
           id="code"
@@ -435,6 +438,12 @@ if (session) {
     color: var(--color-gold-light);
     font-weight: 600;
     word-break: break-all;
+  }
+  .verify-hint {
+    margin: 0 0 0.75rem;
+    color: var(--color-text-dim);
+    font-size: 0.88rem;
+    line-height: 1.4;
   }
   .signin-error {
     margin: 0.5rem 0 0;
