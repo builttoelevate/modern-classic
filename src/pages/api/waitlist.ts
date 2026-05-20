@@ -489,7 +489,7 @@ export const POST: APIRoute = async ({ request, clientAddress }) => {
         ok: false,
         error: {
           code: 'EMAIL_FAILED',
-          detail: "We couldn't submit your request right now. Please call 740-297-4462.",
+          detail: "We couldn't submit your request right now. Please email modernclassicbarbershop@protonmail.com.",
         },
       },
       { status: 502 },

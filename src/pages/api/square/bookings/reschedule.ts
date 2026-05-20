@@ -126,7 +126,7 @@ export const POST: APIRoute = async ({ request }) => {
         ok: false,
         error: {
           code: 'TOO_LATE_TO_RESCHEDULE',
-          detail: 'Within 24 hours — please call the shop at 740-297-4462.',
+          detail: 'Within 24 hours — please email modernclassicbarbershop@protonmail.com.',
         },
       },
       { status: 400 },

@@ -10,9 +10,18 @@
  *  generally doesn't need it. */
 export const SHOP_NAME = 'Modern Classic Barbershop';
 
-/** Phone the customer is told to call when something can't be
- *  completed online (e.g. blocked-from-booking refusal). */
+/** Shop phone — used for barber-facing emails and admin diagnostics ONLY.
+ *  Do NOT render to customers in any flow: booking confirmations,
+ *  customer emails, /my-bookings, /cancellation-policy, sign-in errors,
+ *  etc. Customer-facing surfaces direct people to /my-bookings for
+ *  self-service or to SHOP_EMAIL for the rare case where they're stuck.
+ *  Bill's directive: minimize inbound calls during the day. */
 export const SHOP_PHONE = '740-297-4462';
+
+/** Shop email — the customer-facing fallback when /my-bookings
+ *  self-service isn't enough. Goes to the shop's ProtonMail, which the
+ *  team monitors during the day. */
+export const SHOP_EMAIL = 'modernclassicbarbershop@protonmail.com';
 
 /** Single global namespace for every Redis key written by code
  *  introduced from PR 2 onward. Existing modules (cardIndex,

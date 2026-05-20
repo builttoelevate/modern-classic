@@ -63,7 +63,6 @@ export function authCodeHtml(props: AuthCodeProps): string {
   const first = escapeHtml(firstName(props.customerName));
   const code = escapeHtml(props.code);
   const ttl = String(Math.max(1, Math.floor(props.ttlMinutes)));
-  const phone = escapeHtml(props.shopPhone);
   return `<!doctype html>
 <html lang="en">
   <head>
@@ -100,7 +99,7 @@ export function authCodeHtml(props: AuthCodeProps): string {
                   </tr>
                 </table>
                 <p style="margin:0 0 8px;font-size:13px;line-height:1.55;color:${COLORS.muted};">
-                  Didn't ask for this? Ignore the email — the code expires on its own. Worried? Call the shop at ${phone}.
+                  Didn't ask for this? Ignore the email — the code expires on its own. Worried? Reply to this email.
                 </p>
               </td>
             </tr>
@@ -128,7 +127,7 @@ export function authCodeText(props: AuthCodeProps): string {
     `Type this on the sign-in page. It works for the next ${ttl} minutes.`,
     '',
     `Didn't ask for this? Ignore the email — the code expires on its own.`,
-    `Worried? Call the shop at ${props.shopPhone}.`,
+    `Worried? Reply to this email.`,
     '',
     'Modern Classic Barbershop',
     '819 Linden Ave, Zanesville, OH',

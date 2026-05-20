@@ -200,8 +200,8 @@ export default function RebookUsualCard({
               </div>
             </dl>
             <p className="mb-rebook__policy">
-              <strong>Cancellation policy.</strong> 24-hour notice for changes;
-              call <a className="link-gold" href="tel:+17402974462">740-297-4462</a>.
+              <strong>Cancellation policy.</strong> 24-hour notice for changes
+              — manage in <a className="link-gold" href="/my-bookings">My Bookings</a>.
             </p>
             {error && (
               <p className="mb-rebook__error" role="alert">

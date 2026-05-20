@@ -230,7 +230,7 @@ export default function GroupBookingWizard({
         type: 'SET_STATUS',
         status: {
           kind: 'error',
-          message: 'Network error. Please call us at 740-297-4462.',
+          message: 'Network error. Please email modernclassicbarbershop@protonmail.com and we can finish booking for you.',
         },
       });
     }
@@ -770,8 +770,11 @@ function Step5Time({
         <h2>No matching openings in the next 60 days.</h2>
         <p className="gw__lede">
           Try a different schedule mode or split the group across separate
-          bookings. You can also call us at{' '}
-          <a className="link-gold" href="tel:+17402974462">740-297-4462</a>.
+          bookings. You can also email{' '}
+          <a className="link-gold" href="mailto:modernclassicbarbershop@protonmail.com">
+            modernclassicbarbershop@protonmail.com
+          </a>{' '}
+          and we'll help you sort it out.
         </p>
       </div>
     );
@@ -1122,7 +1125,11 @@ function SuccessScreen({
           <h2>{succeeded.length} of {success.bookings.length} booked.</h2>
           <p>
             One or more bookings couldn't be completed (most likely the slot was just taken).
-            Please call us at <a className="link-gold" href="tel:+17402974462">740-297-4462</a> to finish.
+            Please email{' '}
+            <a className="link-gold" href="mailto:modernclassicbarbershop@protonmail.com">
+              modernclassicbarbershop@protonmail.com
+            </a>{' '}
+            and we'll finish the remaining bookings.
           </p>
           <ul className="gw__success-failures">
             {failed.map((f) => (

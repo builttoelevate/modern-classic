@@ -65,7 +65,6 @@ export function waitlistOpeningHtml(props: WaitlistOpeningProps): string {
   const when = escapeHtml(props.whenLabel);
   const safeBookUrl = escapeHtml(props.bookUrl);
   const address = escapeHtml(props.shopAddress);
-  const phone = escapeHtml(props.shopPhone);
 
   return `<!doctype html>
 <html lang="en">
@@ -137,7 +136,7 @@ export function waitlistOpeningHtml(props: WaitlistOpeningProps): string {
                 </p>
                 <p style="margin:0;font-size:12px;line-height:1.6;color:${COLORS.muted};">
                   Modern Classic Barbershop &amp; Shave Parlor<br />
-                  ${address} · ${phone}
+                  ${address}
                 </p>
               </td>
             </tr>
@@ -168,6 +167,5 @@ You're getting this because you joined the waitlist on mdrnclassic.com.
 
 —
 Modern Classic Barbershop & Shave Parlor
-${props.shopAddress}
-${props.shopPhone}`;
+${props.shopAddress}`;
 }

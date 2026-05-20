@@ -104,7 +104,7 @@ export default function MyBookingsList({ initial, basePath }: Props) {
         // silently swallow the click.
         setToast('Within 24 hours — confirm the charge to cancel.');
       } else if (data.error?.code === 'TOO_LATE_TO_CANCEL') {
-        setToast('Within 24 hours — please call the shop at 740-297-4462.');
+        setToast('Within 24 hours — please email modernclassicbarbershop@protonmail.com.');
         await refresh();
       } else {
         setToast(data.error?.detail || 'Could not cancel. Please try again.');

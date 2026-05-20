@@ -380,8 +380,10 @@ export function WaitlistSheet({
             </p>
             <p>
               We'll email you the moment {matchPhrase} shows up that matches
-              the dates and times you picked. Questions? Call{' '}
-              <a className="link-gold" href="tel:+17402974462">740-297-4462</a>.
+              the dates and times you picked. Questions? Email{' '}
+              <a className="link-gold" href="mailto:modernclassicbarbershop@protonmail.com">
+                modernclassicbarbershop@protonmail.com
+              </a>.
             </p>
             <div className="bw-waitlist__actions">
               <button type="button" className="bw-btn" onClick={onClose}>
