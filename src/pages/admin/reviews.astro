@@ -2,7 +2,12 @@
 export const prerender = false;
 
 import { checkBasicAuth } from '../../lib/admin/auth';
-import { getLastReviewCronRun, getReviewStats } from '../../lib/marketing/reviewLog';
+import {
+  getLastReviewCronRun,
+  getRecentClickHits,
+  getReviewStats,
+  type ClickHitLogEntry,
+} from '../../lib/marketing/reviewLog';
 
 const auth = checkBasicAuth(Astro.request);
 if (!auth.ok) {
@@ -12,14 +17,20 @@ if (!auth.ok) {
 let last30: Awaited<ReturnType<typeof getReviewStats>> | null = null;
 let last90: Awaited<ReturnType<typeof getReviewStats>> | null = null;
 let lastRun: Awaited<ReturnType<typeof getLastReviewCronRun>> | null = null;
+let recentHits: ClickHitLogEntry[] = [];
 let loadError: string | null = null;
 
 try {
-  [last30, last90, lastRun] = await Promise.all([
+  const [s30, s90, lr, hits] = await Promise.all([
     getReviewStats({ daysBack: 30, recentLimit: 50 }),
     getReviewStats({ daysBack: 90, recentLimit: 50 }),
     getLastReviewCronRun(),
+    getRecentClickHits(20).catch(() => []),
   ]);
+  last30 = s30;
+  last90 = s90;
+  lastRun = lr;
+  recentHits = hits;
 } catch (err) {
   loadError = err instanceof Error ? err.message : String(err);
 }
@@ -213,6 +224,10 @@ const recent = last30?.recent ?? [];
         color: var(--gold);
         margin-right: 6px;
       }
+      /* Token-state pills for the Recent click attempts panel. */
+      .pill.hit-valid   { background: rgba(122, 184, 110, 0.15); color: #a4d091; }
+      .pill.hit-invalid { background: rgba(220, 80, 60, 0.15); color: #f0a37a; }
+      .pill.hit-absent  { background: rgba(128, 119, 106, 0.15); color: var(--dim); }
       .meta { color: var(--dim); font-family: ui-monospace, Menlo, monospace; font-size: 0.8rem; }
 
       /* Diagnostics panel */
@@ -568,7 +583,71 @@ const recent = last30?.recent ?? [];
             </div>
           </div>
 
-          <h2>Recent review requests</h2>
+          <h2>Recent click attempts</h2>
+          <p class="sub">
+            Every time someone taps the gold button in a review email,
+            their request lands here — whether or not a click was
+            successfully recorded. Lets you confirm whether the
+            endpoint's getting hit at all, separately from whether
+            the stats above are moving. Capped at the last 20.
+          </p>
+          {recentHits.length === 0 && (
+            <p class="sub">
+              No hits to <code>/r/review</code> recorded yet. Either no
+              customer has tapped a review link, or this feature was
+              deployed after the last click happened.
+            </p>
+          )}
+          {recentHits.length > 0 && (
+            <div class="table-scroll">
+              <table>
+                <thead>
+                  <tr>
+                    <th>When</th>
+                    <th>Token</th>
+                    <th>Recorded?</th>
+                    <th>First click</th>
+                    <th>User-agent</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {recentHits.map((h) => (
+                    <tr>
+                      <td>{fmtDate(h.ts)}</td>
+                      <td>
+                        <span class={`pill hit-${h.tokenState}`}>
+                          {h.tokenState}
+                        </span>
+                      </td>
+                      <td>
+                        {h.tokenState === 'valid' ? (
+                          h.recordFound ? (
+                            <span class="pill clicked">recorded</span>
+                          ) : (
+                            <span class="pill unclicked">no record</span>
+                          )
+                        ) : (
+                          <span class="pill unclicked">—</span>
+                        )}
+                      </td>
+                      <td>
+                        {h.tokenState === 'valid' && h.recordFound
+                          ? h.wasFirstClick
+                            ? 'first click'
+                            : 're-click'
+                          : '—'}
+                      </td>
+                      <td class="meta--wrap" style="max-width: 280px; font-size: 0.78rem;">
+                        {h.userAgent || '—'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          <h2 style="margin-top: 32px;">Recent review requests</h2>
           {recent.length === 0 && <p class="sub">No review requests sent yet.</p>}
           {recent.length > 0 && (
             <div class="table-scroll">
