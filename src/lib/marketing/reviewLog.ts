@@ -73,6 +73,67 @@ function kIndex(): string {
 function kLastRun(): string {
   return `${KEY_PREFIX}last-run`;
 }
+/**
+ * Rolling log of recent /r/review endpoint hits — capped at 50.
+ * Lets the /admin/reviews page show whether the endpoint is actually
+ * being hit by customers (vs Resend wrapper interference vs Gmail
+ * pre-fetch, etc.). Each entry covers token validity + record-write
+ * outcome so Bill can spot silent failures without Vercel log access.
+ */
+function kRecentHits(): string {
+  return `${KEY_PREFIX}hits:recent`;
+}
+
+export interface ClickHitLogEntry {
+  /** ISO timestamp of the hit. */
+  ts: string;
+  /** Was a `?t=` query param present, and did it verify? */
+  tokenState: 'absent' | 'invalid' | 'valid';
+  /** Decoded reviewRequestId when token verified; null otherwise. */
+  reviewRequestId: string | null;
+  /** Did recordReviewRequestClicked find the kSent record? Only meaningful
+   *  when tokenState=valid. */
+  recordFound: boolean;
+  /** True when this is the FIRST click on the record (clickedAt was null
+   *  before this hit). Distinguishes "real first click" from re-clicks /
+   *  pre-fetch scans. */
+  wasFirstClick: boolean;
+  /** Truncated user-agent so an iOS Mail pre-fetch is distinguishable
+   *  from a real Safari tap. */
+  userAgent: string;
+}
+
+/** Record a /r/review hit to the rolling 50-entry log. Best-effort —
+ *  Redis failure here is silently swallowed so the redirect itself
+ *  always completes for the customer. */
+export async function recordClickHit(entry: ClickHitLogEntry): Promise<void> {
+  try {
+    const redis = getRedis();
+    await redis.lpush(kRecentHits(), JSON.stringify(entry));
+    await redis.ltrim(kRecentHits(), 0, 49);
+  } catch {
+    // Diagnostic logging is non-fatal. Swallow.
+  }
+}
+
+export async function getRecentClickHits(limit = 20): Promise<ClickHitLogEntry[]> {
+  const redis = getRedis();
+  const raw = await redis.lrange(kRecentHits(), 0, Math.max(0, limit - 1));
+  const out: ClickHitLogEntry[] = [];
+  for (const item of raw ?? []) {
+    if (typeof item === 'string') {
+      try {
+        out.push(JSON.parse(item) as ClickHitLogEntry);
+      } catch {
+        // Skip malformed entries.
+      }
+    } else if (item && typeof item === 'object') {
+      // Upstash sometimes auto-deserializes JSON values.
+      out.push(item as ClickHitLogEntry);
+    }
+  }
+  return out;
+}
 
 export interface LastCronRunSummary {
   ranAt: string;

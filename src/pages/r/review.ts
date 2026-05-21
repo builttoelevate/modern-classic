@@ -13,7 +13,7 @@
 
 import type { APIRoute } from 'astro';
 import { verifyClickToken } from '../../lib/marketing/clickToken';
-import { recordReviewRequestClicked } from '../../lib/marketing/reviewLog';
+import { recordClickHit, recordReviewRequestClicked } from '../../lib/marketing/reviewLog';
 import { resolveBarberContact } from '../../lib/barber/contactLookup';
 import { sendReviewClickBarber } from '../../lib/email/resend';
 
@@ -38,6 +38,8 @@ export const GET: APIRoute = async ({ url, request }) => {
   let destination = pickFallback();
   let reviewRequestId: string | null = null;
   let tokenState: 'absent' | 'invalid' | 'valid' = 'absent';
+  let recordFound = false;
+  let wasFirstClick = false;
 
   if (token) {
     const verified = verifyClickToken(token);
@@ -60,22 +62,25 @@ export const GET: APIRoute = async ({ url, request }) => {
   // email client pre-fetching the link, etc.). userAgent is included
   // so a Gmail safe-browsing pre-fetch is distinguishable from a real
   // tap.
+  const userAgent = request.headers.get('user-agent') ?? '';
   logReview({
     phase: 'click-hit',
     tokenState,
     reviewRequestId,
-    userAgent: request.headers.get('user-agent') ?? '',
+    userAgent,
     referer: request.headers.get('referer') ?? '',
   });
 
   if (reviewRequestId) {
     try {
       const result = await recordReviewRequestClicked(reviewRequestId);
+      recordFound = result !== null;
+      wasFirstClick = result?.wasFirstClick ?? false;
       logReview({
         phase: 'click-recorded',
         reviewRequestId,
-        wasFirstClick: result?.wasFirstClick ?? false,
-        recordFound: result !== null,
+        wasFirstClick,
+        recordFound,
       });
       // First-click only: notify the assigned barber so they know a
       // review is likely incoming. Skipped silently if the record was
@@ -130,6 +135,18 @@ export const GET: APIRoute = async ({ url, request }) => {
       });
     }
   }
+
+  // Persist the hit summary to the Redis rolling log so /admin/reviews
+  // can render a live "Recent click attempts" panel. Best-effort —
+  // failure here never blocks the customer's redirect.
+  await recordClickHit({
+    ts: new Date().toISOString(),
+    tokenState,
+    reviewRequestId,
+    recordFound,
+    wasFirstClick,
+    userAgent: userAgent.slice(0, 160),
+  });
 
   return new Response(null, {
     status: 302,
