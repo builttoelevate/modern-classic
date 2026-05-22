@@ -6,7 +6,7 @@ import {
   assertPhoneNotBlocked,
   blockedBookingPublicResponse,
 } from '../../../lib/customer/blockedCustomers';
-import { createBooking } from '../../../lib/square/bookings';
+import { composeSellerNote, createBooking } from '../../../lib/square/bookings';
 import { bookingIdempotencyKey } from '../../../lib/booking/idempotency';
 import { customerInitials, logBooking, redactEmail } from '../../../lib/booking/log';
 import { getSession } from '../../../lib/auth/middleware';
@@ -354,12 +354,19 @@ export const POST: APIRoute = async ({ request }) => {
     // Suppressed when existingCustomerId is set — that path is for
     // rebook/reschedule, where the booking inherits the existing
     // customer relationship and the radio gate doesn't apply.
+    //
+    // sellerNoteKidName lives at outer scope so the seller_note
+    // composition below can disambiguate "booked by parent for kid"
+    // even after we descend out of this block. Empty string means
+    // "this isn't a kid bookingFor" — composer drops the suffix.
+    let sellerNoteKidName = '';
     if (
       payload.customer.bookingFor &&
       payload.customer.bookingFor.givenName.trim() &&
       !(payload.existingCustomerId && payload.existingCustomerId.trim())
     ) {
       const kidGivenName = payload.customer.bookingFor.givenName.trim();
+      sellerNoteKidName = kidGivenName;
       const normalized = kidGivenName.toLowerCase();
       const adultCustomerId = resolvedCustomerId;
 
@@ -456,6 +463,12 @@ export const POST: APIRoute = async ({ request }) => {
         teamMemberId: payload.barber.id,
         durationMinutes: payload.service.durationMinutes,
         customerNote: payload.customer.note,
+        sellerNote: composeSellerNote(
+          'Booked',
+          payload.customer.givenName,
+          payload.customer.familyName,
+          sellerNoteKidName ? `for ${sellerNoteKidName}` : undefined,
+        ),
         idempotencyKey,
       }),
       marketingDecisionPromise.catch(

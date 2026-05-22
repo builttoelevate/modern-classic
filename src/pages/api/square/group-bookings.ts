@@ -12,7 +12,7 @@ import {
   findOrCreateCustomer,
   getCustomerById,
 } from '../../../lib/square/customers';
-import { createBooking } from '../../../lib/square/bookings';
+import { composeSellerNote, createBooking } from '../../../lib/square/bookings';
 import {
   CustomerBlockedError,
   assertPhoneNotBlocked,
@@ -481,6 +481,12 @@ export const POST: APIRoute = async ({ request }) => {
         teamMemberId: a.teamMemberId,
         durationMinutes: a.durationMinutes,
         customerNote: note,
+        sellerNote: composeSellerNote(
+          'Booked',
+          v.parent.givenName,
+          v.parent.familyName,
+          `— group of ${total}`,
+        ),
         idempotencyKey,
       });
       bookings.push({

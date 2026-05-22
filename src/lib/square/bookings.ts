@@ -10,7 +10,45 @@ export interface CreateBookingInput {
   teamMemberId: string;
   durationMinutes: number;
   customerNote?: string;
+  /** Free-text label visible to the seller in Square's dashboard but NOT
+   *  to the customer. Stamp every API-created booking so Michael can
+   *  tell customer self-bookings apart from his own manual entries.
+   *  Square's `creator_details` is read-only and locks every API booking
+   *  to creator_type=TEAM_MEMBER (= "booked by Michael"), so seller_note
+   *  is the realistic workaround. Use composeSellerNote() to build the
+   *  string consistently. */
+  sellerNote?: string;
   idempotencyKey: string;
+}
+
+/**
+ * Defensive composer for the seller-visible `seller_note` field. Never
+ * throws — booking creation must never fail because the seller_note
+ * couldn't be built. Falls back to a generic "via website" label when
+ * the name fields are empty.
+ *
+ *   composeSellerNote('Booked', 'Bill', 'Chicha')
+ *     → "Booked online by Bill Chicha"
+ *   composeSellerNote('Booked', 'Bill', '', 'for Brook')
+ *     → "Booked online by Bill for Brook"
+ *   composeSellerNote('Rescheduled', '', '')
+ *     → "Rescheduled online via website"
+ */
+export function composeSellerNote(
+  action: 'Booked' | 'Rescheduled',
+  given: string | undefined | null,
+  family: string | undefined | null,
+  suffix?: string,
+): string {
+  const name = [given, family]
+    .map((s) => (typeof s === 'string' ? s.trim() : ''))
+    .filter(Boolean)
+    .join(' ');
+  if (!name) return `${action} online via website`;
+  const trimmedSuffix = (suffix ?? '').trim();
+  return trimmedSuffix
+    ? `${action} online by ${name} ${trimmedSuffix}`
+    : `${action} online by ${name}`;
 }
 
 export async function createBooking(input: CreateBookingInput): Promise<Booking> {
@@ -21,6 +59,7 @@ export async function createBooking(input: CreateBookingInput): Promise<Booking>
       location_id: MODERN_CLASSIC_LOCATION_ID,
       customer_id: input.customerId,
       ...(input.customerNote ? { customer_note: input.customerNote } : {}),
+      ...(input.sellerNote ? { seller_note: input.sellerNote } : {}),
       appointment_segments: [
         {
           duration_minutes: input.durationMinutes,

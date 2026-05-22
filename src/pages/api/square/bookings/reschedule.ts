@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import { AuthRequiredError, requireSession, refreshSessionCookie } from '../../../../lib/auth/middleware';
 import { isAuthConfigured } from '../../../../lib/auth/session';
 import { SquareApiError } from '../../../../lib/square/client';
-import { cancelBooking, createBooking, getBooking } from '../../../../lib/square/bookings';
+import { cancelBooking, composeSellerNote, createBooking, getBooking } from '../../../../lib/square/bookings';
 import { getCustomerById } from '../../../../lib/square/customers';
 import { listLinkedPeople } from '../../../../lib/customer/profileLinks';
 import {
@@ -196,6 +196,11 @@ export const POST: APIRoute = async ({ request }) => {
       teamMemberId: payload.barber.id,
       durationMinutes: payload.service.durationMinutes,
       customerNote: payload.customerNote,
+      sellerNote: composeSellerNote(
+        'Rescheduled',
+        reschedCustomer?.given_name,
+        reschedCustomer?.family_name,
+      ),
       idempotencyKey: newBookingIdemKey,
     });
     newBookingId = newBooking.id;

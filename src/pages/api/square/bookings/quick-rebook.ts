@@ -8,7 +8,7 @@ import { AuthRequiredError, requireSession, refreshSessionCookie } from '../../.
 import { isAuthConfigured } from '../../../../lib/auth/session';
 import { SquareApiError } from '../../../../lib/square/client';
 import { searchAvailability } from '../../../../lib/square/availability';
-import { createBooking } from '../../../../lib/square/bookings';
+import { composeSellerNote, createBooking } from '../../../../lib/square/bookings';
 import { getCustomerById } from '../../../../lib/square/customers';
 import {
   CustomerBlockedError,
@@ -172,6 +172,11 @@ export const POST: APIRoute = async ({ request }) => {
       serviceVariationVersion: body.serviceVariationVersion,
       teamMemberId: body.teamMemberId,
       durationMinutes: body.durationMinutes,
+      sellerNote: composeSellerNote(
+        'Booked',
+        rebookCustomer?.given_name,
+        rebookCustomer?.family_name,
+      ),
       idempotencyKey,
     });
     logAction({
