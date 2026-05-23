@@ -15,6 +15,8 @@ import { findCustomerByEmail } from '../lib/square/customers';
 import { listLinkedPeople } from '../lib/customer/profileLinks';
 import { getSession } from '../lib/auth/middleware';
 import { preselectFromUrl } from '../lib/booking/wizardPreselect';
+import { hasAnyPriorBooking } from '../lib/square/customerHistory';
+import { isFirstVisitService } from '../lib/booking/serviceIntent';
 import type { Barber, Location, Service } from '../lib/square/types';
 
 import '../styles/booking.css';
@@ -67,6 +69,19 @@ try {
   console.error('[book] failed to load services/barbers/location', err);
 }
 
+// Does the Square catalog actually contain a first-visit service?
+// If the shop owner renames or hides the "New Customer" item, the
+// Step 1 lock has nothing to route new customers to — better to fail
+// open and accept any booking than wedge the funnel. The wizard reads
+// this flag and skips the lock when false.
+const firstVisitServiceAvailable = services.some(isFirstVisitService);
+if (!firstVisitServiceAvailable && services.length > 0) {
+  // eslint-disable-next-line no-console
+  console.warn(
+    '[book] no first-visit service found in catalog — new-customer routing disabled',
+  );
+}
+
 // If the visitor is signed in (and not rescheduling — that path runs its
 // own customer lookup below), hydrate their contact info so the wizard
 // can skip Step 4 entirely, and load their linked-people list so the
@@ -87,6 +102,23 @@ if (!rescheduleId && !loadError) {
           email: session.email,
           phone: customer.phone_number?.trim() ?? '',
         };
+        // Probe each customer record in parallel for prior booking
+        // history. Each entry in bookingForOptions carries its own
+        // isNewCustomer verdict so the wizard can lock Step 1 the
+        // moment the selector lands on a first-time person —
+        // independent of the parent's status. Failures here fall
+        // through to `null` (unknown) and the wizard re-fetches on
+        // demand; we never block page render on this.
+        const allCustomerIds = [customer.id, ...kids.map((k) => k.customerId)];
+        const newnessByCustomerId = new Map<string, boolean | null>();
+        const newnessResults = await Promise.all(
+          allCustomerIds.map((id) =>
+            hasAnyPriorBooking(id)
+              .then((had) => ({ id, isNew: !had }))
+              .catch(() => ({ id, isNew: null as boolean | null })),
+          ),
+        );
+        for (const r of newnessResults) newnessByCustomerId.set(r.id, r.isNew);
         // Always include "Me" plus any linked dependents. We hand the
         // wizard a single list it can render in the selector — if it has
         // length 1 (just "Me"), the selector hides itself.
@@ -96,12 +128,14 @@ if (!rescheduleId && !loadError) {
             displayName: signedInCustomer.givenName || 'Me',
             relationship: 'You',
             isSelf: true,
+            isNewCustomer: newnessByCustomerId.get(customer.id) ?? null,
           },
           ...kids.map((k) => ({
             customerId: k.customerId,
             displayName: k.displayName,
             relationship: k.relationship,
             isSelf: false,
+            isNewCustomer: newnessByCustomerId.get(k.customerId) ?? null,
           })),
         ];
       }
@@ -236,6 +270,7 @@ if (rescheduleId && !loadError) {
           signedInCustomer={signedInCustomer}
           bookingForOptions={bookingForOptions}
           barberPhones={barberPhones}
+          firstVisitServiceAvailable={firstVisitServiceAvailable}
         />
         {/* Entry point to the group flow. Styled as a bw-card so it
             sits visually next to the service list at the bottom of

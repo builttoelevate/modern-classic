@@ -86,6 +86,10 @@ export interface WizardState {
   status: WizardStatus;
   /** Phase 8 — card-on-file capture for new customers. */
   cardCapture: CardCaptureState;
+  /** New-customer routing — gates Step 1 so first-time customers can
+   *  only book the "New Customer" / first-visit service. See
+   *  NewCustomerState below. */
+  newCustomer: NewCustomerState;
   /** Book Ahead — when desiredCount > 1, the customer is building
    *  a multi-visit plan by tapping slots from the live calendar.
    *  state.selectedSlot is always the first pick; every additional
@@ -122,6 +126,34 @@ export interface SeriesState {
    *  "X of N" recap. */
   bookingResults: Record<string, { bookingId?: string; error?: string }>;
 }
+
+export interface NewCustomerState {
+  /** null = not yet evaluated for the active booking-for target.
+   *  true = Square has no prior bookings → Step 1 locks to the New
+   *  Customer service. false = returning, full menu unlocked. */
+  verdict: boolean | null;
+  /** Anonymous "Have you visited before?" gate answer. Null until the
+   *  visitor picks. Signed-in users never see the gate — their verdict
+   *  comes from server-side hydration. Persisted to sessionStorage so
+   *  a mid-flow refresh doesn't re-prompt. */
+  claimedReturning: boolean | null;
+  /** True when the Step 5 re-check fires and disagrees with
+   *  claimedReturning === true (they said returning, Square says new).
+   *  Drives the mismatch modal at the BookingWizard level. */
+  mismatchModalOpen: boolean;
+  /** True when book.astro found at least one service matching
+   *  isFirstVisitService() in the Square catalog. When false we fail
+   *  open and skip the lock — better to take any booking than wedge
+   *  the funnel on a misconfigured catalog. */
+  firstVisitServiceAvailable: boolean;
+}
+
+export const initialNewCustomer: NewCustomerState = {
+  verdict: null,
+  claimedReturning: null,
+  mismatchModalOpen: false,
+  firstVisitServiceAvailable: true,
+};
 
 export const initialCustomer: CustomerInfo = {
   givenName: '',
@@ -163,6 +195,7 @@ export const initialState: WizardState = {
   status: { kind: 'idle' },
   cardCapture: initialCardCapture,
   series: initialSeries,
+  newCustomer: initialNewCustomer,
 };
 
 export type WizardAction =
@@ -215,6 +248,22 @@ export type WizardAction =
    *  one), so cardCapture pins to required:false to skip Step 4.5
    *  on subsequent visits in the same session. */
   | { type: 'START_ANOTHER_BOOKING' }
+  /** New-customer routing — set the verdict for the active booking-for
+   *  target. Server-side hydration in book.astro seeds this; client-side
+   *  refetch on a Booking-for switch updates it. */
+  | { type: 'SET_NEWNESS_VERDICT'; verdict: boolean | null }
+  /** Anonymous gate answer. Pass true for "I've been here before",
+   *  false for "first time". */
+  | { type: 'SET_CLAIMED_RETURNING'; value: boolean }
+  | { type: 'OPEN_MISMATCH_MODAL' }
+  | { type: 'CLOSE_MISMATCH_MODAL' }
+  /** Force-reset selection back to a first-visit service. Fires when
+   *  the Booking-for selector flips to a new dependent who happened
+   *  to be holding a non-first-visit service, or when the Step 5
+   *  re-check catches a "claimed returning but actually new" mismatch.
+   *  Clears slot/barber/variation and lands the user on Step 2. */
+  | { type: 'FORCE_NEW_CUSTOMER_SERVICE'; service: Service }
+  | { type: 'SET_FIRST_VISIT_AVAILABLE'; available: boolean }
   | { type: 'RESET' };
 
 export function reducer(state: WizardState, action: WizardAction): WizardState {
@@ -460,7 +509,80 @@ export function reducer(state: WizardState, action: WizardAction): WizardState {
           // first visit, so by definition they're not new anymore.
           required: false,
         },
+        // Same logic applies to the Step 1 lock — they're no longer
+        // a "first time" customer in this session; the full menu
+        // unlocks for the next booking. Preserve catalog availability.
+        newCustomer: {
+          ...initialNewCustomer,
+          verdict: false,
+          claimedReturning: true,
+          firstVisitServiceAvailable: state.newCustomer.firstVisitServiceAvailable,
+        },
       };
+    case 'SET_NEWNESS_VERDICT':
+      return {
+        ...state,
+        newCustomer: { ...state.newCustomer, verdict: action.verdict },
+      };
+    case 'SET_CLAIMED_RETURNING':
+      return {
+        ...state,
+        newCustomer: {
+          ...state.newCustomer,
+          claimedReturning: action.value,
+          // Anonymous "first time" answer is itself a newness verdict;
+          // anonymous "returning" optimistically unlocks the menu and
+          // Step 5 re-verifies against Square.
+          verdict: action.value ? false : true,
+        },
+      };
+    case 'OPEN_MISMATCH_MODAL':
+      return {
+        ...state,
+        newCustomer: { ...state.newCustomer, mismatchModalOpen: true },
+      };
+    case 'CLOSE_MISMATCH_MODAL':
+      return {
+        ...state,
+        newCustomer: { ...state.newCustomer, mismatchModalOpen: false },
+      };
+    case 'SET_FIRST_VISIT_AVAILABLE':
+      return {
+        ...state,
+        newCustomer: {
+          ...state.newCustomer,
+          firstVisitServiceAvailable: action.available,
+        },
+      };
+    case 'FORCE_NEW_CUSTOMER_SERVICE': {
+      // Whatever the user picked before, swap it out for the New
+      // Customer service. Variations on first-visit are virtually
+      // always a single shared variation, but we don't pre-pick it
+      // here — let Step 2 (barber pick) resolve the variation so the
+      // existing per-barber-eligibility logic stays the source of
+      // truth. Wipe slot/blocked/series too — a new service means a
+      // new search.
+      return {
+        ...state,
+        selectedService: action.service,
+        selectedVariation: null,
+        selectedBarber: null,
+        anyBarber: false,
+        selectedSlot: null,
+        blockedSlots: [],
+        candidateVariations: [],
+        series: { ...state.series, pickedSlots: [], bookingResults: {} },
+        // Card-capture verdict from the old selection no longer
+        // applies — the new-customer service is free-priced and the
+        // card-capture flow runs its own pricing snapshot at Step 4.5.
+        cardCapture: { ...initialCardCapture, required: null },
+        newCustomer: {
+          ...state.newCustomer,
+          mismatchModalOpen: false,
+        },
+        step: 2,
+      };
+    }
     case 'RESET':
       return initialState;
   }

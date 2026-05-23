@@ -31,6 +31,10 @@ export const prerender = false;
 // wizard skip the card-capture step entirely.
 
 interface RequestBody {
+  /** Known-customer branch: signed-in self or a linked dependent.
+   *  When set, we skip the email/phone lookup and createCustomer paths
+   *  and just check Square's booking history under this customerId. */
+  customerId?: string;
   email?: string;
   phone?: string;
   givenName?: string;
@@ -39,7 +43,15 @@ interface RequestBody {
 
 interface SuccessResponse {
   ok: true;
-  newCustomer: boolean;
+  /** Pure newness signal — true when Square has no prior/upcoming
+   *  bookings for this customer. Independent of card-capture config.
+   *  Drives the Step 1 service-routing gate. */
+  isNew: boolean;
+  /** Card-capture gate. Equals isNew && cardCaptureConfigured. Drives
+   *  Step 4.5. Replaces the legacy `newCustomer` field (which conflated
+   *  the two signals — newCustomer:false leaked out when card capture
+   *  wasn't configured even for true new customers). */
+  requiresCard: boolean;
   customerId: string;
 }
 
@@ -78,6 +90,48 @@ export const POST: APIRoute = async ({ request }) => {
     return fail(400, 'BAD_REQUEST', 'Body must be valid JSON.');
   }
 
+  const cardCaptureConfigured = isCardCaptureConfigured();
+
+  // Known-customer branch — signed-in self or a linked dependent from
+  // the "Booking for" selector. We already have a Square customerId
+  // from the session / KV link, so skip the email/phone lookup +
+  // createCustomer paths entirely and just check booking history.
+  const customerIdInput = (payload.customerId ?? '').trim();
+  if (customerIdInput) {
+    try {
+      const isNew = !(await hasAnyPriorBooking(customerIdInput));
+      // eslint-disable-next-line no-console
+      console.log(
+        `[BOOK] ${JSON.stringify({
+          ts: new Date().toISOString(),
+          phase: isNew ? 'new-customer-detected' : 'returning-customer-detected',
+          customerId: customerIdInput,
+          source: 'customer-id-branch',
+        })}`,
+      );
+      const body: SuccessResponse = {
+        ok: true,
+        isNew,
+        requiresCard: isNew && cardCaptureConfigured,
+        customerId: customerIdInput,
+      };
+      return Response.json(body, { status: 200 });
+    } catch (err) {
+      // Fail open — let the caller treat as returning if Square errors.
+      const detail = err instanceof Error ? err.message : 'Unknown error';
+      // eslint-disable-next-line no-console
+      console.log(
+        `[BOOK] ${JSON.stringify({
+          ts: new Date().toISOString(),
+          phase: 'check-new-customer-by-id-failed',
+          customerId: customerIdInput,
+          detail,
+        })}`,
+      );
+      return fail(502, 'SQUARE_ERROR', 'Could not check customer history.');
+    }
+  }
+
   const email = (payload.email ?? '').trim().toLowerCase();
   const phone = (payload.phone ?? '').trim();
   const givenName = (payload.givenName ?? '').trim();
@@ -93,7 +147,6 @@ export const POST: APIRoute = async ({ request }) => {
     return fail(400, 'BAD_REQUEST', 'First and last name are required.');
   }
 
-  const cardCaptureConfigured = isCardCaptureConfigured();
   if (!cardCaptureConfigured) {
     // eslint-disable-next-line no-console
     console.log(
@@ -141,7 +194,8 @@ export const POST: APIRoute = async ({ request }) => {
       );
       const body: SuccessResponse = {
         ok: true,
-        newCustomer: cardCaptureConfigured,
+        isNew: true,
+        requiresCard: cardCaptureConfigured,
         customerId: created.id,
       };
       return Response.json(body, { status: 200 });
@@ -169,7 +223,8 @@ export const POST: APIRoute = async ({ request }) => {
       );
       const body: SuccessResponse = {
         ok: true,
-        newCustomer: false,
+        isNew: false,
+        requiresCard: false,
         customerId: returning.id,
       };
       return Response.json(body, { status: 200 });
@@ -191,7 +246,8 @@ export const POST: APIRoute = async ({ request }) => {
     );
     const body: SuccessResponse = {
       ok: true,
-      newCustomer: cardCaptureConfigured,
+      isNew: true,
+      requiresCard: cardCaptureConfigured,
       customerId: reuseId,
     };
     return Response.json(body, { status: 200 });

@@ -203,6 +203,147 @@
   line-height: 1.5;
 }
 
+/* ---------- New-customer routing (Step 1 lock) ---------- */
+/* Locked service cards — non-first-visit services when a new customer
+   is detected. Visually muted but still readable so the customer
+   understands what they're missing and why. */
+.bw-card[data-locked="true"] {
+  cursor: not-allowed;
+  opacity: 0.55;
+  background: var(--color-surface);
+  border-style: dashed;
+}
+.bw-card[data-locked="true"]:hover {
+  border-color: var(--color-border-soft);
+  background: var(--color-surface);
+  transform: none;
+}
+.bw-card-locked-note {
+  margin-top: var(--space-1);
+  font-family: var(--font-body);
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+
+/* Banner above the service grid when Step 1 is locked. */
+.bw-newcust-banner {
+  margin-bottom: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-surface);
+  border: 1px solid var(--color-gold-dark);
+  border-left: 3px solid var(--color-gold);
+  border-radius: var(--radius);
+  font-size: 0.95rem;
+  line-height: 1.55;
+  color: var(--color-text);
+}
+.bw-newcust-banner strong {
+  font-family: var(--font-display);
+  letter-spacing: 0;
+  color: var(--color-gold);
+  margin-right: 0.4em;
+}
+.bw-newcust-banner__nudge {
+  display: inline-block;
+  margin-top: 0.25rem;
+  color: var(--color-text-muted);
+  font-size: 0.9rem;
+}
+
+/* Anonymous "Have you visited before?" gate above Step 1's grid. */
+.bw-newcust-gate {
+  margin-bottom: var(--space-5);
+  padding: var(--space-5);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-soft);
+  border-radius: var(--radius);
+  text-align: center;
+}
+.bw-newcust-gate__title {
+  font-family: var(--font-display);
+  font-size: clamp(1.2rem, 1rem + 0.6vw, 1.5rem);
+  line-height: 1.3;
+  margin-bottom: var(--space-4);
+  color: var(--color-text);
+}
+.bw-newcust-gate__buttons {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  align-items: stretch;
+}
+@media (min-width: 560px) {
+  .bw-newcust-gate__buttons {
+    flex-direction: row;
+    justify-content: center;
+  }
+}
+.bw-newcust-gate__btn {
+  flex: 1;
+  max-width: 22rem;
+}
+
+/* Mismatch modal (Step 5 catches a "claimed returning but actually new"
+   anonymous visitor). Full-viewport overlay so the routing decision
+   is unavoidable. */
+.bw-mismatch-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-4);
+  background: rgba(0, 0, 0, 0.72);
+  backdrop-filter: blur(2px);
+  animation: bw-mismatch-fade 180ms var(--ease) both;
+}
+@keyframes bw-mismatch-fade {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .bw-mismatch-overlay { animation: none; }
+}
+.bw-mismatch-modal {
+  max-width: 28rem;
+  width: 100%;
+  padding: var(--space-6);
+  background: var(--color-surface);
+  border: 1px solid var(--color-gold-dark);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-gold);
+}
+.bw-mismatch-modal__title {
+  font-family: var(--font-display);
+  font-size: clamp(1.3rem, 1.1rem + 0.8vw, 1.6rem);
+  line-height: 1.25;
+  margin-bottom: var(--space-3);
+  color: var(--color-text);
+}
+.bw-mismatch-modal__body {
+  font-size: 0.95rem;
+  line-height: 1.55;
+  color: var(--color-text-muted);
+  margin-bottom: var(--space-5);
+}
+.bw-mismatch-modal__actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+@media (min-width: 480px) {
+  .bw-mismatch-modal__actions {
+    flex-direction: row;
+  }
+  .bw-mismatch-modal__actions .bw-btn {
+    flex: 1;
+  }
+}
+
 /* Barber card */
 .bw-barber-card {
   flex-direction: row;
