@@ -194,6 +194,27 @@ if (phoneMatches.length > 1) {
   }
 }
 
+// Block status for each card in the multi-match chooser, so a result
+// can offer a quick Block/Unblock without opening the manage view.
+// One listBlockedEntries() call (cheap — the list is tiny) builds an
+// E.164 → entry-id map; each card normalizes its own phone and checks
+// membership. Note: when several results share a phone (the common
+// case for a phone search), blocking one blocks them all — correct,
+// since the block is keyed by phone. Fail safe: any KV error leaves
+// the map empty and the cards just render without block buttons.
+const blockedIdByE164 = new Map<string, string>();
+let cardBlockLookupOk = false;
+if (phoneMatches.length > 1) {
+  try {
+    for (const entry of await listBlockedEntries()) {
+      blockedIdByE164.set(entry.phone, entry.id);
+    }
+    cardBlockLookupOk = true;
+  } catch {
+    cardBlockLookupOk = false;
+  }
+}
+
 // Once we have a customer, hydrate everything needed to render the
 // bookings panel: their bookings (upcoming + past), the barbers list
 // for the reschedule barber picker, and the card-on-file index for the
@@ -1003,15 +1024,50 @@ const defaultRescheduleDate = tomorrowInNyDate();
         color: var(--muted);
         word-break: break-word;
       }
-      .result-card__action {
+      .result-card__footer {
         margin-top: 8px;
-        align-self: flex-start;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+      }
+      .result-card__action {
         color: var(--gold);
         text-decoration: none;
         font-weight: 600;
         font-size: 0.9rem;
       }
       .result-card__action:hover { color: var(--gold-light); }
+      .result-card__block {
+        padding: 6px 12px;
+        background: transparent;
+        color: #f0a37a;
+        border: 1px solid rgba(220, 80, 60, 0.6);
+        border-radius: 4px;
+        font-size: 0.72rem;
+        font-weight: 700;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        cursor: pointer;
+        font-family: inherit;
+        white-space: nowrap;
+      }
+      .result-card__block:hover:not(:disabled) {
+        background: rgba(220, 80, 60, 0.6);
+        color: var(--bg);
+      }
+      .result-card__block:disabled { opacity: 0.5; cursor: not-allowed; }
+      /* Already-blocked → unblock is a restore action, render it neutral
+         (gold) instead of danger-red so it reads as "undo the block". */
+      .result-card__block.is-unblock {
+        color: var(--gold);
+        border-color: var(--gold-dark, rgba(201, 163, 92, 0.6));
+      }
+      .result-card__block.is-unblock:hover:not(:disabled) {
+        background: var(--gold);
+        color: var(--bg);
+      }
+      .result-card__block-status { margin: 8px 0 0; }
     </style>
   </head>
   <body>
@@ -1066,6 +1122,9 @@ const defaultRescheduleDate = tomorrowInNyDate();
             {phoneMatches.map((c) => {
               const parentTag = searchResultParents.get(c.id);
               const name = `${c.given_name ?? ''} ${c.family_name ?? ''}`.trim() || '(no name)';
+              const cardPhone = c.phone_number?.trim() || '';
+              const cardE164 = cardPhone ? normalizePhone(cardPhone) : '';
+              const cardBlockId = cardE164 ? blockedIdByE164.get(cardE164) : undefined;
               return (
                 <div class="result-card">
                   <h3 class="result-card__name">{name}</h3>
@@ -1079,12 +1138,35 @@ const defaultRescheduleDate = tomorrowInNyDate();
                       {parentTag.email && ` (${parentTag.email})`}
                     </div>
                   )}
-                  <a
-                    class="result-card__action"
-                    href={`/admin/customers?q=${encodeURIComponent(rawQuery)}&id=${encodeURIComponent(c.id)}`}
-                  >
-                    Manage →
-                  </a>
+                  <div class="result-card__footer">
+                    <a
+                      class="result-card__action"
+                      href={`/admin/customers?q=${encodeURIComponent(rawQuery)}&id=${encodeURIComponent(c.id)}`}
+                    >
+                      Manage →
+                    </a>
+                    {cardBlockLookupOk && cardPhone && (
+                      cardBlockId ? (
+                        <button
+                          type="button"
+                          class="result-card__block is-unblock"
+                          data-card-unblock-id={cardBlockId}
+                        >
+                          Unblock
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          class="result-card__block"
+                          data-card-block-phone
+                          data-phone={cardPhone}
+                        >
+                          Block
+                        </button>
+                      )
+                    )}
+                  </div>
+                  <p class="row-status result-card__block-status" hidden></p>
                 </div>
               );
             })}
@@ -2130,6 +2212,83 @@ const defaultRescheduleDate = tomorrowInNyDate();
             }
           });
         }
+
+        // Quick Block / Unblock straight from the multi-match search
+        // cards. Multiple buttons, so querySelectorAll + per-card status
+        // (the .result-card__block-status sibling). A short confirm()
+        // guards against mis-taps on the dense card grid; success reloads
+        // so the server re-renders the new state for every card sharing
+        // that phone.
+        const setCardStatus = (card, msg, kind) => {
+          const status = card ? card.querySelector('.result-card__block-status') : null;
+          if (!status) return;
+          status.textContent = msg || '';
+          status.className = 'row-status result-card__block-status ' + (kind || '');
+          status.hidden = !msg;
+        };
+        document.querySelectorAll('[data-card-block-phone]').forEach((btn) => {
+          btn.addEventListener('click', async () => {
+            const phone = btn.dataset.phone;
+            if (!phone) return;
+            if (!window.confirm('Block this customer from booking online?')) return;
+            const card = btn.closest('.result-card');
+            btn.disabled = true;
+            const original = btn.textContent;
+            btn.textContent = 'Blocking…';
+            setCardStatus(card, '', '');
+            try {
+              const res = await fetch('/api/admin/blocks', {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ phone, blockedBy: 'admin' }),
+              });
+              const data = await res.json();
+              if (!res.ok || !data.ok) {
+                setCardStatus(card, (data && data.error && data.error.detail) || 'Block failed.', 'error');
+                btn.disabled = false;
+                btn.textContent = original;
+                return;
+              }
+              setCardStatus(card, 'Blocked. Reloading…', 'ok');
+              setTimeout(() => window.location.reload(), 600);
+            } catch (err) {
+              setCardStatus(card, 'Network error. Try again.', 'error');
+              btn.disabled = false;
+              btn.textContent = original;
+            }
+          });
+        });
+        document.querySelectorAll('[data-card-unblock-id]').forEach((btn) => {
+          btn.addEventListener('click', async () => {
+            const id = btn.dataset.cardUnblockId;
+            if (!id) return;
+            const card = btn.closest('.result-card');
+            btn.disabled = true;
+            const original = btn.textContent;
+            btn.textContent = 'Unblocking…';
+            setCardStatus(card, '', '');
+            try {
+              const res = await fetch('/api/admin/blocks/' + encodeURIComponent(id), {
+                method: 'DELETE',
+                credentials: 'same-origin',
+              });
+              const data = await res.json();
+              if (!res.ok || !data.ok) {
+                setCardStatus(card, (data && data.error && data.error.detail) || 'Unblock failed.', 'error');
+                btn.disabled = false;
+                btn.textContent = original;
+                return;
+              }
+              setCardStatus(card, 'Unblocked. Reloading…', 'ok');
+              setTimeout(() => window.location.reload(), 600);
+            } catch (err) {
+              setCardStatus(card, 'Network error. Try again.', 'error');
+              btn.disabled = false;
+              btn.textContent = original;
+            }
+          });
+        });
 
         // No-show charge on a past booking — reuses the existing endpoint
         // /admin/bookings already calls.
