@@ -14,10 +14,11 @@ export const prerender = false;
 //   1. confirmId in the request body must equal customerId — the UI
 //      asks the operator to type the id back, so this guards against
 //      a stray click hitting the wrong row.
-//   2. Refuse if the customer has ANY bookings on file (upcoming or
-//      past). Customers with history should be preserved for the
-//      audit trail; only zero-history records (typically test
-//      accounts) are eligible for delete here.
+//   2. Refuse only if the customer has UPCOMING bookings — those must
+//      be cancelled or reassigned first. Past-only history does NOT
+//      block deletion (e.g. cleaning up a stray test account). Note:
+//      deleting orphans the past bookings in Square and a returning
+//      customer is created fresh (counts as new again).
 
 function logAdmin(payload: Record<string, unknown>): void {
   // eslint-disable-next-line no-console
@@ -87,14 +88,13 @@ export const POST: APIRoute = async ({ request }) => {
       { status: 502 },
     );
   }
-  const totalBookings = bookings.upcoming.length + bookings.past.length;
-  if (totalBookings > 0) {
+  if (bookings.upcoming.length > 0) {
     return Response.json(
       {
         ok: false,
         error: {
           code: 'HAS_BOOKINGS',
-          detail: `Cannot delete: customer has ${bookings.upcoming.length} upcoming and ${bookings.past.length} past bookings on file. Cancel or reassign first.`,
+          detail: `Cannot delete: customer has ${bookings.upcoming.length} upcoming booking(s) on file. Cancel or reassign those first.`,
         },
         upcoming: bookings.upcoming.length,
         past: bookings.past.length,

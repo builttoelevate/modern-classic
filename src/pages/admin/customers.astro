@@ -21,6 +21,8 @@ import {
   listLinkedPeople,
   type LinkedPerson,
 } from '../../lib/customer/profileLinks';
+import { isPhoneBlocked, listBlockedEntries } from '../../lib/customer/blockedCustomers';
+import { normalizePhone } from '../../lib/phone';
 import type { Customer } from '../../lib/square/types';
 
 const auth = checkBasicAuth(Astro.request);
@@ -78,6 +80,12 @@ let family: FamilyRecord | null = null;
 const familyMemberCustomers: Map<string, Customer> = new Map();
 let cardRecords = new Map<string, BookingCardRecord>();
 let barbers: Array<{ id: string; displayName: string }> = [];
+// Online-booking block status for the focused customer (keyed by their
+// phone on file). 'unknown' = no phone, or the KV check failed — in
+// both cases we fail safe and let the operator try to block.
+let blockState: 'blocked' | 'unblocked' | 'unknown' = 'unknown';
+let blockEntryId: string | null = null;
+let blockedAt: string | null = null;
 // When a phone lookup hits multiple records (test accounts, pre-dedup
 // duplicates), we render a chooser so the operator can see all of them
 // at once. The single-record path stays the dominant case.
@@ -271,6 +279,28 @@ if (customer) {
   }
   if (barbersResult.status === 'fulfilled') {
     barbers = barbersResult.value.map((b) => ({ id: b.id, displayName: b.displayName }));
+  }
+
+  // Online-booking block status. Blocking is keyed by phone, so this
+  // only resolves when the customer has a phone on file. Fail safe: any
+  // KV error leaves blockState 'unknown' and the UI shows the Block
+  // button (addBlockedPhone is idempotent, so an accidental re-block is
+  // harmless) rather than 500-ing the whole manage page.
+  const blockPhone = customer.phone_number?.trim();
+  if (blockPhone) {
+    try {
+      if (await isPhoneBlocked(blockPhone)) {
+        const e164 = normalizePhone(blockPhone);
+        const entry = (await listBlockedEntries()).find((e) => e.phone === e164);
+        blockState = 'blocked';
+        blockEntryId = entry?.id ?? null;
+        blockedAt = entry?.blockedAt ?? null;
+      } else {
+        blockState = 'unblocked';
+      }
+    } catch {
+      blockState = 'unknown';
+    }
   }
 }
 
@@ -908,6 +938,80 @@ const defaultRescheduleDate = tomorrowInNyDate();
         color: var(--bg);
       }
       .danger-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+      /* Booking-access (block/unblock) section — neutral box, sits
+         between Family account and the red Danger zone. */
+      .booking-access {
+        margin-top: 24px;
+        padding: 18px 20px;
+        border: 1px solid var(--border);
+        background: var(--surface-2);
+        border-radius: 8px;
+      }
+      .booking-access h3 {
+        margin: 0 0 8px;
+        color: var(--gold);
+        font-family: Georgia, serif;
+        font-weight: 400;
+        font-size: 1rem;
+      }
+      .block-reason-label {
+        display: block;
+        margin: 12px 0;
+        font-size: 0.8rem;
+        color: var(--muted);
+      }
+      .block-reason-label input {
+        display: block;
+        width: 100%;
+        margin-top: 4px;
+        padding: 8px 10px;
+        background: var(--bg);
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        color: var(--text);
+        font-size: 0.9rem;
+        font-family: inherit;
+      }
+
+      /* Search-result cards — replaces the cramped match table so a
+         lookup reads cleanly on a phone. */
+      .result-cards {
+        display: grid;
+        gap: 12px;
+        grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+        margin-top: 8px;
+      }
+      .result-card {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        padding: 16px 18px;
+        background: var(--surface-2);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+      }
+      .result-card__name {
+        margin: 0;
+        font-family: Georgia, serif;
+        font-weight: 400;
+        font-size: 1.05rem;
+        color: var(--text);
+      }
+      .result-card__meta {
+        font-size: 0.85rem;
+        color: var(--muted);
+        word-break: break-word;
+      }
+      .result-card__action {
+        margin-top: 8px;
+        align-self: flex-start;
+        color: var(--gold);
+        text-decoration: none;
+        font-weight: 600;
+        font-size: 0.9rem;
+      }
+      .result-card__action:hover { color: var(--gold-light); }
     </style>
   </head>
   <body>
@@ -958,42 +1062,32 @@ const defaultRescheduleDate = tomorrowInNyDate();
             <strong>{rawQuery}</strong> matches multiple records. Pick one to manage.
             If they're duplicates, manage one to update or delete the other.
           </p>
-          <div class="bookings-wrap">
-          <table class="bookings">
-            <thead>
-              <tr>
-                <th>Name</th>
-                <th>Email</th>
-                <th>Created</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {phoneMatches.map((c) => {
-                const parentTag = searchResultParents.get(c.id);
-                return (
-                  <tr>
-                    <td>
-                      {`${c.given_name ?? ''} ${c.family_name ?? ''}`.trim() || '(no name)'}
-                      {parentTag && (
-                        <div class="meta meta--tag">
-                          Linked to <strong>{parentTag.name}</strong>
-                          {parentTag.email && ` (${parentTag.email})`}
-                        </div>
-                      )}
-                    </td>
-                    <td>{c.email_address || <span class="meta">— no email —</span>}</td>
-                    <td>{fmtTimestamp(c.created_at)}</td>
-                    <td>
-                      <a href={`/admin/customers?q=${encodeURIComponent(rawQuery)}&id=${encodeURIComponent(c.id)}`}>
-                        Manage →
-                      </a>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+          <div class="result-cards">
+            {phoneMatches.map((c) => {
+              const parentTag = searchResultParents.get(c.id);
+              const name = `${c.given_name ?? ''} ${c.family_name ?? ''}`.trim() || '(no name)';
+              return (
+                <div class="result-card">
+                  <h3 class="result-card__name">{name}</h3>
+                  <div class="result-card__meta">
+                    {c.email_address || <span class="meta">— no email —</span>}
+                  </div>
+                  <div class="result-card__meta">Created {fmtTimestamp(c.created_at)}</div>
+                  {parentTag && (
+                    <div class="meta meta--tag">
+                      Linked to <strong>{parentTag.name}</strong>
+                      {parentTag.email && ` (${parentTag.email})`}
+                    </div>
+                  )}
+                  <a
+                    class="result-card__action"
+                    href={`/admin/customers?q=${encodeURIComponent(rawQuery)}&id=${encodeURIComponent(c.id)}`}
+                  >
+                    Manage →
+                  </a>
+                </div>
+              );
+            })}
           </div>
         </div>
       )}
@@ -1418,14 +1512,86 @@ const defaultRescheduleDate = tomorrowInNyDate();
                 <p class="family-account__status" data-family-status hidden></p>
               </div>
 
+              <div class="booking-access">
+                <h3>Booking access</h3>
+                {!customer.phone_number ? (
+                  <p class="helper">
+                    No phone on file — online-booking blocks are keyed by phone, so there's
+                    nothing to block here. Add a phone above first.
+                  </p>
+                ) : blockState === 'blocked' ? (
+                  <>
+                    <p class="helper">
+                      <strong>Blocked from online booking</strong>
+                      {blockedAt && ` · since ${fmtTimestamp(blockedAt)}`}. They can't book on
+                      the site (single, group, reschedule, or rebook); the shop can still book
+                      them at the chair.
+                    </p>
+                    {blockEntryId ? (
+                      <button
+                        type="button"
+                        class="btn"
+                        data-unblock-id={blockEntryId}
+                      >
+                        Unblock
+                      </button>
+                    ) : (
+                      <p class="helper">
+                        Manage this block from <a href="/admin/blocks">/admin/blocks</a>.
+                      </p>
+                    )}
+                    <p class="row-status" id="block-status" hidden></p>
+                  </>
+                ) : (
+                  <>
+                    <p class="helper">
+                      {blockState === 'unknown'
+                        ? 'Block status is unavailable right now (lookup failed) — you can still block; it’s safe to retry.'
+                        : 'Block this customer from booking online. They’ll be sent to call the shop; the shop can still book them at the chair.'}
+                    </p>
+                    <label class="block-reason-label">
+                      Reason (internal only, optional)
+                      <input type="text" data-block-reason maxlength="500" autocomplete="off" />
+                    </label>
+                    <button
+                      type="button"
+                      class="danger-btn"
+                      data-block-phone
+                      data-phone={customer.phone_number}
+                    >
+                      Block this customer
+                    </button>
+                    <p class="row-status" id="block-status" hidden></p>
+                  </>
+                )}
+              </div>
+
               <div class="danger-zone">
                 <h3>Danger zone</h3>
-                {bookings.upcoming.length + bookings.past.length > 0 ? (
+                {bookings.upcoming.length > 0 ? (
                   <p class="helper">
                     Delete is disabled — this customer has {bookings.upcoming.length} upcoming
-                    and {bookings.past.length} past booking(s) on file. Cancel any upcoming
-                    bookings first, then we still keep the record for audit history.
+                    booking(s) on file. Cancel or reassign those first; past history doesn't
+                    block deletion.
                   </p>
+                ) : bookings.past.length > 0 ? (
+                  <>
+                    <p class="helper">
+                      No upcoming bookings, so this record can be hard-deleted — but it has
+                      {' '}{bookings.past.length} past booking(s). Deleting is permanent: the
+                      Square record is gone, those past bookings are orphaned, and if this
+                      person returns they'll be created fresh and counted as a new customer.
+                    </p>
+                    <button
+                      type="button"
+                      class="danger-btn"
+                      data-delete-customer
+                      data-customer-id={customer.id}
+                    >
+                      Delete this customer
+                    </button>
+                    <p class="row-status" id="delete-status" hidden></p>
+                  </>
                 ) : (
                   <>
                     <p class="helper">
@@ -1884,6 +2050,83 @@ const defaultRescheduleDate = tomorrowInNyDate();
               setDeleteStatus('Network error. Try again.', 'error');
               deleteBtn.disabled = false;
               deleteBtn.textContent = original;
+            }
+          });
+        }
+
+        // Block / Unblock from online booking. Both reload the page on
+        // success so the server re-renders the new state (reload keeps
+        // the ?id= param, unlike the delete handler which navigates away).
+        const setBlockStatus = (msg, kind) => {
+          const status = document.getElementById('block-status');
+          if (!status) return;
+          status.textContent = msg || '';
+          status.className = 'row-status ' + (kind || '');
+          status.hidden = !msg;
+        };
+
+        const blockBtn = document.querySelector('[data-block-phone]');
+        if (blockBtn) {
+          blockBtn.addEventListener('click', async () => {
+            const phone = blockBtn.dataset.phone;
+            if (!phone) return;
+            const reasonInput = document.querySelector('[data-block-reason]');
+            const reason = reasonInput ? reasonInput.value.trim() : '';
+            blockBtn.disabled = true;
+            const original = blockBtn.textContent;
+            blockBtn.textContent = 'Blocking…';
+            setBlockStatus('', '');
+            try {
+              const res = await fetch('/api/admin/blocks', {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ phone, reason: reason || undefined, blockedBy: 'admin' }),
+              });
+              const data = await res.json();
+              if (!res.ok || !data.ok) {
+                setBlockStatus((data && data.error && data.error.detail) || 'Block failed.', 'error');
+                blockBtn.disabled = false;
+                blockBtn.textContent = original;
+                return;
+              }
+              setBlockStatus('Blocked. Reloading…', 'ok');
+              setTimeout(() => window.location.reload(), 600);
+            } catch (err) {
+              setBlockStatus('Network error. Try again.', 'error');
+              blockBtn.disabled = false;
+              blockBtn.textContent = original;
+            }
+          });
+        }
+
+        const unblockBtn = document.querySelector('[data-unblock-id]');
+        if (unblockBtn) {
+          unblockBtn.addEventListener('click', async () => {
+            const id = unblockBtn.dataset.unblockId;
+            if (!id) return;
+            unblockBtn.disabled = true;
+            const original = unblockBtn.textContent;
+            unblockBtn.textContent = 'Unblocking…';
+            setBlockStatus('', '');
+            try {
+              const res = await fetch('/api/admin/blocks/' + encodeURIComponent(id), {
+                method: 'DELETE',
+                credentials: 'same-origin',
+              });
+              const data = await res.json();
+              if (!res.ok || !data.ok) {
+                setBlockStatus((data && data.error && data.error.detail) || 'Unblock failed.', 'error');
+                unblockBtn.disabled = false;
+                unblockBtn.textContent = original;
+                return;
+              }
+              setBlockStatus('Unblocked. Reloading…', 'ok');
+              setTimeout(() => window.location.reload(), 600);
+            } catch (err) {
+              setBlockStatus('Network error. Try again.', 'error');
+              unblockBtn.disabled = false;
+              unblockBtn.textContent = original;
             }
           });
         }
