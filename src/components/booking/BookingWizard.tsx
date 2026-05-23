@@ -331,18 +331,37 @@ export default function BookingWizard({
         },
       };
     }
-    // Anyone we already know is a returning customer can skip the
-    // new-customer card-capture check entirely:
+    // Card-capture seeding:
     //   - Reschedule mode: the booking is being moved, the customer
-    //     existed before today.
-    //   - Signed-in customer: they have an authenticated session, so
-    //     they've booked at some point in the past.
-    // Guest checkout stays cardCapture.required = null so the wizard
-    // fires /api/booking/check-new-customer on entry to Step 5.
-    if (reschedule || signedInCustomer) {
+    //     existed before today → skip Step 4.5 entirely.
+    //   - Signed-in returning customer: server already confirmed they
+    //     have prior Square bookings → skip Step 4.5.
+    //   - Signed-in NEW customer (account exists, no bookings yet —
+    //     e.g. they signed up via OTP without booking) OR unknown
+    //     (server check failed): leave required:null so the Step 5
+    //     effect resolves the verdict against Square. Without this,
+    //     a signed-in new customer would slip through without a card
+    //     on file, defeating the cancellation policy.
+    //   - Guest checkout: leave required:null (default) so the Step
+    //     5 effect resolves on entry.
+    const selfIsReturning =
+      !!reschedule ||
+      (!!signedInCustomer && bookingForOptions?.[0]?.isNewCustomer === false);
+    if (selfIsReturning) {
       base = {
         ...base,
         cardCapture: { ...base.cardCapture, required: false },
+      };
+    } else if (signedInCustomer && bookingForOptions?.[0]?.customerId) {
+      // Pre-seed customerId for the upcoming card-capture flow so
+      // /api/booking/save-card has the right Square id from the start
+      // and we don't need a separate findOrCreate roundtrip.
+      base = {
+        ...base,
+        cardCapture: {
+          ...base.cardCapture,
+          customerId: bookingForOptions[0].customerId,
+        },
       };
     }
     // Seed newCustomer state. For the default booking-for target
@@ -598,14 +617,26 @@ export default function BookingWizard({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [customerEmail, customerPhoneDigits]);
 
+  // For signed-in users we can use the {customerId} branch — Square's
+  // findCustomerByEmail is unnecessary work when we already know which
+  // record we're booking under. Falls back to the email/phone branch
+  // for guest checkout.
+  const knownSelfCustomerId =
+    signedInCustomer && bookingForOptions?.[0]?.customerId
+      ? bookingForOptions[0].customerId
+      : null;
   useEffect(() => {
     if (state.step !== 5) return;
-    if (rescheduleMode || signedInCustomer || bookingForLockedReturning) return;
+    if (rescheduleMode || bookingForLockedReturning) return;
     if (state.cardCapture.required !== null) return;
-    if (!/^\S+@\S+\.\S+$/.test(customerEmail)) return;
-    if (customerPhoneDigits.length < 10) return;
-    if (!state.customer.givenName.trim() || !state.customer.familyName.trim()) return;
-    const key = `${customerEmail}|${customerPhoneDigits}`;
+    if (knownSelfCustomerId) {
+      // Signed-in branch: skip the email/phone validation below.
+    } else {
+      if (!/^\S+@\S+\.\S+$/.test(customerEmail)) return;
+      if (customerPhoneDigits.length < 10) return;
+      if (!state.customer.givenName.trim() || !state.customer.familyName.trim()) return;
+    }
+    const key = knownSelfCustomerId ?? `${customerEmail}|${customerPhoneDigits}`;
     if (checkSentRef.current === key) return;
     checkSentRef.current = key;
 
@@ -616,12 +647,16 @@ export default function BookingWizard({
           method: 'POST',
           credentials: 'same-origin',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            email: customerEmail,
-            phone: customerPhoneDigits,
-            givenName: state.customer.givenName.trim(),
-            familyName: state.customer.familyName.trim(),
-          }),
+          body: JSON.stringify(
+            knownSelfCustomerId
+              ? { customerId: knownSelfCustomerId }
+              : {
+                  email: customerEmail,
+                  phone: customerPhoneDigits,
+                  givenName: state.customer.givenName.trim(),
+                  familyName: state.customer.familyName.trim(),
+                },
+          ),
         });
         const body = (await res.json()) as
           | { ok: true; isNew: boolean; requiresCard: boolean; customerId: string }
@@ -675,7 +710,6 @@ export default function BookingWizard({
   }, [
     state.step,
     rescheduleMode,
-    signedInCustomer,
     bookingForLockedReturning,
     state.cardCapture.required,
     customerEmail,
@@ -686,6 +720,7 @@ export default function BookingWizard({
     state.selectedVariation,
     state.newCustomer.claimedReturning,
     isAnonymous,
+    knownSelfCustomerId,
   ]);
 
   // Signed-in customers with a complete contact record on file skip the
