@@ -29,6 +29,7 @@ const auth = checkBasicAuth(Astro.request);
 if (!auth.ok) {
   return auth.challenge;
 }
+if (auth.refreshCookie) Astro.response.headers.append('Set-Cookie', auth.refreshCookie);
 
 const url = new URL(Astro.request.url);
 const rawQuery = (url.searchParams.get('q') ?? '').trim();

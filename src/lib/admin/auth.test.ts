@@ -18,6 +18,10 @@ import {
   BARBER_SESSION_COOKIE_NAME,
   signBarberSession,
 } from '../auth/barberSession';
+import {
+  ADMIN_SESSION_COOKIE_NAME,
+  signAdminSession,
+} from './adminSession';
 
 // Owner team_member_id from src/lib/square/team.ts — Michael.
 const OWNER_ID = '523GMGEC1FY0Z';
@@ -119,5 +123,54 @@ describe('checkBasicAuth — owner barber session path', () => {
       authorization: basicAuthHeader('admin', 'admin-pass-12345'),
     });
     expect(checkBasicAuth(req).ok).toBe(true);
+  });
+});
+
+describe('checkBasicAuth — admin session cookie path (mobile fetch fix)', () => {
+  it('mints a refreshCookie on a successful Basic Auth page load', () => {
+    const req = reqWithHeaders({
+      authorization: basicAuthHeader('admin', 'admin-pass-12345'),
+    });
+    const result = checkBasicAuth(req);
+    expect(result.ok).toBe(true);
+    expect(result.refreshCookie).toBeTruthy();
+    expect(result.refreshCookie).toContain(`${ADMIN_SESSION_COOKIE_NAME}=`);
+    // Cookie hardening attributes must be present.
+    expect(result.refreshCookie).toContain('HttpOnly');
+    expect(result.refreshCookie).toContain('Secure');
+    expect(result.refreshCookie).toContain('SameSite=Lax');
+  });
+
+  it('authenticates a request carrying only a valid admin session cookie', () => {
+    // The whole point: a background fetch() with no Basic Auth header
+    // (iPhone Safari) still authenticates via the cookie.
+    const token = signAdminSession();
+    const req = reqWithHeaders({
+      cookie: `${ADMIN_SESSION_COOKIE_NAME}=${token}`,
+    });
+    const result = checkBasicAuth(req);
+    expect(result.ok).toBe(true);
+    // No Basic Auth header on this request, so nothing to re-mint.
+    expect(result.refreshCookie).toBeUndefined();
+  });
+
+  it('rejects a tampered admin session cookie', () => {
+    const token = signAdminSession();
+    const tampered = token.slice(0, -2) + (token.endsWith('aa') ? 'bb' : 'aa');
+    const req = reqWithHeaders({
+      cookie: `${ADMIN_SESSION_COOKIE_NAME}=${tampered}`,
+    });
+    const result = checkBasicAuth(req);
+    expect(result.ok).toBe(false);
+    expect(result.challenge.status).toBe(401);
+  });
+
+  it('rejects an expired admin session cookie', () => {
+    // Negative duration → already expired.
+    const token = signAdminSession(-1);
+    const req = reqWithHeaders({
+      cookie: `${ADMIN_SESSION_COOKIE_NAME}=${token}`,
+    });
+    expect(checkBasicAuth(req).ok).toBe(false);
   });
 });
