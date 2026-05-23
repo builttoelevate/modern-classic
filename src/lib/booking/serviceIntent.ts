@@ -22,3 +22,17 @@ export function isKidsService(service: Service | null | undefined): boolean {
   if (!service) return false;
   return slugForService(service).slug === 'kids-haircut';
 }
+
+/**
+ * True when the given Square service is the "first visit" / "new
+ * customer" consultation. Matched by name pattern because the catalog
+ * item id changes if the shop owner rebuilds the item in Square. Used
+ * to (a) pin the card to the top of Step 1, (b) gate Step 1 so first-
+ * time customers can only book this service, and (c) decide whether
+ * a non-first-visit preselect from a URL param should be honored.
+ */
+export function isFirstVisitService(service: Service | null | undefined): boolean {
+  if (!service) return false;
+  const n = service.name.toLowerCase();
+  return n.includes('new customer') || n.includes('first visit') || n.includes('first-time');
+}

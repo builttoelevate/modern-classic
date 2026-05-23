@@ -6,8 +6,9 @@ import { Step3DateTimePicker } from './Step3DateTimePicker';
 import { Step4CustomerInfo } from './Step4CustomerInfo';
 import { Step5Confirm } from './Step5Confirm';
 import { Step45CardCapture } from './Step45CardCapture';
+import { NewCustomerMismatchModal } from './NewCustomerMismatchModal';
 import { buildSeriesNote, newSeriesId } from '../../lib/booking/series';
-import { isKidsService } from '../../lib/booking/serviceIntent';
+import { isFirstVisitService, isKidsService } from '../../lib/booking/serviceIntent';
 import {
   initialState as defaultInitialState,
   reducer,
@@ -51,6 +52,12 @@ export interface BookingForOption {
   displayName: string;
   relationship?: string;
   isSelf: boolean;
+  /** Server-hydrated newness verdict for this specific Square customer
+   *  record. true = no prior bookings → Step 1 locks to the New
+   *  Customer service. false = returning. null = Square check failed
+   *  at page load; the wizard refetches on demand when this option is
+   *  selected. Each linked person is evaluated independently. */
+  isNewCustomer: boolean | null;
 }
 
 interface Props {
@@ -71,6 +78,10 @@ interface Props {
    *  {number}" sms link in place of the generic "manage in My Bookings"
    *  prompt. */
   barberPhones?: Record<string, string>;
+  /** True when the Square catalog contains at least one service whose
+   *  name matches isFirstVisitService() (the routing target for new
+   *  customers). False = fail open, skip the Step 1 lock entirely. */
+  firstVisitServiceAvailable?: boolean;
 }
 
 const STEP_LABELS = ['Service', 'Barber', 'Time', 'Details', 'Confirm'];
@@ -235,7 +246,16 @@ export default function BookingWizard({
   signedInCustomer,
   bookingForOptions,
   barberPhones,
+  firstVisitServiceAvailable = true,
 }: Props) {
+  // The "New Customer" / first-visit service is found by name match
+  // (isFirstVisitService) — there's no flag on the Square catalog item.
+  // Cached here because FORCE_NEW_CUSTOMER_SERVICE needs it and the
+  // Step 1 locked-card render needs it.
+  const firstVisitService = useMemo<Service | null>(
+    () => services.find((s) => isFirstVisitService(s)) ?? null,
+    [services],
+  );
   // "Booking for" selector — currently selected customerId. Defaults to
   // self (the first option). When the parent picks a linked person, we
   // override the booking's customerId at submit time so the appointment
@@ -250,12 +270,49 @@ export default function BookingWizard({
   const skipDetailsStep = isCompleteCustomer(signedInCustomer);
   const initialState = useMemo<WizardState>(() => {
     let base: WizardState;
+    // Known-new signed-in customer? Strip the service/variation half of
+    // any URL preselect that points at a non-first-visit service. (The
+    // teamMemberId half is harmless to keep; the user just lands on
+    // Step 1 with a barber hint that won't apply until they pick a
+    // service.) Without this guard, a returning customer who shared
+    // their /book?serviceVariationId=X link with a friend would let
+    // that friend bypass the new-customer routing.
+    const defaultIsNew =
+      !reschedule &&
+      bookingForOptions &&
+      bookingForOptions.length > 0 &&
+      bookingForOptions[0].isNewCustomer === true;
+    const effectivePreselect = (() => {
+      if (!preselect || !defaultIsNew) return preselect;
+      if (!preselect.serviceVariationId) return preselect;
+      // Resolve the preselect's service to check if it's first-visit.
+      for (const s of services) {
+        if (s.variations.some((v) => v.id === preselect.serviceVariationId)) {
+          if (isFirstVisitService(s)) return preselect;
+          return preselect.teamMemberId ? { teamMemberId: preselect.teamMemberId } : undefined;
+        }
+      }
+      return preselect;
+    })();
     if (reschedule) {
       base = buildRescheduleInitialState(reschedule, services, barbers) ?? defaultInitialState;
-    } else if (preselect && (preselect.serviceVariationId || preselect.teamMemberId)) {
-      base = buildPreselectInitialState(preselect, services, barbers) ?? defaultInitialState;
+    } else if (effectivePreselect && (effectivePreselect.serviceVariationId || effectivePreselect.teamMemberId)) {
+      base = buildPreselectInitialState(effectivePreselect, services, barbers) ?? defaultInitialState;
     } else {
       base = defaultInitialState;
+    }
+    // Anonymous visitors must answer the "Have you visited before?"
+    // gate before they can be past Step 1 — otherwise a /book?service…
+    // deep link from a friend would let a brand-new customer skip
+    // straight to Step 2/3 with a non-first-visit service selected
+    // and bypass the routing. The preselect's service/variation
+    // remains in state so a returning visitor's answer carries them
+    // forward to the same place; a first-time visitor's "No" answer
+    // will trigger the lock and they'll re-pick on Step 1. Reschedule
+    // is exempt — it has its own ownership-checked session path.
+    const anonymousNeedsGate = !signedInCustomer && !reschedule;
+    if (anonymousNeedsGate && base.step !== 1) {
+      base = { ...base, step: 1 };
     }
     // Pre-fill the customer info from the signed-in session so the
     // submit step has everything it needs without Step 4 collecting it
@@ -288,11 +345,79 @@ export default function BookingWizard({
         cardCapture: { ...base.cardCapture, required: false },
       };
     }
+    // Seed newCustomer state. For the default booking-for target
+    // (self / first option), use the server-hydrated verdict so Step 1
+    // can render the lock without a client roundtrip. Reschedule mode
+    // is exempt — we're moving an existing booking, the customer is
+    // returning by definition.
+    const defaultBookingForVerdict = reschedule
+      ? false
+      : bookingForOptions && bookingForOptions.length > 0
+        ? bookingForOptions[0].isNewCustomer
+        : null;
+    base = {
+      ...base,
+      newCustomer: {
+        ...base.newCustomer,
+        verdict: defaultBookingForVerdict,
+        // Signed-in users skip the anonymous gate — their verdict comes
+        // from server-side detection, not a self-report. Pin
+        // claimedReturning so the gate UI never renders.
+        claimedReturning: signedInCustomer || reschedule ? true : null,
+        firstVisitServiceAvailable,
+      },
+    };
     return base;
-  }, [reschedule, preselect, services, barbers, signedInCustomer]);
+  }, [
+    reschedule,
+    preselect,
+    services,
+    barbers,
+    signedInCustomer,
+    bookingForOptions,
+    firstVisitServiceAvailable,
+  ]);
   const [state, dispatch] = useReducer(reducer, initialState);
   const [toast, setToast] = useState<string | null>(null);
   const rescheduleMode = !!reschedule;
+  const isAnonymous = !signedInCustomer && !reschedule;
+
+  // Anonymous gate answer survives a mid-flow refresh so the user
+  // isn't re-prompted. Hydrate once on mount (cannot read sessionStorage
+  // during useMemo — that runs server-side in Astro's island bundle).
+  // Signed-in / reschedule paths skip this entirely (claimedReturning
+  // is already pinned to true above).
+  useEffect(() => {
+    if (!isAnonymous) return;
+    if (typeof window === 'undefined') return;
+    try {
+      const stored = window.sessionStorage.getItem('mc_claimed_returning');
+      if (stored === 'true') {
+        dispatch({ type: 'SET_CLAIMED_RETURNING', value: true });
+      } else if (stored === 'false') {
+        dispatch({ type: 'SET_CLAIMED_RETURNING', value: false });
+      }
+    } catch {
+      // sessionStorage blocked (private mode, etc.) — gate renders, no harm.
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Persist claimedReturning whenever it changes so a refresh doesn't
+  // re-prompt. Only for anonymous users — signed-in users never set it.
+  useEffect(() => {
+    if (!isAnonymous) return;
+    if (typeof window === 'undefined') return;
+    if (state.newCustomer.claimedReturning === null) return;
+    try {
+      window.sessionStorage.setItem(
+        'mc_claimed_returning',
+        state.newCustomer.claimedReturning ? 'true' : 'false',
+      );
+    } catch {
+      // Best-effort.
+    }
+  }, [isAnonymous, state.newCustomer.claimedReturning]);
 
   // Toast auto-dismiss
   useEffect(() => {
@@ -365,6 +490,91 @@ export default function BookingWizard({
     }
   }, [bookingForLockedReturning, state.cardCapture.required]);
 
+  // Re-detect newness whenever the Booking-for selector flips. Each
+  // dependent has its own verdict (a returning parent can have a
+  // brand-new kid). Server-hydrated verdicts live on each option;
+  // we only refetch when the server check failed (verdict === null)
+  // or when we haven't cached this customerId yet.
+  const newnessCacheRef = useRef<Map<string, boolean>>(new Map());
+  useEffect(() => {
+    if (rescheduleMode) return;
+    if (!selectedBookingFor) return;
+    // Seed cache from server hydration once per option.
+    if (selectedBookingFor.isNewCustomer !== null) {
+      newnessCacheRef.current.set(
+        selectedBookingFor.customerId,
+        selectedBookingFor.isNewCustomer,
+      );
+      if (state.newCustomer.verdict !== selectedBookingFor.isNewCustomer) {
+        dispatch({
+          type: 'SET_NEWNESS_VERDICT',
+          verdict: selectedBookingFor.isNewCustomer,
+        });
+      }
+      return;
+    }
+    // Server hydration failed for this customer — fetch on demand.
+    const cached = newnessCacheRef.current.get(selectedBookingFor.customerId);
+    if (cached !== undefined) {
+      if (state.newCustomer.verdict !== cached) {
+        dispatch({ type: 'SET_NEWNESS_VERDICT', verdict: cached });
+      }
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch('/api/booking/check-new-customer', {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ customerId: selectedBookingFor.customerId }),
+        });
+        const body = (await res.json()) as
+          | { ok: true; isNew: boolean; requiresCard: boolean; customerId: string }
+          | { ok: false; error: { code: string; detail: string } };
+        if (cancelled) return;
+        if (!res.ok || !body.ok) {
+          // Fail open — treat as returning so the menu doesn't lock
+          // when we can't verify.
+          dispatch({ type: 'SET_NEWNESS_VERDICT', verdict: false });
+          return;
+        }
+        newnessCacheRef.current.set(selectedBookingFor.customerId, body.isNew);
+        dispatch({ type: 'SET_NEWNESS_VERDICT', verdict: body.isNew });
+      } catch {
+        if (cancelled) return;
+        dispatch({ type: 'SET_NEWNESS_VERDICT', verdict: false });
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // selectedBookingFor identity changes only when bookingForId changes,
+    // so this effect only refires on the selector flip — exactly when we
+    // want a fresh verdict.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedBookingFor?.customerId, rescheduleMode]);
+
+  // If the active Booking-for target flips to a new customer and they
+  // already had a non-first-visit service selected, swap it out. Reuses
+  // FORCE_NEW_CUSTOMER_SERVICE so slot/barber/variation also reset.
+  // Only toasts when there's a Booking-for context (signed-in user
+  // flipping the selector to a new dependent) — for anonymous gate
+  // answers the Step 1 banner already explains the lock.
+  useEffect(() => {
+    if (state.newCustomer.verdict !== true) return;
+    if (!firstVisitService) return;
+    if (!state.selectedService) return;
+    if (isFirstVisitService(state.selectedService)) return;
+    dispatch({ type: 'FORCE_NEW_CUSTOMER_SERVICE', service: firstVisitService });
+    if (selectedBookingFor && !selectedBookingFor.isSelf) {
+      setToast(
+        `That service isn't available for ${selectedBookingFor.displayName}'s first visit — switched to the New Customer service.`,
+      );
+    }
+  }, [state.newCustomer.verdict, state.selectedService, firstVisitService, selectedBookingFor]);
+
   // Step 5 entry — fire /api/booking/check-new-customer once we have
   // the customer's email + phone, unless we already know they're
   // returning (reschedule, signed-in, booking-for-linked-person). Reset
@@ -414,7 +624,7 @@ export default function BookingWizard({
           }),
         });
         const body = (await res.json()) as
-          | { ok: true; newCustomer: boolean; customerId: string }
+          | { ok: true; isNew: boolean; requiresCard: boolean; customerId: string }
           | { ok: false; error: { code: string; detail: string } };
         if (cancelled) return;
         if (!res.ok || !body.ok) {
@@ -430,11 +640,27 @@ export default function BookingWizard({
         dispatch({
           type: 'UPDATE_CARD_CAPTURE',
           patch: {
-            required: body.newCustomer,
+            required: body.requiresCard,
             customerId: body.customerId,
             amountCents: priceCentsForBooking(state.selectedService, state.selectedVariation),
           },
         });
+        dispatch({ type: 'SET_NEWNESS_VERDICT', verdict: body.isNew });
+        // Mismatch: anonymous visitor claimed they're a returning
+        // customer at the Step 1 gate, but Square has no booking
+        // history for the email/phone they entered. If their picked
+        // service isn't first-visit, surface the modal so they switch
+        // (or sign in if they actually do have an account under a
+        // different email).
+        if (
+          body.isNew &&
+          state.newCustomer.claimedReturning === true &&
+          isAnonymous &&
+          state.selectedService &&
+          !isFirstVisitService(state.selectedService)
+        ) {
+          dispatch({ type: 'OPEN_MISMATCH_MODAL' });
+        }
       } catch {
         if (cancelled) return;
         dispatch({
@@ -458,6 +684,8 @@ export default function BookingWizard({
     state.customer.familyName,
     state.selectedService,
     state.selectedVariation,
+    state.newCustomer.claimedReturning,
+    isAnonymous,
   ]);
 
   // Signed-in customers with a complete contact record on file skip the
@@ -881,6 +1109,14 @@ export default function BookingWizard({
         </div>
       )}
 
+      {state.newCustomer.mismatchModalOpen && firstVisitService && (
+        <NewCustomerMismatchModal
+          onSwitch={() =>
+            dispatch({ type: 'FORCE_NEW_CUSTOMER_SERVICE', service: firstVisitService })
+          }
+        />
+      )}
+
       <div className="bw-head">
         {rescheduleMode ? (
           <>
@@ -961,6 +1197,22 @@ export default function BookingWizard({
             // For per-barber-variation services, the eligible set is also
             // multiple. So we always show step 2 — no auto-skip.
           }}
+          // The lock engages ONLY when we've affirmatively determined
+          // the visitor is new AND we have a service to route them to.
+          // Anonymous-with-unknown-verdict (claimedReturning=null) shows
+          // the gate instead of the lock; failing-open cases (no first-
+          // visit service in catalog) skip the lock entirely.
+          lockedToFirstVisit={
+            state.newCustomer.verdict === true &&
+            state.newCustomer.firstVisitServiceAvailable
+          }
+          signedIn={!!signedInCustomer}
+          isAnonymous={isAnonymous}
+          claimedReturning={state.newCustomer.claimedReturning}
+          onClaimedReturning={(value) =>
+            dispatch({ type: 'SET_CLAIMED_RETURNING', value })
+          }
+          firstVisitServiceAvailable={state.newCustomer.firstVisitServiceAvailable}
         />
       )}
 
