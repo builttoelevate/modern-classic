@@ -635,13 +635,15 @@ function fmtRelative(iso: string): string {
             btn.textContent = 'Removing…';
             clearFlash(blockFlash);
             try {
-              const res = await fetch('/api/admin/blocks/' + encodeURIComponent(id), {
-                method: 'DELETE',
+              const res = await fetch('/api/admin/blocks', {
+                method: 'POST',
                 credentials: 'same-origin',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ removeId: id }),
               });
               const data = await res.json().catch(function () { return {}; });
               if (!res.ok || !data.ok) {
-                const detail = (data && data.error && data.error.detail) || 'Failed to remove.';
+                const detail = (data && data.error && data.error.detail) || ('Failed to remove (HTTP ' + res.status + ').');
                 showFlash(blockFlash, 'err', detail);
                 btn.disabled = false;
                 btn.textContent = 'Remove';

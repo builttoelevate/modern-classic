@@ -13,6 +13,7 @@ import { checkBasicAuth } from '../../../lib/admin/auth';
 import {
   addBlockedPhone,
   listBlockedEntries,
+  removeBlockedById,
 } from '../../../lib/customer/blockedCustomers';
 
 export const prerender = false;
@@ -32,7 +33,7 @@ export const GET: APIRoute = async ({ request }) => {
 export const POST: APIRoute = async ({ request }) => {
   const auth = checkBasicAuth(request);
   if (!auth.ok) return auth.challenge;
-  let body: { phone?: unknown; reason?: unknown; blockedBy?: unknown };
+  let body: { phone?: unknown; reason?: unknown; blockedBy?: unknown; removeId?: unknown };
   try {
     body = (await request.json()) as typeof body;
   } catch {
@@ -41,10 +42,32 @@ export const POST: APIRoute = async ({ request }) => {
       { status: 400 },
     );
   }
+  // Unblock-via-POST. The dedicated DELETE /api/admin/blocks/[id] route
+  // is unreliable from mobile browsers — the DELETE method to a dynamic
+  // route gets dropped/mis-routed at the edge — so the admin UI sends an
+  // unblock as a POST with { removeId } to this same static endpoint
+  // that the block action already uses. The [id] DELETE route stays for
+  // backward compatibility.
+  const removeId = typeof body.removeId === 'string' ? body.removeId.trim() : '';
+  if (removeId) {
+    try {
+      const removed = await removeBlockedById(removeId);
+      if (!removed) {
+        return Response.json(
+          { ok: false, error: { detail: 'No block with that id.' } },
+          { status: 404 },
+        );
+      }
+      return Response.json({ ok: true, removed: true, block: removed }, { status: 200 });
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : 'Unknown error';
+      return Response.json({ ok: false, error: { detail } }, { status: 500 });
+    }
+  }
   const phone = typeof body.phone === 'string' ? body.phone.trim() : '';
   if (!phone) {
     return Response.json(
-      { ok: false, error: { detail: 'phone is required.' } },
+      { ok: false, error: { detail: 'phone or removeId is required.' } },
       { status: 400 },
     );
   }
