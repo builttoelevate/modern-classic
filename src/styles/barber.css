@@ -831,3 +831,71 @@
   margin: 0;
   font-size: 0.9rem;
 }
+
+/* ---------- Customers & blocking page ---------- */
+.bb-cust {
+  margin-top: 28px;
+}
+.bb-cust__intro {
+  color: var(--bb-muted);
+  font-size: 0.9rem;
+  line-height: 1.55;
+  margin: 0 0 16px;
+}
+.bb-cust__search {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+.bb-cust__search input {
+  flex: 1;
+  min-width: 0;
+  padding: 10px 12px;
+  background: var(--bb-surface-2);
+  border: 1px solid var(--bb-border);
+  border-radius: var(--bb-radius);
+  color: var(--bb-text);
+  font-size: 1rem;
+  font-family: inherit;
+}
+.bb-cust__search input:focus {
+  outline: 2px solid rgba(201, 163, 92, 0.4);
+  border-color: var(--bb-gold);
+}
+.bb-cust__results {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: 1fr;
+}
+@media (min-width: 560px) {
+  .bb-cust__results { grid-template-columns: repeat(2, 1fr); }
+}
+.bb-cust-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 14px 16px;
+  background: var(--bb-surface);
+  border: 1px solid var(--bb-border);
+  border-radius: var(--bb-radius);
+}
+.bb-cust-card__name {
+  font-family: var(--font-display, serif);
+  font-size: 1.1rem;
+  color: var(--bb-text);
+}
+.bb-cust-card__meta {
+  font-size: 0.85rem;
+  color: var(--bb-muted);
+  word-break: break-word;
+}
+.bb-cust-card__note { margin: 0; font-size: 0.8rem; }
+.bb-cust-card .bb-btn { margin-top: 4px; }
+.bb-cust-card__msg {
+  margin: 4px 0 0;
+  font-size: 0.82rem;
+}
+.bb-cust-card__msg.is-err { color: #f0a37a; }
+.bb-cust-card__msg.is-ok { color: #a4d091; }
+.bb-dim { color: var(--bb-dim); }
