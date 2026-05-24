@@ -11,16 +11,20 @@ const directionsUrl = 'https://www.google.com/maps/search/?api=1&query=819+Linde
 const mapEmbed = 'https://www.google.com/maps?q=819+Linden+Avenue,+Zanesville,+OH+43701&output=embed';
 const mailto = 'mailto:modernclassicbarbershop@protonmail.com';
 
-// Modern Classic is online-booking-only — no public phone line. Contact
-// is via online booking + email; see the Contact block below.
+// Phone + hours mirror the Google Business Profile exactly (NAP must
+// match GBP). Keep these in sync with the LocalBusiness schema in
+// BaseLayout.astro.
+const phone = '(740) 297-4462';
+const phoneTel = 'tel:+17402974462';
+
 const hours = [
   { day: 'Sunday',    open: 'Closed' },
-  { day: 'Monday',    open: 'Closed' },
+  { day: 'Monday',    open: '9:00 AM – 6:00 PM' },
   { day: 'Tuesday',   open: '9:00 AM – 6:00 PM' },
   { day: 'Wednesday', open: '9:00 AM – 6:00 PM' },
   { day: 'Thursday',  open: '9:00 AM – 6:00 PM' },
   { day: 'Friday',    open: '9:00 AM – 6:00 PM' },
-  { day: 'Saturday',  open: '9:00 AM – 4:00 PM' },
+  { day: 'Saturday',  open: '9:00 AM – 3:00 PM' },
 ];
 const todayIndex = new Date().getDay();
 ---
@@ -62,7 +66,7 @@ const todayIndex = new Date().getDay();
           <article class="vst-block" aria-labelledby="vst-address-heading">
             <h2 id="vst-address-heading" class="vst-block__h">Address</h2>
             <a class="vst-address" href={directionsUrl} target="_blank" rel="noopener" aria-label="Open address in Google Maps">
-              <span>819 Linden Avenue</span>
+              <span>819 Linden Avenue #3</span>
               <span>Zanesville, OH 43701</span>
               <span class="vst-address__arrow" aria-hidden="true">↗ Open in Maps</span>
             </a>
@@ -90,6 +94,10 @@ const todayIndex = new Date().getDay();
           <article id="contact" class="vst-block" aria-labelledby="vst-contact-heading">
             <h2 id="vst-contact-heading" class="vst-block__h">Contact</h2>
             <dl class="vst-contact">
+              <div>
+                <dt>Phone</dt>
+                <dd><a href={phoneTel}>{phone}</a></dd>
+              </div>
               <div>
                 <dt>Booking</dt>
                 <dd><a href={mailto}>modernclassicbarbershop@protonmail.com</a></dd>

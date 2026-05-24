@@ -54,9 +54,10 @@ const localBusiness = {
   url: siteUrl,
   image: ogImageUrl,
   priceRange: '$$',
+  telephone: '+17402974462',
   address: {
     '@type': 'PostalAddress',
-    streetAddress: '819 Linden Avenue',
+    streetAddress: '819 Linden Avenue #3',
     addressLocality: 'Zanesville',
     addressRegion: 'OH',
     postalCode: '43701',
@@ -68,12 +69,12 @@ const localBusiness = {
     longitude: -82.0177,
   },
   email: 'modernclassicbarbershop@protonmail.com',
-  // Keep in sync with the hours table on /visit. Tue–Fri 9–6, Sat 9–4,
-  // closed Sun/Mon.
+  // Mirrors Google Business Profile + the /visit hours table: Mon–Fri
+  // 9–6, Sat 9–3, closed Sun.
   openingHoursSpecification: [
     {
       '@type': 'OpeningHoursSpecification',
-      dayOfWeek: ['Tuesday', 'Wednesday', 'Thursday', 'Friday'],
+      dayOfWeek: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'],
       opens: '09:00',
       closes: '18:00',
     },
@@ -81,7 +82,7 @@ const localBusiness = {
       '@type': 'OpeningHoursSpecification',
       dayOfWeek: ['Saturday'],
       opens: '09:00',
-      closes: '16:00',
+      closes: '15:00',
     },
   ],
   sameAs: [
