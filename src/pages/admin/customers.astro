@@ -2193,13 +2193,15 @@ const defaultRescheduleDate = tomorrowInNyDate();
             unblockBtn.textContent = 'Unblocking…';
             setBlockStatus('', '');
             try {
-              const res = await fetch('/api/admin/blocks/' + encodeURIComponent(id), {
-                method: 'DELETE',
+              const res = await fetch('/api/admin/blocks', {
+                method: 'POST',
                 credentials: 'same-origin',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ removeId: id }),
               });
-              const data = await res.json();
+              const data = await res.json().catch(() => ({}));
               if (!res.ok || !data.ok) {
-                setBlockStatus((data && data.error && data.error.detail) || 'Unblock failed.', 'error');
+                setBlockStatus((data && data.error && data.error.detail) || ('Unblock failed (HTTP ' + res.status + ').'), 'error');
                 unblockBtn.disabled = false;
                 unblockBtn.textContent = original;
                 return;
@@ -2270,13 +2272,15 @@ const defaultRescheduleDate = tomorrowInNyDate();
             btn.textContent = 'Unblocking…';
             setCardStatus(card, '', '');
             try {
-              const res = await fetch('/api/admin/blocks/' + encodeURIComponent(id), {
-                method: 'DELETE',
+              const res = await fetch('/api/admin/blocks', {
+                method: 'POST',
                 credentials: 'same-origin',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ removeId: id }),
               });
-              const data = await res.json();
+              const data = await res.json().catch(() => ({}));
               if (!res.ok || !data.ok) {
-                setCardStatus(card, (data && data.error && data.error.detail) || 'Unblock failed.', 'error');
+                setCardStatus(card, (data && data.error && data.error.detail) || ('Unblock failed (HTTP ' + res.status + ').'), 'error');
                 btn.disabled = false;
                 btn.textContent = original;
                 return;
