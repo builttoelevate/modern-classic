@@ -15,7 +15,7 @@ const routes: { path: string; priority: number; changefreq: string }[] = [
 ];
 
 export const GET: APIRoute = ({ site }) => {
-  const origin = (site ?? new URL('https://mdrnclassic.com')).origin;
+  const origin = (site ?? new URL('https://modernclassicbarbershop.com')).origin;
   const lastmod = new Date().toISOString().slice(0, 10);
 
   const body =

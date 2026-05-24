@@ -11,22 +11,20 @@ const directionsUrl = 'https://www.google.com/maps/search/?api=1&query=819+Linde
 const mapEmbed = 'https://www.google.com/maps?q=819+Linden+Avenue,+Zanesville,+OH+43701&output=embed';
 const mailto = 'mailto:modernclassicbarbershop@protonmail.com';
 
-// TODO: Replace with the real shop phone number once provided. The "Phone"
-// row falls back to "Coming soon" gracefully when this is null.
-const phone: string | null = null;
-const phoneTel = phone ? `tel:${phone.replace(/[^0-9+]/g, '')}` : null;
+// Phone + hours mirror the Google Business Profile exactly (NAP must
+// match GBP). Keep these in sync with the LocalBusiness schema in
+// BaseLayout.astro.
+const phone = '(740) 297-4462';
+const phoneTel = 'tel:+17402974462';
 
-// TODO: Confirm full weekly hours with the owner. Below is a reasonable
-// default sourced from the shop's existing booking flow (Tue–Sat, opening
-// 9 AM). Mon + Sun marked closed pending confirmation.
 const hours = [
   { day: 'Sunday',    open: 'Closed' },
-  { day: 'Monday',    open: 'Closed' },
+  { day: 'Monday',    open: '9:00 AM – 6:00 PM' },
   { day: 'Tuesday',   open: '9:00 AM – 6:00 PM' },
   { day: 'Wednesday', open: '9:00 AM – 6:00 PM' },
   { day: 'Thursday',  open: '9:00 AM – 6:00 PM' },
   { day: 'Friday',    open: '9:00 AM – 6:00 PM' },
-  { day: 'Saturday',  open: '9:00 AM – 4:00 PM' },
+  { day: 'Saturday',  open: '9:00 AM – 3:00 PM' },
 ];
 const todayIndex = new Date().getDay();
 ---
@@ -68,7 +66,7 @@ const todayIndex = new Date().getDay();
           <article class="vst-block" aria-labelledby="vst-address-heading">
             <h2 id="vst-address-heading" class="vst-block__h">Address</h2>
             <a class="vst-address" href={directionsUrl} target="_blank" rel="noopener" aria-label="Open address in Google Maps">
-              <span>819 Linden Avenue</span>
+              <span>819 Linden Avenue #3</span>
               <span>Zanesville, OH 43701</span>
               <span class="vst-address__arrow" aria-hidden="true">↗ Open in Maps</span>
             </a>
@@ -98,13 +96,7 @@ const todayIndex = new Date().getDay();
             <dl class="vst-contact">
               <div>
                 <dt>Phone</dt>
-                <dd>
-                  {phone ? (
-                    <a href={phoneTel}>{phone}</a>
-                  ) : (
-                    <span class="vst-contact__todo">Coming soon — book online for now</span>
-                  )}
-                </dd>
+                <dd><a href={phoneTel}>{phone}</a></dd>
               </div>
               <div>
                 <dt>Booking</dt>

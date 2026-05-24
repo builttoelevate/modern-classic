@@ -1,0 +1,80 @@
+---
+export const prerender = false;
+
+import BaseLayout from '../layouts/BaseLayout.astro';
+import Header from '../components/Header.astro';
+import Footer from '../components/Footer.astro';
+
+const base = import.meta.env.BASE_URL.replace(/\/$/, '');
+---
+<BaseLayout
+  title="Page not found — Modern Classic Barbershop"
+  description="That page couldn't be found. Head back to Modern Classic Barbershop in Zanesville, OH to book a visit or browse services."
+>
+  <Header />
+  <main id="main">
+    <section class="nf" aria-labelledby="nf-heading">
+      <div class="container nf__inner">
+        <p class="eyebrow">404</p>
+        <h1 id="nf-heading" class="nf__h1">This page took the day off.</h1>
+        <p class="nf__lede">
+          We couldn't find what you were looking for. Let's get you back to a
+          fresh cut.
+        </p>
+        <div class="nf__actions">
+          <a class="btn" href={`${base}/book`}>Book a Visit</a>
+          <a class="btn btn--ghost" href={`${base}/`}>Back to Home</a>
+        </div>
+        <nav class="nf__links" aria-label="Popular pages">
+          <a href={`${base}/services`}>Services</a>
+          <a href={`${base}/barbers`}>Our Barbers</a>
+          <a href={`${base}/visit`}>Visit</a>
+          <a href={`${base}/gallery`}>Gallery</a>
+        </nav>
+      </div>
+    </section>
+  </main>
+  <Footer />
+</BaseLayout>
+
+<style>
+  .nf {
+    min-height: 60vh;
+    display: flex;
+    align-items: center;
+    padding-block: var(--space-9, 5rem);
+  }
+  .nf__inner {
+    text-align: center;
+    max-width: 38rem;
+  }
+  .nf__h1 {
+    font-size: clamp(2rem, 1.4rem + 2.4vw, 3rem);
+    margin: 0.4rem 0 0.75rem;
+  }
+  .nf__lede {
+    color: var(--color-text-muted, #b0a695);
+    font-size: 1.05rem;
+    line-height: 1.6;
+    margin-bottom: 2rem;
+  }
+  .nf__actions {
+    display: flex;
+    gap: 0.85rem;
+    justify-content: center;
+    flex-wrap: wrap;
+    margin-bottom: 2rem;
+  }
+  .nf__links {
+    display: flex;
+    gap: 1.25rem;
+    justify-content: center;
+    flex-wrap: wrap;
+    font-size: 0.95rem;
+  }
+  .nf__links a {
+    color: var(--color-gold, #c9a35c);
+    text-decoration: none;
+  }
+  .nf__links a:hover { text-decoration: underline; }
+</style>

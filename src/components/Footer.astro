@@ -101,7 +101,9 @@ const cols = [
   <div class="footer__bar">
     <div class="container footer__bar-inner">
       <p>© {year} MDRN Classic Grooming Essentials LLC. All rights reserved.</p>
-      <p class="footer__bar-locale">819 Linden Ave · Zanesville, OH 43701</p>
+      <p class="footer__bar-locale">
+        819 Linden Ave #3 · Zanesville, OH 43701 · <a href="tel:+17402974462">(740) 297-4462</a>
+      </p>
       <p class="footer-credit">
         Website by <a href="https://designedtoelevate.co">Designed to Elevate</a>
       </p>
@@ -200,6 +202,8 @@ const cols = [
     color: var(--color-text-dim);
   }
   .footer__bar-locale { color: var(--color-text-muted); letter-spacing: 0.05em; }
+  .footer__bar-locale a { color: var(--color-text-muted); }
+  .footer__bar-locale a:hover { color: var(--color-gold); }
   .footer-credit { color: var(--color-text-dim); }
   .footer-credit a { color: var(--color-text-muted); }
   .footer-credit a:hover { color: var(--color-gold); }
