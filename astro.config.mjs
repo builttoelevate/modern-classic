@@ -15,9 +15,12 @@ import node from '@astrojs/node';
 //                              preview`).
 const isGhPages = process.env.DEPLOY_TARGET === 'gh-pages';
 const isLocalPreview = process.env.DEPLOY_TARGET === 'local-preview';
+// The barbershop site lives at modernclassicbarbershop.com. (mdrnclassic.com
+// is the separate Shopify product storefront — do not use it here, or the
+// sitemap + Astro.site would point search engines at the wrong site.)
 const SITE = isGhPages
   ? `https://${process.env.GH_OWNER ?? 'builttoelevate'}.github.io`
-  : 'https://mdrnclassic.com';
+  : 'https://modernclassicbarbershop.com';
 const BASE = isGhPages
   ? `/${process.env.GH_REPO ?? 'modern-classic'}`
   : undefined;

@@ -11,14 +11,8 @@ const directionsUrl = 'https://www.google.com/maps/search/?api=1&query=819+Linde
 const mapEmbed = 'https://www.google.com/maps?q=819+Linden+Avenue,+Zanesville,+OH+43701&output=embed';
 const mailto = 'mailto:modernclassicbarbershop@protonmail.com';
 
-// TODO: Replace with the real shop phone number once provided. The "Phone"
-// row falls back to "Coming soon" gracefully when this is null.
-const phone: string | null = null;
-const phoneTel = phone ? `tel:${phone.replace(/[^0-9+]/g, '')}` : null;
-
-// TODO: Confirm full weekly hours with the owner. Below is a reasonable
-// default sourced from the shop's existing booking flow (Tue–Sat, opening
-// 9 AM). Mon + Sun marked closed pending confirmation.
+// Modern Classic is online-booking-only — no public phone line. Contact
+// is via online booking + email; see the Contact block below.
 const hours = [
   { day: 'Sunday',    open: 'Closed' },
   { day: 'Monday',    open: 'Closed' },
@@ -96,16 +90,6 @@ const todayIndex = new Date().getDay();
           <article id="contact" class="vst-block" aria-labelledby="vst-contact-heading">
             <h2 id="vst-contact-heading" class="vst-block__h">Contact</h2>
             <dl class="vst-contact">
-              <div>
-                <dt>Phone</dt>
-                <dd>
-                  {phone ? (
-                    <a href={phoneTel}>{phone}</a>
-                  ) : (
-                    <span class="vst-contact__todo">Coming soon — book online for now</span>
-                  )}
-                </dd>
-              </div>
               <div>
                 <dt>Booking</dt>
                 <dd><a href={mailto}>modernclassicbarbershop@protonmail.com</a></dd>
