@@ -13,6 +13,8 @@ import { listBookings } from '../../lib/square/bookings';
 import { getBarbers } from '../../lib/square/team';
 import { getServices } from '../../lib/square/catalog';
 import { getCustomerById } from '../../lib/square/customers';
+import { listBlockedEntries } from '../../lib/customer/blockedCustomers';
+import { normalizePhone } from '../../lib/phone';
 import { getBookingCardRecord, type BookingCardRecord } from '../../lib/booking/cardIndex';
 import { canChargeNoShow } from '../../lib/booking/noShowCharge';
 import {
@@ -221,6 +223,16 @@ try {
   }
 }
 
+// Shop-wide block list → E.164 → entry-id map, so each appointment card
+// can show Block vs Unblock for that customer's phone. Best-effort; a KV
+// hiccup just leaves the map empty (cards show Block).
+const blockedIdByE164 = new Map<string, string>();
+try {
+  for (const e of await listBlockedEntries()) blockedIdByE164.set(e.phone, e.id);
+} catch {
+  // Non-fatal — leave the map empty.
+}
+
 interface Row {
   bookingId: string;
   bookingVersion: number;
@@ -237,6 +249,9 @@ interface Row {
   /** Populated only when isOwner. The amount the customer authorized
    *  for the no-show / late-cancel charge at Step 4.5. */
   chargeableAmountCents: number | null;
+  /** Block-list id for this customer's phone when they're already
+   *  blocked (drives Unblock); null when not blocked (drives Block). */
+  blockEntryId: string | null;
 }
 
 const inputFmt = new Intl.DateTimeFormat('en-CA', {
@@ -266,6 +281,7 @@ const rows: Row[] = bookings
     const c = b.customer_id ? customers.get(b.customer_id) : undefined;
     const startUtc = new Date(b.start_at);
     const phoneRaw = c?.phone_number?.trim() ?? '';
+    const e164 = phoneRaw ? normalizePhone(phoneRaw) : '';
     const cardRecord = cardRecords.get(b.id) ?? null;
     const chargeable = isOwner && canChargeNoShow(b, cardRecord);
     return {
@@ -289,6 +305,7 @@ const rows: Row[] = bookings
       note: b.customer_note?.trim() ?? '',
       status: b.status,
       chargeableAmountCents: chargeable && cardRecord ? cardRecord.servicePriceCents : null,
+      blockEntryId: e164 ? (blockedIdByE164.get(e164) ?? null) : null,
     };
   })
   .sort((a, b) => a.startUtc.getTime() - b.startUtc.getTime());
@@ -402,6 +419,7 @@ Astro.response.headers.append('Set-Cookie', refreshBarberSessionCookie(session))
         </div>
         <nav class="bb-head__nav">
           {isOwner && <a href={`${base}/admin`}>Admin</a>}
+          <a href={`${base}/barber/customers`}>Customers</a>
           <a href={`${base}/barber/account`}>Account</a>
           <button type="button" class="bb-link" id="signout-btn">Sign out</button>
         </nav>
@@ -607,6 +625,29 @@ Astro.response.headers.append('Set-Cookie', refreshBarberSessionCookie(session))
                     >
                       Mark no-show &amp; charge ${(r.chargeableAmountCents / 100).toFixed(2)}
                     </button>
+                  )}
+                  {r.customerPhoneE164 && (
+                    r.blockEntryId ? (
+                      <button
+                        type="button"
+                        class="bb-btn bb-btn--ghost"
+                        data-block-btn
+                        data-block-action="unblock"
+                        data-remove-id={r.blockEntryId}
+                      >
+                        Unblock customer
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        class="bb-btn bb-btn--ghost"
+                        data-block-btn
+                        data-block-action="block"
+                        data-phone={r.customerPhoneE164}
+                      >
+                        Block customer
+                      </button>
+                    )
                   )}
                 </div>
                 <div class="bb-card__reschedule" data-reschedule-panel hidden>
@@ -999,6 +1040,48 @@ Astro.response.headers.append('Set-Cookie', refreshBarberSessionCookie(session))
                 showMsg(card, 'Network error. Try again.', true);
                 cancelBtn.disabled = false;
                 cancelBtn.textContent = original;
+              }
+            });
+          }
+
+          const blockBtn = card.querySelector('[data-block-btn]');
+          if (blockBtn) {
+            blockBtn.addEventListener('click', async () => {
+              const action = blockBtn.dataset.blockAction;
+              let payload;
+              if (action === 'block') {
+                const phone = blockBtn.dataset.phone;
+                if (!phone) return;
+                if (!confirm('Block this customer from booking online? They can still be booked in person.')) return;
+                payload = { phone };
+              } else {
+                const removeId = blockBtn.dataset.removeId;
+                if (!removeId) return;
+                payload = { removeId };
+              }
+              blockBtn.disabled = true;
+              const original = blockBtn.textContent;
+              blockBtn.textContent = action === 'block' ? 'Blocking…' : 'Unblocking…';
+              try {
+                const res = await fetch('/api/barber/blocks', {
+                  method: 'POST',
+                  credentials: 'same-origin',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify(payload),
+                });
+                const body = await res.json().catch(() => ({}));
+                if (!res.ok || !body.ok) {
+                  showMsg(card, (body && body.error && body.error.detail) || ('Could not ' + action + ' (HTTP ' + res.status + ').'), true);
+                  blockBtn.disabled = false;
+                  blockBtn.textContent = original;
+                  return;
+                }
+                showMsg(card, action === 'block' ? 'Blocked. Refreshing…' : 'Unblocked. Refreshing…', false);
+                setTimeout(() => window.location.reload(), 700);
+              } catch (_err) {
+                showMsg(card, 'Network error. Try again.', true);
+                blockBtn.disabled = false;
+                blockBtn.textContent = original;
               }
             });
           }

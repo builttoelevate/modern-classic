@@ -1,0 +1,269 @@
+---
+export const prerender = false;
+
+import { getBarberSession, refreshBarberSessionCookie } from '../../lib/auth/barberMiddleware';
+import {
+  findCustomerByEmail,
+  findCustomersByName,
+  findCustomersByPhone,
+} from '../../lib/square/customers';
+import { listBlockedEntries, type BlockedEntry } from '../../lib/customer/blockedCustomers';
+import { normalizePhone } from '../../lib/phone';
+import type { Customer } from '../../lib/square/types';
+import '../../styles/barber.css';
+
+const base = import.meta.env.BASE_URL.replace(/\/$/, '');
+
+const session = getBarberSession(Astro.request);
+if (!session) {
+  return new Response(null, {
+    status: 302,
+    headers: { Location: `${base}/barber/sign-in` },
+  });
+}
+// Sliding session refresh, same as the dashboard.
+Astro.response.headers.append('Set-Cookie', refreshBarberSessionCookie(session));
+
+const rawQuery = (Astro.url.searchParams.get('q') ?? '').trim();
+
+function looksLikeEmail(s: string): boolean {
+  return /^\S+@\S+\.\S+$/.test(s.trim());
+}
+function looksLikePhone(s: string): boolean {
+  const d = s.replace(/[^0-9]/g, '');
+  return d.length >= 7 && d.length <= 16;
+}
+
+let results: Customer[] = [];
+let searchError: string | null = null;
+let notFound = false;
+
+if (rawQuery) {
+  try {
+    if (looksLikeEmail(rawQuery)) {
+      const c = await findCustomerByEmail(rawQuery);
+      if (c) results = [c];
+    } else if (looksLikePhone(rawQuery)) {
+      results = await findCustomersByPhone(rawQuery);
+    } else {
+      results = await findCustomersByName(rawQuery);
+    }
+    if (results.length === 0) notFound = true;
+  } catch (err) {
+    searchError = err instanceof Error ? err.message : 'Search failed.';
+  }
+}
+
+// Shop-wide block list — used both for the per-result Block/Unblock
+// state and the "Currently blocked" panel below. Best-effort: a KV
+// hiccup leaves an empty list rather than 500-ing the page.
+let blockedEntries: BlockedEntry[] = [];
+let blockListError: string | null = null;
+try {
+  blockedEntries = await listBlockedEntries();
+} catch (err) {
+  blockListError = err instanceof Error ? err.message : 'Could not load the block list.';
+}
+const blockedIdByE164 = new Map<string, string>();
+for (const e of blockedEntries) blockedIdByE164.set(e.phone, e.id);
+
+function fmtPhone(raw: string): string {
+  const d = raw.replace(/[^0-9]/g, '');
+  if (d.length === 11 && d.startsWith('1')) {
+    return `(${d.slice(1, 4)}) ${d.slice(4, 7)}-${d.slice(7)}`;
+  }
+  if (d.length === 10) {
+    return `(${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6)}`;
+  }
+  return raw;
+}
+
+function fmtWhen(iso: string): string {
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return iso;
+  return new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York',
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  }).format(d);
+}
+---
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>Customers &amp; blocking — Modern Classic</title>
+  </head>
+  <body class="bb-page">
+    <div class="bb-wrap">
+      <header class="bb-head">
+        <div>
+          <p class="bb-eyebrow">Customers</p>
+          <h1>Look up &amp; block</h1>
+        </div>
+        <nav class="bb-head__nav">
+          <a href={`${base}/barber/dashboard`}>← Dashboard</a>
+        </nav>
+      </header>
+
+      <section class="bb-cust">
+        <p class="bb-cust__intro">
+          Search by phone, name, or email, then block a customer from booking
+          online. Blocks are shop-wide — they apply to every barber's calendar.
+          The customer can still be booked in person.
+        </p>
+
+        <form class="bb-cust__search" method="get" action={`${base}/barber/customers`}>
+          <input
+            type="text"
+            name="q"
+            value={rawQuery}
+            placeholder="Phone, name, or email"
+            autocomplete="off"
+            aria-label="Search customers"
+          />
+          <button type="submit" class="bb-btn">Search</button>
+        </form>
+
+        {searchError && <p class="bb-err">Search failed: {searchError}</p>}
+        {notFound && (
+          <p class="bb-empty">No customer found for "{rawQuery}". Try the phone number instead.</p>
+        )}
+
+        {results.length > 0 && (
+          <div class="bb-cust__results">
+            {results.map((c) => {
+              const name = `${c.given_name ?? ''} ${c.family_name ?? ''}`.trim() || '(no name)';
+              const phone = c.phone_number?.trim() || '';
+              const e164 = phone ? normalizePhone(phone) : '';
+              const blockId = e164 ? blockedIdByE164.get(e164) : undefined;
+              return (
+                <div class="bb-cust-card">
+                  <strong class="bb-cust-card__name">{name}</strong>
+                  <div class="bb-cust-card__meta">
+                    {phone ? fmtPhone(phone) : <span class="bb-dim">— no phone —</span>}
+                  </div>
+                  <div class="bb-cust-card__meta">
+                    {c.email_address || <span class="bb-dim">— no email —</span>}
+                  </div>
+                  {!phone ? (
+                    <p class="bb-dim bb-cust-card__note">
+                      No phone on file — blocking is keyed by phone.
+                    </p>
+                  ) : blockId ? (
+                    <button
+                      type="button"
+                      class="bb-btn bb-btn--ghost bb-btn--sm"
+                      data-block-action="unblock"
+                      data-remove-id={blockId}
+                    >
+                      Unblock
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      class="bb-btn bb-btn--danger bb-btn--sm"
+                      data-block-action="block"
+                      data-phone={phone}
+                    >
+                      Block from online booking
+                    </button>
+                  )}
+                  <p class="bb-cust-card__msg" data-msg hidden></p>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </section>
+
+      <section class="bb-cust">
+        <h2>Currently blocked <span class="bb-sub">{blockedEntries.length}</span></h2>
+        {blockListError && <p class="bb-err">{blockListError}</p>}
+        {!blockListError && blockedEntries.length === 0 && (
+          <p class="bb-empty">No one is blocked right now.</p>
+        )}
+        {blockedEntries.length > 0 && (
+          <ul class="bb-list">
+            {blockedEntries.map((e) => (
+              <li class="bb-cust-card">
+                <strong class="bb-cust-card__name">{fmtPhone(e.phoneOriginal || e.phone)}</strong>
+                <div class="bb-cust-card__meta">
+                  Blocked {fmtWhen(e.blockedAt)}
+                  {e.blockedBy ? ` · by ${e.blockedBy}` : ''}
+                </div>
+                {e.reason && <div class="bb-cust-card__meta">Reason: {e.reason}</div>}
+                <button
+                  type="button"
+                  class="bb-btn bb-btn--ghost bb-btn--sm"
+                  data-block-action="unblock"
+                  data-remove-id={e.id}
+                >
+                  Unblock
+                </button>
+                <p class="bb-cust-card__msg" data-msg hidden></p>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+    </div>
+
+    <script is:inline>
+      (function () {
+        function showMsg(card, text, isErr) {
+          const msg = card ? card.querySelector('[data-msg]') : null;
+          if (!msg) return;
+          msg.textContent = text || '';
+          msg.className = 'bb-cust-card__msg' + (isErr ? ' is-err' : ' is-ok');
+          msg.hidden = !text;
+        }
+        document.querySelectorAll('[data-block-action]').forEach(function (btn) {
+          btn.addEventListener('click', async function () {
+            const action = btn.getAttribute('data-block-action');
+            const card = btn.closest('.bb-cust-card');
+            let payload;
+            if (action === 'block') {
+              const phone = btn.getAttribute('data-phone');
+              if (!phone) return;
+              if (!confirm('Block this customer from booking online?')) return;
+              payload = { phone: phone };
+            } else {
+              const removeId = btn.getAttribute('data-remove-id');
+              if (!removeId) return;
+              payload = { removeId: removeId };
+            }
+            btn.disabled = true;
+            const original = btn.textContent;
+            btn.textContent = action === 'block' ? 'Blocking…' : 'Unblocking…';
+            showMsg(card, '', false);
+            try {
+              const res = await fetch('/api/barber/blocks', {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+              });
+              const data = await res.json().catch(function () { return {}; });
+              if (!res.ok || !data.ok) {
+                const detail = (data && data.error && data.error.detail) || (action + ' failed (HTTP ' + res.status + ').');
+                showMsg(card, detail, true);
+                btn.disabled = false;
+                btn.textContent = original;
+                return;
+              }
+              showMsg(card, action === 'block' ? 'Blocked. Refreshing…' : 'Unblocked. Refreshing…', false);
+              setTimeout(function () { window.location.reload(); }, 600);
+            } catch (err) {
+              showMsg(card, 'Network error. Try again.', true);
+              btn.disabled = false;
+              btn.textContent = original;
+            }
+          });
+        });
+      })();
+    </script>
+  </body>
+</html>
