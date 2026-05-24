@@ -11,6 +11,7 @@ const auth = checkBasicAuth(Astro.request);
 if (!auth.ok) {
   return auth.challenge;
 }
+if (auth.refreshCookie) Astro.response.headers.append('Set-Cookie', auth.refreshCookie);
 
 let initialEntries: BlockedEntry[] = [];
 let loadError: string | null = null;

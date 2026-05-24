@@ -8,6 +8,7 @@ import type { Barber } from '../../lib/square/types';
 
 const auth = checkBasicAuth(Astro.request);
 if (!auth.ok) return auth.challenge;
+if (auth.refreshCookie) Astro.response.headers.append('Set-Cookie', auth.refreshCookie);
 
 let barbers: Barber[] = [];
 let accounts: Awaited<ReturnType<typeof listAccounts>> = [];

@@ -13,6 +13,7 @@ const auth = checkBasicAuth(Astro.request);
 if (!auth.ok) {
   return auth.challenge;
 }
+if (auth.refreshCookie) Astro.response.headers.append('Set-Cookie', auth.refreshCookie);
 
 const SHOP_TZ = 'America/New_York';
 const TERMINAL = new Set<Booking['status']>([
