@@ -46,7 +46,7 @@ const bookTarget = isGhPages ? '_blank' : '_self';
 const bookRel = isGhPages ? 'noopener' : '';
 ---
 <section class="hero" aria-labelledby="hero-heading">
-  <div class="hero__bg" aria-hidden="true">
+  <div class="hero__bg-sticky" aria-hidden="true">
     <Image
       src={shopInterior}
       alt=""
@@ -167,16 +167,27 @@ const bookRel = isGhPages ? 'noopener' : '';
     gap: clamp(0.6rem, 1.4vw, 1.5rem);
   }
 
-  /* Hero backdrop: absolutely fills the hero section and scrolls with
-     it. (This used to be position: sticky with an svh-based height —
-     that pinned the photo while the hero was on screen, but on iOS the
-     sticky element fought the address-bar show/hide during scroll and
-     visibly bounced. The hero is clipped to content height anyway, so
-     the pin bought almost nothing visually; a plain absolute fill looks
-     the same and never bounces.) */
-  .hero__bg {
-    position: absolute;
-    inset: 0;
+  /* Sticky backdrop: stays put while the hero is on screen, then
+     scrolls away with the hero when the next section comes up.
+     The negative margin makes the sticky element take up zero
+     vertical layout space, so hero content flows over it naturally. */
+  .hero__bg-sticky {
+    position: sticky;
+    /* Pin at the bottom edge of the sticky header. Without this,
+       sticky's threshold is at viewport top:0, but the photo's
+       natural position in the document is one header-height below
+       viewport top — so for the first ~68px of scroll the photo
+       moves with the content before it reaches the threshold and
+       pins. Using top: var(--header-h) means the threshold matches
+       the photo's natural position, so it pins from scroll 0. */
+    top: var(--header-h);
+    left: 0;
+    width: 100%;
+    /* Use small viewport height so the sticky element is never taller
+       than the parent (min-height: 100svh). On iOS, 100vh > 100svh due
+       to the address bar, which would exceed parent and kill the track. */
+    height: calc(100svh - var(--header-h));
+    margin-bottom: calc((100svh - var(--header-h)) * -1);
     z-index: 0;
     pointer-events: none;
     overflow: hidden;
