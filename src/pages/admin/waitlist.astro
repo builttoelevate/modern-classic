@@ -9,6 +9,8 @@ import {
   type WaitlistStatus,
 } from '../../lib/marketing/waitlistLog';
 import { findMatchingSlotsForEntryFromSquare } from '../../lib/marketing/waitlistSlotSuggestions';
+import { getBarbers } from '../../lib/square/team';
+import { getServicesCached } from '../../lib/catalog/liveServices';
 import type { AvailabilitySlot } from '../../lib/square/types';
 
 const auth = checkBasicAuth(Astro.request);
@@ -59,6 +61,31 @@ if (activeEntries.length > 0) {
       slotsByEntry.set(id, { error: reason });
     }
   });
+}
+
+// Barber + service option lists for the manual-add form. Mirror the
+// homepage waitlist sheet (src/pages/index.astro): the service `id`
+// must be the bookable serviceVariationId so the hourly auto-notify
+// cron can match it. Best-effort — a Square hiccup just leaves the
+// pickers empty and the form still submits with whatever's selected.
+const HIDDEN_WAITLIST_ITEM_IDS = new Set<string>(['REEU27HVQBIP27KEI47RI73V']);
+let barberOptions: Array<{ id: string; displayName: string }> = [];
+let serviceOptions: Array<{ id: string; name: string }> = [];
+try {
+  const allBarbers = await getBarbers();
+  barberOptions = allBarbers.map((b) => ({ id: b.id, displayName: b.displayName }));
+} catch {
+  barberOptions = [];
+}
+try {
+  const services = await getServicesCached();
+  for (const s of services) {
+    if (HIDDEN_WAITLIST_ITEM_IDS.has(s.id)) continue;
+    const v = s.variations.find((vv) => vv.availableForBooking) ?? s.variations[0];
+    if (v) serviceOptions.push({ id: v.id, name: s.name });
+  }
+} catch {
+  serviceOptions = [];
 }
 
 const fmtSlot = new Intl.DateTimeFormat('en-US', {
@@ -461,6 +488,63 @@ function bookHrefFor(entry: WaitlistEntry): string {
         .slot-actions { justify-content: stretch; }
         .slot-actions .slot-btn { flex: 1; }
       }
+
+      /* Manual add form */
+      .manual-add {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        margin-bottom: 24px;
+        padding: 0 16px;
+      }
+      .manual-add summary {
+        cursor: pointer;
+        padding: 14px 0;
+        color: var(--gold);
+        font-weight: 600;
+        letter-spacing: 0.02em;
+        list-style: none;
+      }
+      .manual-add summary::-webkit-details-marker { display: none; }
+      .manual-add__form { padding: 0 0 18px; display: grid; gap: 14px; }
+      .manual-add__row {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 14px;
+      }
+      @media (max-width: 540px) {
+        .manual-add__row { grid-template-columns: 1fr; }
+      }
+      .manual-add label {
+        display: grid;
+        gap: 5px;
+        font-size: 0.82rem;
+        color: var(--muted);
+      }
+      .manual-add__opt { color: var(--dim); font-weight: 400; }
+      .manual-add input,
+      .manual-add select,
+      .manual-add textarea {
+        background: var(--bg);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        padding: 9px 11px;
+        color: var(--text);
+        font-size: 0.95rem;
+        font-family: inherit;
+        width: 100%;
+      }
+      .manual-add input:focus,
+      .manual-add select:focus,
+      .manual-add textarea:focus {
+        outline: 2px solid rgba(201, 163, 92, 0.4);
+        border-color: var(--gold);
+      }
+      .manual-add__actions {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+      }
     </style>
   </head>
   <body>
@@ -509,6 +593,56 @@ function bookHrefFor(entry: WaitlistEntry): string {
             <a href="/admin/waitlist" class={!showArchived ? 'active' : ''}>Active only</a>
             <a href="/admin/waitlist?archived=1" class={showArchived ? 'active' : ''}>Show archived</a>
           </div>
+
+          <details class="manual-add">
+            <summary>+ Add someone to the waitlist</summary>
+            <form id="manual-add-form" class="manual-add__form">
+              <div class="manual-add__row">
+                <label>
+                  Name
+                  <input type="text" name="name" autocomplete="off" required />
+                </label>
+                <label>
+                  Phone
+                  <input type="tel" name="phone" autocomplete="off" required />
+                </label>
+              </div>
+              <div class="manual-add__row">
+                <label>
+                  Email <span class="manual-add__opt">(optional)</span>
+                  <input type="email" name="email" autocomplete="off" />
+                </label>
+              </div>
+              <div class="manual-add__row">
+                <label>
+                  Service
+                  <select name="service" required>
+                    <option value="" data-name="">Select a service…</option>
+                    {serviceOptions.map((s) => (
+                      <option value={s.id} data-name={s.name}>{s.name}</option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Barber
+                  <select name="barber">
+                    <option value="" data-name="Any barber">Any barber</option>
+                    {barberOptions.map((b) => (
+                      <option value={b.id} data-name={b.displayName}>{b.displayName}</option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+              <label>
+                Note <span class="manual-add__opt">(optional)</span>
+                <textarea name="note" rows="2" maxlength="600"></textarea>
+              </label>
+              <div class="manual-add__actions">
+                <button type="submit" class="btn primary">Add to waitlist</button>
+                <p class="status-msg" data-add-msg></p>
+              </div>
+            </form>
+          </details>
 
           {entries.length === 0 ? (
             <p class="empty">
@@ -648,6 +782,9 @@ function bookHrefFor(entry: WaitlistEntry): string {
                     {e.status !== 'archived' && (
                       <button class="btn ghost" data-action="archived">Archive</button>
                     )}
+                    {(e.status === 'booked' || e.status === 'contacted') && (
+                      <button class="btn ghost" data-action="new">Undo → New</button>
+                    )}
                     {e.status === 'archived' && (
                       <button class="btn ghost" data-action="new">Restore</button>
                     )}
@@ -663,6 +800,56 @@ function bookHrefFor(entry: WaitlistEntry): string {
 
     <script is:inline>
       (function () {
+        // ---------- Manual add ----------
+        const addForm = document.getElementById('manual-add-form');
+        if (addForm) {
+          const addMsg = addForm.querySelector('[data-add-msg]');
+          const setAddMsg = (text, isErr) => {
+            if (!addMsg) return;
+            addMsg.textContent = text || '';
+            addMsg.className = 'status-msg' + (isErr ? ' error' : '');
+          };
+          addForm.addEventListener('submit', async (ev) => {
+            ev.preventDefault();
+            const submitBtn = addForm.querySelector('button[type="submit"]');
+            const serviceSel = addForm.elements['service'];
+            const barberSel = addForm.elements['barber'];
+            const serviceOpt = serviceSel.options[serviceSel.selectedIndex];
+            const barberOpt = barberSel.options[barberSel.selectedIndex];
+            const payload = {
+              name: addForm.elements['name'].value.trim(),
+              phone: addForm.elements['phone'].value.trim(),
+              email: addForm.elements['email'].value.trim(),
+              serviceVariationId: serviceSel.value || null,
+              serviceName: serviceOpt ? serviceOpt.getAttribute('data-name') : '',
+              teamMemberId: barberSel.value || null,
+              barberName: barberOpt ? barberOpt.getAttribute('data-name') : 'Any barber',
+              note: addForm.elements['note'].value.trim(),
+            };
+            if (submitBtn) submitBtn.disabled = true;
+            setAddMsg('Adding…', false);
+            try {
+              const res = await fetch('/api/admin/waitlist/add', {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+              });
+              const data = await res.json().catch(() => ({}));
+              if (!res.ok || !data.ok) {
+                setAddMsg((data && data.error && data.error.detail) || ('Could not add (HTTP ' + res.status + ').'), true);
+                if (submitBtn) submitBtn.disabled = false;
+                return;
+              }
+              setAddMsg('Added. Refreshing…', false);
+              setTimeout(() => window.location.reload(), 600);
+            } catch (err) {
+              setAddMsg('Network error. Try again.', true);
+              if (submitBtn) submitBtn.disabled = false;
+            }
+          });
+        }
+
         const entries = document.querySelectorAll('.entry');
         entries.forEach((entry) => {
           const id = entry.dataset.id;
