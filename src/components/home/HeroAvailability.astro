@@ -26,7 +26,7 @@ interface Props {
 
 const { mode, slot, barberName, teamMemberId, basePath, isGhPages } = Astro.props as Props;
 
-const FALLBACK_SQUARE = 'https://modern-classic.square.site';
+const FALLBACK_SQUARE = 'https://modernclassicbarbershop.com/book';
 const bookHref = (() => {
   if (isGhPages) return FALLBACK_SQUARE;
   if (mode === 'fallback') return `${basePath}/book`;

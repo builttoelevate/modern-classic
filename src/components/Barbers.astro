@@ -23,7 +23,7 @@ const base = import.meta.env.BASE_URL.replace(/\/$/, '');
 const isGhPages = Boolean(import.meta.env.BASE_URL && import.meta.env.BASE_URL !== '/');
 const bookTarget = isGhPages ? '_blank' : '_self';
 const bookRel = isGhPages ? 'noopener' : '';
-const FALLBACK_BOOK = 'https://modern-classic.square.site';
+const FALLBACK_BOOK = 'https://modernclassicbarbershop.com/book';
 
 function priceFor(services: Awaited<ReturnType<typeof getServicesCached>>, barberId: string): string {
   // Find the cheapest fixed-price variation that includes this barber, but

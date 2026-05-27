@@ -6,7 +6,14 @@ import Header from '../components/Header.astro';
 import Footer from '../components/Footer.astro';
 import MobileBookCTA from '../components/MobileBookCTA.astro';
 
-const bookUrl = 'https://modern-classic.square.site';
+const base = import.meta.env.BASE_URL.replace(/\/$/, '');
+const isGhPages = Boolean(import.meta.env.BASE_URL && import.meta.env.BASE_URL !== '/');
+// Book through our own /book flow. (gh-pages static build has no /book,
+// so it links to the production booking page absolutely. We never send
+// people to the old modern-classic.square.site anymore.)
+const bookUrl = isGhPages ? 'https://modernclassicbarbershop.com/book' : `${base}/book`;
+const bookTarget = isGhPages ? '_blank' : '_self';
+const bookRel = isGhPages ? 'noopener' : '';
 const directionsUrl = 'https://www.google.com/maps/search/?api=1&query=819+Linden+Avenue+Zanesville+OH+43701';
 const mapEmbed = 'https://www.google.com/maps?q=819+Linden+Avenue,+Zanesville,+OH+43701&output=embed';
 const mailto = 'mailto:modernclassicbarbershop@protonmail.com';
@@ -50,7 +57,7 @@ const todayIndex = new Date().getDay();
           street parking, walk-ins welcome when chairs are open.
         </p>
         <div class="vst-hero__ctas">
-          <a class="btn" href={bookUrl} target="_blank" rel="noopener">
+          <a class="btn" href={bookUrl} target={bookTarget} rel={bookRel}>
             Book a Visit <span class="arrow" aria-hidden="true">→</span>
           </a>
           <a class="btn btn--ghost" href={directionsUrl} target="_blank" rel="noopener">
@@ -105,10 +112,6 @@ const todayIndex = new Date().getDay();
               <div>
                 <dt>Product Support</dt>
                 <dd><a href="mailto:support@mdrnclassic.com">support@mdrnclassic.com</a></dd>
-              </div>
-              <div>
-                <dt>Online Booking</dt>
-                <dd><a href={bookUrl} target="_blank" rel="noopener">modern-classic.square.site ↗</a></dd>
               </div>
             </dl>
           </article>
@@ -175,7 +178,7 @@ const todayIndex = new Date().getDay();
           a time that works.
         </p>
         <div class="vst-foot__ctas">
-          <a class="btn" href={bookUrl} target="_blank" rel="noopener">
+          <a class="btn" href={bookUrl} target={bookTarget} rel={bookRel}>
             Book a Visit <span class="arrow" aria-hidden="true">→</span>
           </a>
         </div>
