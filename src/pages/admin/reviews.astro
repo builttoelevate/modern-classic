@@ -303,6 +303,24 @@ const recent = last30?.recent ?? [];
         border-color: var(--border);
       }
       .btn--ghost:hover { border-color: var(--gold); color: var(--gold); }
+      .reset-row {
+        margin: 24px 0 8px;
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 12px;
+      }
+      .reset-btn {
+        color: #ffb4b4;
+        border-color: #5a2a2a;
+      }
+      .reset-btn:hover { border-color: #ffb4b4; color: #ffd4d4; }
+      .reset-btn:disabled { opacity: 0.55; cursor: not-allowed; }
+      .reset-hint {
+        font-size: 0.85rem;
+        color: var(--dim);
+        max-width: 480px;
+      }
       .panel__output {
         margin-top: 14px;
         padding: 12px 14px;
@@ -584,6 +602,16 @@ const recent = last30?.recent ?? [];
             </div>
           </div>
 
+          <div class="reset-row">
+            <button type="button" class="btn btn--ghost reset-btn" id="reset-stats-btn">
+              Reset stats
+            </button>
+            <span class="reset-hint">
+              Wipes sent records, click attempts, and the panels below.
+              Cooldowns and cron state are preserved.
+            </span>
+          </div>
+
           <h2>Recent click attempts</h2>
           <p class="sub">
             Every time someone taps the gold button in a review email,
@@ -834,6 +862,43 @@ const recent = last30?.recent ?? [];
             btn.textContent = originalLabel;
           } catch {
             showStatus('Network error. Try again.', 'error');
+            btn.disabled = false;
+            btn.textContent = originalLabel;
+          }
+        });
+      })();
+
+      (function () {
+        const btn = document.getElementById('reset-stats-btn');
+        if (!btn) return;
+        const originalLabel = btn.textContent;
+        btn.addEventListener('click', async () => {
+          const ok = confirm(
+            'Wipe ALL review-request stats (sent records + click attempts)? ' +
+              'Cooldowns and cron state are preserved. This cannot be undone.',
+          );
+          if (!ok) return;
+          btn.disabled = true;
+          btn.textContent = 'Resetting…';
+          try {
+            const res = await fetch('/api/admin/reviews/reset-stats', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ confirmLive: true, dryRun: false }),
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok || !data.ok) {
+              alert(
+                'Reset failed: ' +
+                  ((data && data.error && data.error.detail) || res.status),
+              );
+              btn.disabled = false;
+              btn.textContent = originalLabel;
+              return;
+            }
+            location.reload();
+          } catch (err) {
+            alert('Network error. Try again.');
             btn.disabled = false;
             btn.textContent = originalLabel;
           }
