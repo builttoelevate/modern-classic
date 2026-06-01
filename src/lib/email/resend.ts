@@ -336,6 +336,11 @@ export async function sendWaitlistBarberNotification(
 export interface SendWaitlistOpeningInput {
   to: string;
   customerName: string;
+  /** Set when the waitlist entry was added by a parent on behalf of a
+   * linked person (typically a kid). Drives "for {name}" copy in the
+   * subject + body so the parent (who's the To: recipient) instantly
+   * sees which kid the opening is for. */
+  bookingForName?: string;
   barberName: string;
   serviceName: string;
   whenLabel: string;
@@ -365,6 +370,7 @@ export async function sendWaitlistOpening(
     subject: waitlistOpeningSubject({
       whenLabel: input.whenLabel,
       barberName: input.barberName,
+      bookingForName: input.bookingForName,
     }),
     html,
     text,

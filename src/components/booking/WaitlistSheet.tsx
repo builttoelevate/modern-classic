@@ -13,6 +13,16 @@ interface Props {
   prefillName?: string;
   prefillEmail?: string;
   prefillPhone?: string;
+  /** Set to the linked person's display name when a signed-in parent is
+   * adding their kid (or other linked person) to the waitlist. Drives:
+   *  - the "Joining for {name}" banner at the top of the sheet, so the
+   *    parent knows the entry is on the kid's behalf;
+   *  - the entry's `bookingForName`, so admin/barber views and the
+   *    "your spot opened" email surface the kid's name even though
+   *    contact info (and the email destination) stay on the parent.
+   * Undefined for solo bookings or when the parent picked themselves
+   * in the booking-for selector. */
+  bookingForName?: string;
   /** When the caller can't pre-pick a barber for the customer (e.g. the
    * hero trigger fires before any booking-flow choice has been made),
    * pass the active roster here and the sheet renders a dropdown
@@ -84,6 +94,7 @@ export function WaitlistSheet({
   prefillName = '',
   prefillEmail = '',
   prefillPhone = '',
+  bookingForName,
   barberOptions,
   serviceOptions,
 }: Props) {
@@ -337,6 +348,7 @@ export function WaitlistSheet({
           exactTimes: cleanedExactTimes,
           exactTimesMatchMode: timeMode === 'exact' ? exactMatchMode : undefined,
           note: note.trim() || undefined,
+          bookingForName: bookingForName && bookingForName.trim() ? bookingForName.trim() : undefined,
         }),
       });
       const data = (await res.json()) as WaitlistApiResponse;
@@ -393,6 +405,13 @@ export function WaitlistSheet({
           </div>
         ) : (
           <form className="bw-waitlist__form" onSubmit={submit} noValidate>
+            {bookingForName && bookingForName.trim() && (
+              <p className="bw-waitlist__bookingfor">
+                Joining the waitlist for <strong>{bookingForName.trim()}</strong>.
+                We'll email and call you (the parent / guardian) the moment a
+                spot opens.
+              </p>
+            )}
             <p className="bw-waitlist__sub">
               Tell us how to reach you and when you're available — we'll email
               you automatically the moment {matchPhrase} matches.

@@ -110,6 +110,7 @@ const FIELD_LIMITS = {
   barberName: 60,
   preferredDate: 64,
   note: 600,
+  bookingForName: 80,
 };
 
 function pruneRateLimit(now: number): void {
@@ -158,6 +159,10 @@ export const POST: APIRoute = async ({ request, clientAddress }) => {
   const preferredDate =
     isString(b.preferredDate, FIELD_LIMITS.preferredDate) ? b.preferredDate.trim() : undefined;
   const note = isString(b.note, FIELD_LIMITS.note) ? b.note.trim() : undefined;
+  const bookingForName =
+    isString(b.bookingForName, FIELD_LIMITS.bookingForName)
+      ? b.bookingForName.trim()
+      : undefined;
   // Optional Square IDs the client passes through so admin can deep-link
   // straight into /book?service=...&barber=... when scheduling. Either
   // can be null if the client didn't have one (e.g. "Any barber" path
@@ -373,6 +378,7 @@ export const POST: APIRoute = async ({ request, clientAddress }) => {
         timesOfDay,
         exactTimes,
         exactTimesMatchMode,
+        bookingForName,
       });
     } catch (err) {
       const detail = err instanceof Error ? err.message : String(err);

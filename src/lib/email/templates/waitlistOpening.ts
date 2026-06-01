@@ -10,6 +10,12 @@
 
 export interface WaitlistOpeningProps {
   customerName: string;
+  /** Linked-person display name when the waitlist entry was added by a
+   * parent on behalf of a kid (or other linked person). When set, the
+   * subject + body lead with the kid's name so the parent (who is the
+   * To: recipient) instantly knows whose opening this is. Undefined for
+   * solo waitlist entries. */
+  bookingForName?: string;
   barberName: string;
   serviceName: string;
   /** Already-formatted local-time string, e.g. "Tomorrow 2:30 PM" or
@@ -53,9 +59,11 @@ function firstName(full: string): string {
 }
 
 export function waitlistOpeningSubject(
-  props: Pick<WaitlistOpeningProps, 'whenLabel' | 'barberName'>,
+  props: Pick<WaitlistOpeningProps, 'whenLabel' | 'barberName' | 'bookingForName'>,
 ): string {
-  return `An opening came up — ${props.whenLabel} with ${props.barberName}`;
+  const forName = props.bookingForName?.trim();
+  const lead = forName ? `An opening for ${forName}` : 'An opening came up';
+  return `${lead} — ${props.whenLabel} with ${props.barberName}`;
 }
 
 export function waitlistOpeningHtml(props: WaitlistOpeningProps): string {
@@ -65,6 +73,9 @@ export function waitlistOpeningHtml(props: WaitlistOpeningProps): string {
   const when = escapeHtml(props.whenLabel);
   const safeBookUrl = escapeHtml(props.bookUrl);
   const address = escapeHtml(props.shopAddress);
+  const forName = props.bookingForName?.trim()
+    ? escapeHtml(props.bookingForName.trim())
+    : '';
 
   return `<!doctype html>
 <html lang="en">
@@ -94,7 +105,9 @@ export function waitlistOpeningHtml(props: WaitlistOpeningProps): string {
                   Hi ${first} — good news.
                 </p>
                 <p style="margin:0 0 18px;font-size:16px;line-height:1.55;color:${COLORS.inkSoft};">
-                  A slot just opened up that matches the dates and times you put on your waitlist:
+                  ${forName
+                    ? `A slot just opened up for <strong>${forName}</strong> that matches the dates and times you put on the waitlist:`
+                    : 'A slot just opened up that matches the dates and times you put on your waitlist:'}
                 </p>
                 <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin:0 0 22px;border:1px solid ${COLORS.border};border-radius:6px;background:${COLORS.bg};">
                   <tr>
@@ -150,9 +163,13 @@ export function waitlistOpeningHtml(props: WaitlistOpeningProps): string {
 
 export function waitlistOpeningText(props: WaitlistOpeningProps): string {
   const first = firstName(props.customerName);
+  const forName = props.bookingForName?.trim();
+  const lead = forName
+    ? `A slot just opened up for ${forName} that matches the dates and times you put on the waitlist:`
+    : 'A slot just opened up that matches the dates and times you put on your waitlist:';
   return `Hi ${first} — good news.
 
-A slot just opened up that matches the dates and times you put on your waitlist:
+${lead}
 
   When:    ${props.whenLabel}
   Service: ${props.serviceName}

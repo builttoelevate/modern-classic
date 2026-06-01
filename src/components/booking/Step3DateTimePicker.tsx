@@ -27,6 +27,8 @@ interface Props {
   prefillName?: string;
   prefillEmail?: string;
   prefillPhone?: string;
+  /** Forwarded to WaitlistSheet — see its `bookingForName` prop. */
+  bookingForName?: string;
   /** Active roster — passed through to the waitlist sheet so the
    * customer can opt into being notified about ANY of several barbers
    * (e.g. "let me know if Michael OR Rick has an opening"). */
@@ -214,6 +216,7 @@ export function Step3DateTimePicker({
   prefillName,
   prefillEmail,
   prefillPhone,
+  bookingForName,
   barbers,
   desiredCount,
   picks,
@@ -524,6 +527,7 @@ export function Step3DateTimePicker({
         prefillName={prefillName}
         prefillEmail={prefillEmail}
         prefillPhone={prefillPhone}
+        bookingForName={bookingForName}
         barberOptions={
           barbers && barbers.length > 0
             ? barbers.map((b) => ({ id: b.id, displayName: b.displayName }))
