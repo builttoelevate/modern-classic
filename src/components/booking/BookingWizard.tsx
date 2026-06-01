@@ -1294,6 +1294,11 @@ export default function BookingWizard({
             .trim()}
           prefillEmail={state.customer.email}
           prefillPhone={state.customer.phone}
+          bookingForName={
+            selectedBookingFor && !selectedBookingFor.isSelf
+              ? selectedBookingFor.displayName
+              : undefined
+          }
           barbers={barbers}
           desiredCount={state.series.desiredCount}
           picks={

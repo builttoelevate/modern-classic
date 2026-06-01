@@ -117,6 +117,17 @@ export interface WaitlistEntry {
    * notifiedSlotStartAtUtc is the per-slot dedup key. */
   lastNotifiedAt?: string;
   notifiedSlotStartAtUtc?: string;
+
+  /** When a signed-in parent puts a linked person (typically a kid) on
+   * the waitlist, this is the linked person's display name. The form's
+   * customerName/email/phone stay on the parent — that's who we email
+   * when the slot opens — but admin/barber views and the cron-fired
+   * "your spot opened" email surface this so everyone knows the slot
+   * is for the kid, not the parent.
+   *
+   * Optional + last-position-in-interface so older entries without it
+   * still deserialize cleanly. */
+  bookingForName?: string;
 }
 
 const KEY_PREFIX = 'mc:waitlist:';
@@ -158,6 +169,9 @@ export interface RecordWaitlistInput {
   /** Specific-times mode (mutually exclusive with timesOfDay). */
   exactTimes?: string[];
   exactTimesMatchMode?: ExactTimeMatchMode;
+  /** Linked-person display name when the booker is a parent + the
+   * waitlist entry is for their kid. See WaitlistEntry.bookingForName. */
+  bookingForName?: string;
 }
 
 export async function recordWaitlistEntry(
@@ -184,6 +198,7 @@ export async function recordWaitlistEntry(
     timesOfDay: input.timesOfDay,
     exactTimes: input.exactTimes,
     exactTimesMatchMode: input.exactTimesMatchMode,
+    bookingForName: input.bookingForName,
     submittedAt,
     status: 'new',
     statusChangedAt: submittedAt,

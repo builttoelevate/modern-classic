@@ -253,6 +253,7 @@ async function handle(request: Request): Promise<Response> {
       const sendResult = await sendWaitlistOpening({
         to: entry.customerEmail,
         customerName: entry.customerName,
+        bookingForName: entry.bookingForName,
         barberName: matchedBarberName,
         serviceName: entry.serviceName,
         whenLabel,

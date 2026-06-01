@@ -654,7 +654,11 @@ function bookHrefFor(entry: WaitlistEntry): string {
                 <article class="entry" data-status={e.status} data-id={e.id}>
                   <div>
                     <div class="entry-head">
-                      <h2 class="entry-name">{e.customerName}</h2>
+                      <h2 class="entry-name">
+                        {e.bookingForName?.trim()
+                          ? `${e.bookingForName.trim()} (booked by ${e.customerName})`
+                          : e.customerName}
+                      </h2>
                       <span class="pill" data-status={e.status}>{e.status}</span>
                       <span class="entry-when">submitted {tsLabel(e.submittedAt)}</span>
                     </div>
