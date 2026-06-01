@@ -324,6 +324,75 @@ export async function getLastClickTimeForCustomer(
   return typeof ts === 'string' && ts.length > 0 ? ts : null;
 }
 
+/**
+ * Hard reset for /admin/reviews stats. Wipes every sent record, the
+ * sorted-set index, and the click-attempts log so the page reads as
+ * "0 sent · 0 clicked" until the next cron run (or live resend)
+ * populates fresh records.
+ *
+ * Preserves:
+ *  - kByCustomerLastClicked (per-customer cooldown) — wiping this
+ *    would let the cron re-email customers who'd already replied,
+ *    which is exactly what the cooldown is there to prevent.
+ *  - kLastRun (cron's last-run timestamp).
+ */
+export async function resetAllReviewStats(): Promise<{
+  recordsDeleted: number;
+  clickHitsDeleted: number;
+}> {
+  const redis = getRedis();
+  const ids = (await redis.zrange(kIndex(), 0, -1)) as string[];
+  let recordsDeleted = 0;
+  if (ids.length > 0) {
+    const keys = ids.map(kSent);
+    const records = (await redis.mget<ReviewRequestRecord[]>(...keys)) ?? [];
+    const toDelete: string[] = [];
+    for (let i = 0; i < ids.length; i++) {
+      const rec = records[i];
+      toDelete.push(kSent(ids[i]));
+      if (rec && typeof rec === 'object' && 'bookingId' in rec) {
+        if (rec.bookingId) toDelete.push(kByBooking(rec.bookingId));
+        if (rec.customerId) toDelete.push(kByCustomerLatest(rec.customerId));
+      }
+    }
+    // Upstash MULTI del — chunk to keep request size sane.
+    const chunkSize = 200;
+    for (let i = 0; i < toDelete.length; i += chunkSize) {
+      const slice = toDelete.slice(i, i + chunkSize);
+      if (slice.length > 0) await redis.del(...slice);
+    }
+    recordsDeleted = ids.length;
+  }
+  await redis.del(kIndex());
+  // Best-effort length check before deleting the click log so we can
+  // report what we cleared.
+  const clickHitsDeleted = (await redis.llen(kRecentHits()).catch(() => 0)) ?? 0;
+  await redis.del(kRecentHits());
+  return { recordsDeleted, clickHitsDeleted };
+}
+
+/**
+ * Read every review-request record sent within the last `sinceDays`
+ * days. No filtering, no cap — caller decides. Used by the one-time
+ * resend endpoint to re-cover customers whose original email had the
+ * broken (pre-SITE_URL-fix) click URL.
+ */
+export async function listRecordsSince(sinceDays: number): Promise<ReviewRequestRecord[]> {
+  const redis = getRedis();
+  const cutoff = Date.now() - sinceDays * 24 * 60 * 60 * 1000;
+  const ids = (await redis.zrange(kIndex(), cutoff, '+inf', { byScore: true })) as string[];
+  if (ids.length === 0) return [];
+  const keys = ids.map(kSent);
+  const records = (await redis.mget<ReviewRequestRecord[]>(...keys)) ?? [];
+  const out: ReviewRequestRecord[] = [];
+  for (const r of records) {
+    if (r && typeof r === 'object' && 'reviewRequestId' in r) out.push(r);
+  }
+  // Oldest first so the resend processes in submission order.
+  out.sort((a, b) => (a.sentAt ?? '').localeCompare(b.sentAt ?? ''));
+  return out;
+}
+
 export async function getReviewStats(opts: {
   daysBack: number;
   recentLimit?: number;
