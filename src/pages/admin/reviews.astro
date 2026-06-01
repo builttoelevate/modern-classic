@@ -580,6 +580,38 @@ const recent = last30?.recent ?? [];
       )}
 
       {!loadError && (
+        <div class="panel">
+          <h2 style="margin-top: 0;">Re-send broken-URL emails (one-time)</h2>
+          <p class="panel__lede">
+            Re-sends a fresh review-request email to every customer in
+            the last 60 days. The new email's gold button points at the
+            canonical domain — so unlike the originals (which routed
+            through a Deployment-Protection-blocked Vercel preview host
+            and never recorded a click), these can actually be tapped.
+            Each resend writes a new sent record so it's independently
+            click-trackable below.
+          </p>
+          <p class="panel__lede">
+            <strong>Dry run first.</strong> It returns counts without
+            sending a single email so you can sanity-check the number.
+            Then come back and tap the live button.
+          </p>
+          <div class="panel__actions">
+            <button type="button" class="btn" id="resend-live-btn">Re-send now</button>
+            <button type="button" class="btn btn--ghost" id="resend-dry-btn">Dry run (no emails)</button>
+          </div>
+          <div class="run-progress" id="resend-progress" hidden>
+            <div class="run-progress__spinner" aria-hidden="true"></div>
+            <div class="run-progress__text">
+              <strong id="resend-progress-headline">Running…</strong>
+              <span id="resend-progress-detail">This can take 30-60 seconds for ~340 customers. The page will refresh automatically when it finishes.</span>
+            </div>
+          </div>
+          <pre class="panel__output" id="resend-output" hidden></pre>
+        </div>
+      )}
+
+      {!loadError && (
         <>
           <div class="stat-grid">
             <div class="stat-card">
@@ -866,6 +898,105 @@ const recent = last30?.recent ?? [];
             btn.textContent = originalLabel;
           }
         });
+      })();
+
+      (function () {
+        const live = document.getElementById('resend-live-btn');
+        const dry = document.getElementById('resend-dry-btn');
+        const out = document.getElementById('resend-output');
+        const progress = document.getElementById('resend-progress');
+        const headline = document.getElementById('resend-progress-headline');
+        const detail = document.getElementById('resend-progress-detail');
+        if (!live || !dry || !out || !progress || !headline || !detail) return;
+
+        function setProgress(state, head, msg, extraNode) {
+          progress.hidden = false;
+          progress.setAttribute('data-state', state);
+          headline.textContent = head;
+          detail.textContent = msg || '';
+          if (extraNode) detail.appendChild(extraNode);
+        }
+
+        async function run(dryRun) {
+          live.disabled = true;
+          dry.disabled = true;
+          out.hidden = true;
+          out.textContent = '';
+          setProgress(
+            'running',
+            dryRun ? 'Dry run in progress…' : 'Re-sending review emails…',
+            'This can take 30-60 seconds. The page will show the results when it finishes.',
+          );
+          try {
+            const payload = dryRun
+              ? { sinceDays: 60, dryRun: true }
+              : { sinceDays: 60, dryRun: false, confirmLive: true };
+            const res = await fetch('/api/admin/reviews/resend-broken', {
+              method: 'POST',
+              credentials: 'same-origin',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(payload),
+            });
+            const body = await res.json();
+            if (body && body.ok) {
+              const stats = body.stats || {};
+              const verb = dryRun ? 'Would resend' : 'Resent';
+              setProgress(
+                'done',
+                'Done.',
+                verb + ': ' + (stats.resent ?? '?') +
+                  ' · Skipped no-email: ' + (stats.skippedNoEmail ?? 0) +
+                  ' · Opted out: ' + (stats.skippedOptedOut ?? 0) +
+                  ' · Failed: ' + (stats.failed ?? 0) +
+                  '. Full response below.',
+              );
+              out.hidden = false;
+              out.textContent = JSON.stringify(body, null, 2);
+              live.disabled = false;
+              dry.disabled = false;
+              return;
+            }
+            setProgress(
+              'error',
+              dryRun ? 'Dry run finished with an error' : 'Resend finished with an error',
+              'See the response below.',
+            );
+            out.hidden = false;
+            out.textContent = JSON.stringify(body, null, 2);
+            live.disabled = false;
+            dry.disabled = false;
+          } catch (err) {
+            // iOS Safari may kill the fetch after ~60s even though the
+            // server is still processing. Auto-refresh in 90s and
+            // surface a manual button too.
+            const refreshBtn = document.createElement('button');
+            refreshBtn.type = 'button';
+            refreshBtn.className = 'btn btn--ghost';
+            refreshBtn.textContent = 'Refresh now';
+            refreshBtn.style.fontSize = '0.78rem';
+            refreshBtn.style.padding = '6px 12px';
+            refreshBtn.addEventListener('click', () => window.location.reload());
+            setProgress(
+              'running',
+              'Still running…',
+              'Your browser lost patience but the resend likely kept going. Refreshing in 90 seconds to check the result. ',
+              refreshBtn,
+            );
+            setTimeout(() => window.location.reload(), 90_000);
+          }
+        }
+
+        live.addEventListener('click', () => {
+          if (
+            !confirm(
+              'Re-send a fresh review-request email to every eligible customer ' +
+                'from the last 60 days? This sends real emails.',
+            )
+          )
+            return;
+          run(false);
+        });
+        dry.addEventListener('click', () => run(true));
       })();
 
       (function () {
