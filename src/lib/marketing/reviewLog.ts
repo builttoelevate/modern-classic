@@ -324,6 +324,28 @@ export async function getLastClickTimeForCustomer(
   return typeof ts === 'string' && ts.length > 0 ? ts : null;
 }
 
+/**
+ * Read every review-request record sent within the last `sinceDays`
+ * days. No filtering, no cap — caller decides. Used by the one-time
+ * resend endpoint to re-cover customers whose original email had the
+ * broken (pre-SITE_URL-fix) click URL.
+ */
+export async function listRecordsSince(sinceDays: number): Promise<ReviewRequestRecord[]> {
+  const redis = getRedis();
+  const cutoff = Date.now() - sinceDays * 24 * 60 * 60 * 1000;
+  const ids = (await redis.zrange(kIndex(), cutoff, '+inf', { byScore: true })) as string[];
+  if (ids.length === 0) return [];
+  const keys = ids.map(kSent);
+  const records = (await redis.mget<ReviewRequestRecord[]>(...keys)) ?? [];
+  const out: ReviewRequestRecord[] = [];
+  for (const r of records) {
+    if (r && typeof r === 'object' && 'reviewRequestId' in r) out.push(r);
+  }
+  // Oldest first so the resend processes in submission order.
+  out.sort((a, b) => (a.sentAt ?? '').localeCompare(b.sentAt ?? ''));
+  return out;
+}
+
 export async function getReviewStats(opts: {
   daysBack: number;
   recentLimit?: number;
